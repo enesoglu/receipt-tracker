@@ -70,8 +70,15 @@ func (p problemWriter) write(w http.ResponseWriter, r *http.Request, err error) 
 	}
 }
 
+// logAttributes describes a failed request for the log. A recovered panic
+// also carries the stack of the goroutine that panicked.
 func logAttributes(r *http.Request, status int, err error) []any {
-	return []any{"error", err, "status", status, "request_id", requestIDFrom(r.Context())}
+	attributes := []any{"error", err, "status", status, "request_id", requestIDFrom(r.Context())}
+	var panicked *panicError
+	if errors.As(err, &panicked) {
+		attributes = append(attributes, "stack", string(panicked.stack))
+	}
+	return attributes
 }
 
 // problemFor is the mapping from errors to problem documents:
