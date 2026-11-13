@@ -1,0 +1,10 @@
+-- Candidate lookup for product matching: aliases by trigram similarity,
+-- products that own a code, and rejected name and product pairs.
+--
+-- Tables: product_aliases, product_codes, match_rejections, products.
+--
+-- Rules: every query on a user-owned table filters by user_id; query names
+-- are unique across all files; run `task generate` after editing.
+--
+-- Add queries above this description: sqlc copies the comment that precedes
+-- a file's first query into that query's Go documentation.

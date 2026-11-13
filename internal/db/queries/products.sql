@@ -1,0 +1,11 @@
+-- The product catalogue: list and search, detail with aliases and codes,
+-- edits, merge, split and price history.
+--
+-- Tables: products, product_aliases, product_codes, match_rejections,
+-- line_items.
+--
+-- Rules: every query on a user-owned table filters by user_id; query names
+-- are unique across all files; run `task generate` after editing.
+--
+-- Add queries above this description: sqlc copies the comment that precedes
+-- a file's first query into that query's Go documentation.

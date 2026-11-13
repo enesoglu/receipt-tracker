@@ -1,0 +1,11 @@
+-- The work queue: enqueue, claim the oldest runnable job with
+-- FOR UPDATE SKIP LOCKED, and record success, retry or failure.
+--
+-- Tables: jobs. The table belongs to the instance, not to a user, so these
+-- queries take no user_id.
+--
+-- Rules: every query on a user-owned table filters by user_id; query names
+-- are unique across all files; run `task generate` after editing.
+--
+-- Add queries above this description: sqlc copies the comment that precedes
+-- a file's first query into that query's Go documentation.

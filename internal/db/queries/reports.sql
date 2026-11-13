@@ -1,0 +1,10 @@
+-- Spending aggregation: totals per month and the breakdown of one month by
+-- category or store. All arithmetic happens here, in NUMERIC.
+--
+-- Tables: receipts, line_items, products, categories, stores.
+--
+-- Rules: every query on a user-owned table filters by user_id; query names
+-- are unique across all files; run `task generate` after editing.
+--
+-- Add queries above this description: sqlc copies the comment that precedes
+-- a file's first query into that query's Go documentation.
