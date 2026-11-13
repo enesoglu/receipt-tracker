@@ -1,0 +1,66 @@
+version: "2"
+run:
+  timeout: 5m
+formatters:
+  enable: [gofumpt, goimports]
+  settings:
+    goimports:
+      local-prefixes: [github.com/enesoglu/receipt-tracker]
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - errorlint
+    - bodyclose
+    - sqlclosecheck
+    - noctx
+    - gosec
+    - gocritic
+    - revive
+    - misspell
+    - unparam
+    - nolintlint
+    - forbidigo
+    - depguard
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: '^fmt\.Print.*$'
+          msg: use the injected slog logger
+        - pattern: '^log\..*$'
+          msg: use the injected slog logger
+    depguard:
+      rules:
+        main:
+          files: ["$all"]
+          deny:
+            - pkg: gorm.io
+              desc: use sqlc and pgx
+            - pkg: entgo.io
+              desc: use sqlc and pgx
+            - pkg: github.com/uptrace/bun
+              desc: use sqlc and pgx
+            - pkg: github.com/go-gorp/gorp
+              desc: use sqlc and pgx
+            - pkg: github.com/volatiletech/sqlboiler
+              desc: use sqlc and pgx
+            - pkg: github.com/sirupsen/logrus
+              desc: use log/slog
+            - pkg: go.uber.org/zap
+              desc: use log/slog
+            - pkg: github.com/rs/zerolog
+              desc: use log/slog
+            - pkg: github.com/stretchr/testify
+              desc: use testing and go-cmp
+            - pkg: github.com/golang/mock
+              desc: use handwritten fakes
+            - pkg: go.uber.org/mock
+              desc: use handwritten fakes
+            - pkg: github.com/onsi/gomega
+              desc: use testing and go-cmp
+  exclusions:
+    presets: []
