@@ -84,11 +84,19 @@ jobs:
           fi
           cat unconfigured.log
           grep -q 'DATABASE_URL is required' unconfigured.log
-      - name: Smoke-test embedded app and health endpoints
+      - name: Smoke-test migrations, embedded app and health endpoints
         run: |
+          docker network create receipt-smoke
+          docker run -d --name receipt-smoke-db --network receipt-smoke \
+            -e POSTGRES_USER=receipt -e POSTGRES_PASSWORD=receipt -e POSTGRES_DB=receipt \
+            postgres:18.4-alpine3.23
+          trap 'docker logs receipt-smoke; docker rm -f receipt-smoke receipt-smoke-db' EXIT
+          # Wait over TCP: the server used while the database initialises
+          # listens on the socket only, so a socket check answers too early.
+          timeout 60 sh -c 'until docker exec receipt-smoke-db pg_isready -h 127.0.0.1 -U receipt -d receipt; do sleep 1; done'
           # A complete production configuration made of synthetic values, with
           # no external service. The key is generated here and never stored.
-          docker run -d --name receipt-smoke -p 127.0.0.1:8080:8080 \
+          docker run -d --name receipt-smoke --network receipt-smoke -p 127.0.0.1:8080:8080 \
             -e APP_ENV=prod \
             -e APP_BASE_URL=https://receipt.example.com \
             -e DATABASE_URL='postgres://receipt:receipt@receipt-smoke-db:5432/receipt?sslmode=disable' \
@@ -102,10 +110,11 @@ jobs:
             -e EXTRACTOR=fake \
             -e BACKUP_DESTINATION=none \
             receipt-tracker:ci
-          trap 'docker logs receipt-smoke; docker rm -f receipt-smoke' EXIT
-          curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:8080/healthz
+          curl --fail --retry 15 --retry-all-errors --retry-delay 1 http://127.0.0.1:8080/healthz
           curl --fail http://127.0.0.1:8080/livez
           curl --fail http://127.0.0.1:8080/ | grep 'Receipt tracker'
+          # The server applied the schema before it started serving.
+          docker exec receipt-smoke-db psql -U receipt -d receipt -Atc 'SELECT count(*) FROM receipts' | grep -x 0
   policy:
     name: PR title and branch name
     if: github.event_name == 'pull_request'
