@@ -1,0 +1,57 @@
+version: "3"
+
+env:
+  GOTOOLCHAIN: go1.26.11
+
+vars:
+  TEST_DATABASE_URL: '{{default "postgres://receipt:receipt@localhost:15432/receipt_tracker_test?sslmode=disable" .TEST_DATABASE_URL}}'
+
+tasks:
+  setup:
+    desc: Install pinned tools and frontend dependencies
+    cmds:
+      - go mod download
+      - npm --prefix web ci
+      - node web/scripts/tasks.mjs install-lint
+  db:up:
+    desc: Start development and test Postgres databases
+    cmds:
+      - docker compose -f deploy/compose.dev.yaml up -d --wait
+  dev:
+    desc: Run the server and web app with reload
+    cmds:
+      - node web/scripts/tasks.mjs dev
+  generate:
+    desc: Regenerate database and API bindings when their sources exist
+    cmds:
+      - node web/scripts/tasks.mjs generate
+  lint:
+    desc: Lint and format-check Go and web
+    cmds:
+      - node web/scripts/tasks.mjs embed
+      - node web/scripts/tasks.mjs lint-go
+      - npm --prefix web run lint
+      - npm --prefix web run typecheck
+  test:
+    desc: Run Go and web tests against the test database
+    env:
+      TEST_DATABASE_URL: "{{.TEST_DATABASE_URL}}"
+    cmds:
+      - npm --prefix web run build
+      - node web/scripts/tasks.mjs embed
+      - go test ./cmd/... ./internal/...
+      - npm --prefix web test
+  build:
+    desc: Build the embedded web application and server binary
+    cmds:
+      - npm --prefix web run build
+      - node web/scripts/tasks.mjs embed
+      - go build -trimpath -ldflags="-s -w" -o bin/ ./cmd/server
+  check:
+    desc: Check generated drift, lint, test, and build
+    cmds:
+      - task: generate
+      - node web/scripts/tasks.mjs drift
+      - task: lint
+      - task: test
+      - task: build

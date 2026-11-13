@@ -1,0 +1,9 @@
+.git
+planning
+web/node_modules
+web/dist
+internal/web/dist
+bin
+.env
+.env.*
+!.env.example
