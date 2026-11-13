@@ -42,6 +42,7 @@ $env:Path = "$(go env GOPATH)\bin;$env:Path"
 task setup
 task db:up
 task check
+Copy-Item .env.example .env   # then fill it in, see Configuration
 task dev
 ```
 
@@ -55,6 +56,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 task setup
 task db:up
 task check
+cp .env.example .env   # then fill it in, see Configuration
 task dev
 ```
 
@@ -87,12 +89,65 @@ Run `task build`, then `./bin/server.exe` in PowerShell or `./bin/server` in
 bash to serve the built application and health endpoints on port 8080 without
 Vite. The binary embeds all frontend assets and needs no external web files.
 
-The skeleton reads `APP_ENV` (`dev` by default) and `APP_LISTEN_ADDR` (`:8080`
-by default). It rejects `DEV_LOGIN_EMAIL` outside development. The complete
-future environment-variable inventory is in `.env.example`, with names only;
-secrets and `.env` files must stay outside Git. See
-[the architecture](docs/ARCHITECTURE.md) for the binding design and future
-configuration requirements.
+## Configuration
+
+The server reads environment variables only. `.env.example` lists every
+name, without values; `.env` files and secrets must stay outside Git. At
+startup the server checks all variables and, if anything is wrong, exits with
+one error that lists every problem. Messages name the variable and the rule,
+never the value.
+
+| Variable                 | Required                         | Value                                                     |
+| ------------------------ | -------------------------------- | --------------------------------------------------------- |
+| `APP_ENV`                | yes                              | `dev` or `prod`                                           |
+| `APP_LISTEN_ADDR`        | no, default `:8080`              | `host:port` or `:port`                                    |
+| `APP_BASE_URL`           | yes                              | Public origin without a path; `https` when `APP_ENV=prod` |
+| `DATABASE_URL`           | yes                              | `postgres://user:password@host:port/database`             |
+| `APP_ENCRYPTION_KEY`     | yes                              | 32 random bytes in base64: `openssl rand -base64 32`      |
+| `ALLOWED_EMAILS`         | yes                              | Comma-separated addresses that may sign in                |
+| `ADMIN_EMAIL`            | yes                              | One of `ALLOWED_EMAILS`                                   |
+| `GOOGLE_CLIENT_ID`       | yes, except as noted below       | OAuth client for sign-in and Drive                        |
+| `GOOGLE_CLIENT_SECRET`   | yes, except as noted below       | Its secret                                                |
+| `STORAGE_BACKEND`        | yes                              | `local` or `drive`                                        |
+| `STORAGE_LOCAL_DIR`      | when `STORAGE_BACKEND=local`     | Directory for images                                      |
+| `DRIVE_ROOT_FOLDER`      | no, default `receipt-tracker`    | Folder name in Drive                                      |
+| `EXTRACTOR`              | yes                              | `azure` or `fake`                                         |
+| `AZURE_DI_ENDPOINT`      | when `EXTRACTOR=azure`           | `https` endpoint of the Document Intelligence resource    |
+| `AZURE_DI_KEY`           | when `EXTRACTOR=azure`           | Its key                                                   |
+| `AZURE_DI_MONTHLY_PAGES` | no, default `500`                | Pages allowed per month                                   |
+| `BACKUP_DESTINATION`     | yes                              | `drive`, `local` or `none`                                |
+| `BACKUP_LOCAL_DIR`       | when `BACKUP_DESTINATION=local`  | Directory for dumps                                       |
+| `BACKUP_SCHEDULE`        | unless `BACKUP_DESTINATION=none` | Daily start time in UTC as `HH:MM`                        |
+| `BACKUP_HEARTBEAT_URL`   | no                               | Pinged after each backup run                              |
+| `DEV_LOGIN_EMAIL`        | no; refused unless `APP_ENV=dev` | Enables the development sign-in for that address          |
+
+The Google client may be left out only when `APP_ENV=dev`, `DEV_LOGIN_EMAIL`
+is set and neither images nor backups use Drive.
+
+For development, copy `.env.example` to `.env` and set at least these values.
+They use no external service and match the database from `task db:up`;
+replace the key with your own `openssl rand -base64 32` output and the
+address with yours.
+
+```
+APP_ENV=dev
+APP_BASE_URL=http://localhost:8080
+DATABASE_URL=postgres://receipt:receipt@localhost:15432/receipt_tracker?sslmode=disable
+APP_ENCRYPTION_KEY=<openssl rand -base64 32>
+ALLOWED_EMAILS=you@example.com
+ADMIN_EMAIL=you@example.com
+STORAGE_BACKEND=local
+STORAGE_LOCAL_DIR=data/images
+EXTRACTOR=fake
+BACKUP_DESTINATION=none
+DEV_LOGIN_EMAIL=you@example.com
+```
+
+`task dev` loads `.env` from the repository root when it exists; the binary
+itself never reads files. A variable that is already set in the shell takes
+precedence over the file. Tests never see `.env`: only the development server
+script loads it. See [the architecture](docs/ARCHITECTURE.md) for the binding
+design.
 
 ## Container
 

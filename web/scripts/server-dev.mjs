@@ -1,5 +1,10 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { run, start } from './subprocess.mjs';
+
+// The server reads environment variables only. For `task dev` they come from
+// the ignored .env file in the repository root; a variable already set in
+// the shell keeps its value.
+if (existsSync('.env')) process.loadEnvFile('.env');
 
 mkdirSync('bin', { recursive: true });
 run('go', ['build', '-o', 'bin/', './cmd/server']);
