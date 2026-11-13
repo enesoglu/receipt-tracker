@@ -7,15 +7,16 @@ licensed.
 
 ## Status
 
-The bootstrap provides the server, embedded placeholder page, design tokens,
-development database, reproducible tooling, containers, and CI. Receipt
-uploading, authentication, extraction, matching, reports, and backups are
-planned in later work packages. No application schema or API contract exists
-yet; `task generate` starts running generators when their sources are added.
+The repository provides the server, embedded placeholder page, design tokens,
+development database, reproducible tooling, containers, and CI, plus the
+complete v1 database schema and validated configuration. Receipt uploading,
+authentication, extraction, matching, reports, and backups are planned in
+later work packages. No API contract exists yet.
 
-`/livez` and `/healthz` currently report process health. Database and Drive
-readiness monitoring arrives with those integrations. The app does not yet
-read or store receipts.
+The server validates its configuration, connects to PostgreSQL and applies
+the embedded migrations before it accepts requests. `/livez` and `/healthz`
+currently report process health. Database and Drive readiness monitoring
+arrives with those integrations. The app does not yet read or store receipts.
 
 ## Prerequisites
 
@@ -69,8 +70,13 @@ The development Compose file binds Postgres to loopback port **15432** and
 creates `receipt_tracker` and `receipt_tracker_test`. Its `receipt` user and
 password are synthetic development values, never production credentials.
 `task test` sets `TEST_DATABASE_URL` to the test database; an environment
-variable with the same name overrides it for CI. Bootstrap tests need no
-application tables. The database volume persists until explicitly removed.
+variable with the same name overrides it for CI. Each database test creates
+its own database on that server, applies the migrations and drops it again
+(`internal/db/dbtest`), so the role must be allowed to create databases. A
+database test fails, and never skips, when the server is missing. The one
+exception is `TEST_SKIP_DATABASE=1`, set only by the Windows CI job, whose
+runner cannot start the Linux database container. The database volume
+persists until explicitly removed.
 
 ## Commands
 
@@ -79,7 +85,7 @@ application tables. The database volume persists until explicitly removed.
 | `task setup`    | Download pinned Go modules, install web packages, and install the verified linter |
 | `task db:up`    | Start Postgres and wait for both development and test databases                   |
 | `task dev`      | Run Go and Vite with reload                                                       |
-| `task generate` | Generate sqlc and API bindings when source configurations exist                   |
+| `task generate` | Regenerate sqlc code from `sqlc.yaml`, and API bindings once the contract exists  |
 | `task lint`     | Check Go formatting/lint, strict TypeScript, ESLint, Prettier, and UI policy      |
 | `task test`     | Build embedded assets, then run Go and web tests                                  |
 | `task build`    | Produce `bin/server.exe` on Windows or `bin/server` on Linux                      |
@@ -87,7 +93,8 @@ application tables. The database volume persists until explicitly removed.
 
 Run `task build`, then `./bin/server.exe` in PowerShell or `./bin/server` in
 bash to serve the built application and health endpoints on port 8080 without
-Vite. The binary embeds all frontend assets and needs no external web files.
+Vite. The binary embeds all frontend assets and migrations; it needs no
+external files, only its configuration and a reachable database.
 
 ## Configuration
 
@@ -149,22 +156,36 @@ precedence over the file. Tests never see `.env`: only the development server
 script loads it. See [the architecture](docs/ARCHITECTURE.md) for the binding
 design.
 
+## Database schema
+
+The schema is a series of goose migrations in `internal/db/migrations`,
+embedded in the binary and applied at startup under a lock. Queries live in
+`internal/db/queries/<domain>.sql`; `task generate` turns them into type-safe
+Go in `internal/db/sqlc`. Generated code is committed, and `task check` fails
+when it differs from its sources.
+
 ## Container
 
 ```bash
 docker build -f deploy/Dockerfile -t receipt-tracker:dev .
-docker run --rm -p 127.0.0.1:8080:8080 receipt-tracker:dev
+docker run --rm -p 127.0.0.1:8080:8080 --env-file .env receipt-tracker:dev
 ```
+
+The image sets `APP_ENV=prod` and `APP_LISTEN_ADDR=:8080`; everything else
+comes from the environment, and `DATABASE_URL` must be reachable from inside
+the container. Without configuration the container exits with the list of
+missing variables.
 
 The image uses Node 24.22.3 and Go 1.26.11 build stages, then Alpine 3.23.4
 with `postgresql18-client`. It runs as the unprivileged `app` user. CI checks
-that the image is below 60 MB and serves the embedded page and both health
-endpoints. Development Postgres is pinned to `postgres:18.4-alpine3.23`.
+that the image is below 60 MB, refuses to start without configuration, and,
+next to a PostgreSQL container, applies the migrations and serves the embedded
+page and both health endpoints. Development Postgres is pinned to `postgres:18.4-alpine3.23`.
 
 ## Checks and contribution workflow
 
 `task check` must pass before pushing. CI runs checks on Ubuntu 24.04 and
-Windows PowerShell, validates the development Compose file, checks PR titles
+Windows PowerShell (tooling only, without the database tests), validates the development Compose file, checks PR titles
 and branch names, and builds/smoke-tests the runtime image. The `commits` job
 checks each PR commit's subject, trailer, linear history, and independent
 `task check` result in an isolated snapshot. Only the two owner-approved
