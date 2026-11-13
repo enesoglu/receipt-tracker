@@ -11,7 +11,8 @@ The repository provides the server, embedded placeholder page, design tokens,
 development database, reproducible tooling, containers, and CI, plus the
 complete v1 database schema and validated configuration. Receipt uploading,
 authentication, extraction, matching, reports, and backups are planned in
-later work packages. No API contract exists yet.
+later work packages. The v1 API is fully specified in `api/openapi.yaml`; its
+operations are not implemented yet.
 
 The server validates its configuration, connects to PostgreSQL and applies
 the embedded migrations before it accepts requests. `/livez` and `/healthz`
@@ -85,7 +86,7 @@ persists until explicitly removed.
 | `task setup`    | Download pinned Go modules, install web packages, and install the verified linter |
 | `task db:up`    | Start Postgres and wait for both development and test databases                   |
 | `task dev`      | Run Go and Vite with reload                                                       |
-| `task generate` | Regenerate sqlc code from `sqlc.yaml`, and API bindings once the contract exists  |
+| `task generate` | Regenerate sqlc code and the Go and TypeScript API bindings from their sources     |
 | `task lint`     | Check Go formatting/lint, strict TypeScript, ESLint, Prettier, and UI policy      |
 | `task test`     | Build embedded assets, then run Go and web tests                                  |
 | `task build`    | Produce `bin/server.exe` on Windows or `bin/server` on Linux                      |
@@ -155,6 +156,17 @@ itself never reads files. A variable that is already set in the shell takes
 precedence over the file. Tests never see `.env`: only the development server
 script loads it. See [the architecture](docs/ARCHITECTURE.md) for the binding
 design.
+
+## API contract
+
+`api/openapi.yaml` is the source of truth for the REST API under `/api/v1`:
+every operation, its schemas, its examples and the shared problem-details
+error. `task generate` writes the Go server interface and types to
+`internal/httpapi/api.gen.go` (oapi-codegen, configured in
+`api/oapi-codegen.yaml`) and the TypeScript types to
+`web/src/api/schema.gen.ts` (openapi-typescript). A Go test validates the
+contract, including every example against its schema. To add or change an
+operation, follow `.agents/skills/add-endpoint/SKILL.md`.
 
 ## Database schema
 

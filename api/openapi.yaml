@@ -1,0 +1,3415 @@
+openapi: 3.0.3
+info:
+  title: receipt-tracker API
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/license/mit
+  description: |
+    The v1 REST API of receipt-tracker. This file is the source of truth: the Go
+    server interface and the TypeScript client are generated from it.
+
+    ## Conventions
+
+    - **Base path.** Every operation lives under `/api/v1`.
+    - **Authentication.** A server-side session identified by a cookie. There is
+      no sign-up and no token for this API. A request without a valid session
+      gets a `401` problem. Sign-in itself is a browser redirect flow, described
+      under the `auth` tag.
+    - **Cross-origin protection.** Requests that change state (`POST`, `PUT`,
+      `DELETE`) must come from the application's own origin; others get a `403`
+      problem.
+    - **Isolation.** Every resource belongs to one user. Asking for a resource
+      of another user is answered exactly like asking for one that does not
+      exist: `404`.
+    - **Errors.** Every error is an RFC 9457 problem document
+      (`application/problem+json`), see `Problem`.
+    - **Ids** are UUIDs. **Timestamps** are RFC 3339 in UTC. **Dates** are
+      `YYYY-MM-DD` and **months** are `YYYY-MM`, both without a time zone.
+    - **Money** is a decimal string with exactly two places (`"84.50"`), never
+      a number. Each amount is in the currency of its receipt; amounts in
+      different currencies are never added together. **Quantities** are decimal
+      strings with up to three places.
+    - **Absent values** are `null`, never an empty string.
+    - **Lists** take `limit` and an opaque `cursor`, and answer with `items`
+      and `nextCursor`, which is `null` on the last page.
+    - **Updates** are `PUT` and replace every editable field. A nullable field
+      that is left out is stored as `null`.
+servers:
+  - url: /api/v1
+security:
+  - sessionCookie: []
+tags:
+  - name: auth
+    description: |
+      The signed-in user and sign-out.
+
+      Sign-in is a browser redirect flow outside this contract:
+
+      - `GET /auth/google/login` redirects to Google (scopes `openid email
+        profile`).
+      - `GET /auth/google/callback` receives Google's answer, admits the user
+        only if the verified email is on the allow-list, starts the session and
+        redirects to the application. An email that is not admitted sees an
+        "access is closed" page; no user and no session are created.
+      - `GET /auth/dev/login` signs in the configured development user. It
+        exists only when the server runs with `APP_ENV=dev` and
+        `DEV_LOGIN_EMAIL`.
+  - name: uploads
+    description: Submitting receipt photos.
+  - name: receipts
+    description: Receipts, their images and their line items.
+  - name: review
+    description: |
+      Review flags: things on a receipt that a person should look at. A
+      receipt is `ready` when it has no open flag.
+  - name: products
+    description: The product catalogue built from line items, and price history.
+  - name: stores
+    description: Stores that receipts come from.
+  - name: categories
+    description: Product categories.
+  - name: reports
+    description: Spending aggregated per month.
+  - name: settings
+    description: Per-user defaults and the extraction allowance.
+  - name: storage
+    description: |
+      The state of image storage and backups, and the Google Drive connection.
+
+      Connecting Google Drive is a browser redirect flow outside this contract,
+      open to the admin only (anyone else gets `404`):
+
+      - `GET /api/v1/storage/drive/connect` redirects to Google's consent page
+        (scope `drive.file`, offline access).
+      - `GET /api/v1/storage/drive/callback` receives Google's answer, stores
+        the encrypted refresh token and redirects to the settings page.
+        Connecting again replaces the stored token.
+paths:
+  /me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get the signed-in user
+      responses:
+        "200":
+          description: The user who owns the session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+              examples:
+                user:
+                  $ref: "#/components/examples/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Sign out
+      description: Destroys the session. The cookie stops working immediately.
+      responses:
+        "204":
+          description: The session is gone.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /receipts:
+    post:
+      operationId: uploadReceipts
+      tags: [uploads]
+      summary: Upload receipt photos
+      description: |
+        Accepts up to 20 files in one request. Each file becomes one receipt in
+        status `queued` and is extracted in the background, oldest first.
+
+        Accepted types are JPEG, PNG and HEIC/HEIF, at most 15 MB each. The type
+        is detected from the file's bytes, not from its name or declared type.
+        A HEIC/HEIF photo is converted to JPEG once; the untouched upload stays
+        available as the image's `original`.
+
+        Files are judged one by one, so the answer is `200` with one result per
+        file, in request order, even when some or all files are refused. A file
+        whose bytes this user uploaded before is reported as `duplicate` with
+        the id of the existing receipt.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadRequest"
+            encoding:
+              files:
+                contentType: image/jpeg, image/png, image/heic, image/heif
+      responses:
+        "200":
+          description: One result per uploaded file, in request order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+              examples:
+                mixed:
+                  $ref: "#/components/examples/UploadResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      operationId: listReceipts
+      tags: [receipts]
+      summary: List receipts
+      description: |
+        Receipts ordered by purchase date, newest first. Receipts that have no
+        date yet (still queued or processing) come first, and receipts of the
+        same day are ordered by upload time, newest first. All filters combine
+        with AND.
+
+        The upload screen polls this operation with `ids` every 2 seconds while
+        any of its receipts is `queued` or `processing`.
+      parameters:
+        - name: ids
+          in: query
+          description: Only these receipts, comma-separated. Unknown ids are ignored.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 100
+            items:
+              type: string
+              format: uuid
+          example: ["0193a1b2-0000-7000-8000-000000000100"]
+        - name: status
+          in: query
+          description: Only receipts in this status.
+          schema:
+            $ref: "#/components/schemas/ReceiptStatus"
+          example: needs_review
+        - name: month
+          in: query
+          description: Only receipts purchased in this calendar month.
+          schema:
+            $ref: "#/components/schemas/Month"
+          example: "2026-11"
+        - name: storeId
+          in: query
+          description: Only receipts from this store.
+          schema:
+            type: string
+            format: uuid
+          example: 0193a1b2-0000-7000-8000-000000000010
+        - name: q
+          in: query
+          description: |
+            Case-insensitive text search over the receipt title, the store name
+            and the names of line items.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          example: ayran
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of receipts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/ReceiptPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /receipts/{receiptId}:
+    parameters:
+      - $ref: "#/components/parameters/ReceiptId"
+    get:
+      operationId: getReceipt
+      tags: [receipts]
+      summary: Get a receipt
+      description: The receipt with its line items, its open review flags and its images.
+      responses:
+        "200":
+          description: The receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+              examples:
+                receipt:
+                  $ref: "#/components/examples/Receipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: updateReceipt
+      tags: [receipts]
+      summary: Update a receipt
+      description: |
+        Replaces the editable fields of the receipt. The review rules run again
+        afterwards, so flags may open or close and the status may change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptUpdate"
+            examples:
+              update:
+                $ref: "#/components/examples/ReceiptUpdate"
+      responses:
+        "200":
+          description: The receipt after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+              examples:
+                receipt:
+                  $ref: "#/components/examples/Receipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteReceipt
+      tags: [receipts]
+      summary: Delete a receipt
+      description: |
+        Deletes the receipt with its line items, flags, extraction results,
+        pending job and stored images, including the untouched original of a
+        converted upload. Products learned from it stay.
+      responses:
+        "204":
+          description: The receipt is gone.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        default:
+          $ref: "#/components/responses/Error"
+  /receipts/{receiptId}/reprocess:
+    parameters:
+      - $ref: "#/components/parameters/ReceiptId"
+    post:
+      operationId: reprocessReceipt
+      tags: [receipts]
+      summary: Reprocess a receipt
+      description: |
+        Builds the receipt fields and line items again from the stored
+        extraction result and runs product matching and the review rules again.
+        The extraction provider is not called, so this costs no allowance.
+        Earlier edits to the receipt are replaced. Answers `409` when no
+        extraction result is stored yet.
+      responses:
+        "200":
+          description: The receipt after reprocessing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+              examples:
+                receipt:
+                  $ref: "#/components/examples/Receipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+  /receipts/{receiptId}/images/{imageId}:
+    parameters:
+      - $ref: "#/components/parameters/ReceiptId"
+      - $ref: "#/components/parameters/ImageId"
+    get:
+      operationId: getReceiptImage
+      tags: [receipts]
+      summary: Get a receipt image
+      description: |
+        Streams the image bytes after an ownership check. Storage locations are
+        never exposed. By default this is the JPEG or PNG that extraction and
+        the UI use. With `variant=original` it is the untouched upload of a
+        converted photo (HEIC/HEIF), or `404` when the upload was not converted.
+      parameters:
+        - name: variant
+          in: query
+          description: Ask for the untouched upload instead of the displayable image.
+          schema:
+            type: string
+            enum: [original]
+          example: original
+      responses:
+        "200":
+          description: The image bytes.
+          headers:
+            Cache-Control:
+              description: Always `private`, so shared caches never store a receipt.
+              required: true
+              schema:
+                type: string
+              example: private, max-age=3600
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+        default:
+          $ref: "#/components/responses/Error"
+  /receipts/{receiptId}/line-items:
+    parameters:
+      - $ref: "#/components/parameters/ReceiptId"
+    post:
+      operationId: createLineItem
+      tags: [receipts]
+      summary: Add a line item
+      description: |
+        Appends a line to the receipt, runs product matching for it and runs the
+        review rules for the receipt again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LineItemInput"
+            examples:
+              line:
+                $ref: "#/components/examples/LineItemInput"
+      responses:
+        "201":
+          description: The receipt after the change, including the new line.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+              examples:
+                receipt:
+                  $ref: "#/components/examples/Receipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /receipts/{receiptId}/line-items/{lineItemId}:
+    parameters:
+      - $ref: "#/components/parameters/ReceiptId"
+      - $ref: "#/components/parameters/LineItemId"
+    put:
+      operationId: updateLineItem
+      tags: [receipts]
+      summary: Update a line item
+      description: |
+        Replaces the editable fields of the line and runs the review rules for
+        the receipt again. Changing the name runs product matching for the line
+        again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LineItemInput"
+            examples:
+              line:
+                $ref: "#/components/examples/LineItemInput"
+      responses:
+        "200":
+          description: The receipt after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+              examples:
+                receipt:
+                  $ref: "#/components/examples/Receipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteLineItem
+      tags: [receipts]
+      summary: Delete a line item
+      description: Removes the line and runs the review rules for the receipt again.
+      responses:
+        "200":
+          description: The receipt after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+              examples:
+                receipt:
+                  $ref: "#/components/examples/Receipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /review-flags:
+    get:
+      operationId: listReviewFlags
+      tags: [review]
+      summary: List open review flags
+      description: |
+        Open flags with the receipt and line they belong to, oldest receipt
+        first. `totalOpen` counts every open flag of the user, whatever the
+        page, for the counter in the navigation.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of open flags.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewFlagPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/ReviewFlagPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /review-flags/{flagId}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/FlagId"
+    post:
+      operationId: resolveReviewFlag
+      tags: [review]
+      summary: Resolve a review flag
+      description: |
+        Closes the flag with one of the resolutions its kind allows. When the
+        last open flag of a receipt closes, the receipt becomes `ready`.
+
+        | Flag kind | Allowed `action` |
+        | --- | --- |
+        | `low_confidence` | `confirm`, `correct` |
+        | `missing_field` | `correct`, `accept` |
+        | `line_math` | `correct`, `accept` |
+        | `sum_mismatch` | `accept` |
+        | `uncertain_match` | `same_product`, `different_product` |
+        | `code_conflict` | `same_product`, `different_product` |
+        | `possible_duplicate` | `accept` |
+
+        An action the kind does not allow is a `400`. A flag that is already
+        resolved is a `409`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewResolution"
+            examples:
+              confirm:
+                $ref: "#/components/examples/ResolutionConfirm"
+              correctTotal:
+                $ref: "#/components/examples/ResolutionCorrectTotal"
+              correctLine:
+                $ref: "#/components/examples/ResolutionCorrectLine"
+              sameProduct:
+                $ref: "#/components/examples/ResolutionSameProduct"
+              differentProduct:
+                $ref: "#/components/examples/ResolutionDifferentProduct"
+              accept:
+                $ref: "#/components/examples/ResolutionAccept"
+      responses:
+        "200":
+          description: The receipt after the resolution.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+              examples:
+                receipt:
+                  $ref: "#/components/examples/Receipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+  /products:
+    get:
+      operationId: listProducts
+      tags: [products]
+      summary: List products
+      description: Products ordered by name, with how often and at what price they were last bought.
+      parameters:
+        - name: q
+          in: query
+          description: |
+            Text search over product names and the names they were seen under.
+            The text is normalised like receipt lines, so `sut` finds `Süt`.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          example: ayran
+        - name: categoryId
+          in: query
+          description: Only products in this category.
+          schema:
+            type: string
+            format: uuid
+          example: 0193a1b2-0000-7000-8000-000000000020
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of products.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/ProductPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /products/{productId}:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+    get:
+      operationId: getProduct
+      tags: [products]
+      summary: Get a product
+      description: The product with the names and codes it is known by.
+      responses:
+        "200":
+          description: The product.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+              examples:
+                product:
+                  $ref: "#/components/examples/Product"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: updateProduct
+      tags: [products]
+      summary: Update a product
+      description: Replaces the name, category and size of the product.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductUpdate"
+            examples:
+              update:
+                $ref: "#/components/examples/ProductUpdate"
+      responses:
+        "200":
+          description: The product after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+              examples:
+                product:
+                  $ref: "#/components/examples/Product"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /products/{productId}/merge:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+    post:
+      operationId: mergeProducts
+      tags: [products]
+      summary: Merge another product into this one
+      description: |
+        Moves the names, codes and purchases of the source product to the
+        product in the path and deletes the source. Names both products share
+        are combined. A merge cannot be undone; it is recorded in the audit
+        log. Merging a product into itself is a `400`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergeProductsRequest"
+            examples:
+              merge:
+                $ref: "#/components/examples/MergeProductsRequest"
+      responses:
+        "200":
+          description: The product in the path after the merge.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+              examples:
+                product:
+                  $ref: "#/components/examples/Product"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /products/{productId}/split:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+    post:
+      operationId: splitProduct
+      tags: [products]
+      summary: Split names off into a new product
+      description: |
+        Creates a new product and moves the chosen names to it, together with
+        the purchases made under those names and the codes seen only with
+        them. Matching will not join the two products again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SplitProductRequest"
+            examples:
+              split:
+                $ref: "#/components/examples/SplitProductRequest"
+      responses:
+        "201":
+          description: The new product.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+              examples:
+                product:
+                  $ref: "#/components/examples/Product"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /products/{productId}/price-history:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+    get:
+      operationId: getProductPriceHistory
+      tags: [products]
+      summary: Get the price history of a product
+      description: |
+        One point per purchase, oldest first, and a summary per store and
+        currency. Only purchases on receipts that are `ready` or `needs_review`
+        count; discount lines do not.
+      parameters:
+        - name: from
+          in: query
+          description: Only purchases on or after this date.
+          schema:
+            type: string
+            format: date
+          example: "2026-01-01"
+        - name: to
+          in: query
+          description: Only purchases on or before this date.
+          schema:
+            type: string
+            format: date
+          example: "2026-12-31"
+        - name: storeId
+          in: query
+          description: Only purchases at this store.
+          schema:
+            type: string
+            format: uuid
+          example: 0193a1b2-0000-7000-8000-000000000010
+      responses:
+        "200":
+          description: The price history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceHistory"
+              examples:
+                history:
+                  $ref: "#/components/examples/PriceHistory"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /stores:
+    get:
+      operationId: listStores
+      tags: [stores]
+      summary: List stores
+      description: Stores ordered by name. Stores are created when a receipt names them.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of stores.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorePage"
+              examples:
+                page:
+                  $ref: "#/components/examples/StorePage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /stores/{storeId}:
+    parameters:
+      - $ref: "#/components/parameters/StoreId"
+    put:
+      operationId: updateStore
+      tags: [stores]
+      summary: Rename a store
+      description: Answers `409` when the user already has a store with that name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreUpdate"
+            examples:
+              rename:
+                $ref: "#/components/examples/StoreUpdate"
+      responses:
+        "200":
+          description: The store after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Store"
+              examples:
+                store:
+                  $ref: "#/components/examples/Store"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [categories]
+      summary: List categories
+      description: Categories ordered by name.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: One page of categories.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryPage"
+              examples:
+                page:
+                  $ref: "#/components/examples/CategoryPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createCategory
+      tags: [categories]
+      summary: Create a category
+      description: |
+        Answers `409` when the user already has a category with that name;
+        names differing only in case are the same.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+            examples:
+              category:
+                $ref: "#/components/examples/CategoryInput"
+      responses:
+        "201":
+          description: The new category.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+              examples:
+                category:
+                  $ref: "#/components/examples/Category"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+  /categories/{categoryId}:
+    parameters:
+      - $ref: "#/components/parameters/CategoryId"
+    put:
+      operationId: updateCategory
+      tags: [categories]
+      summary: Rename a category
+      description: Answers `409` when the user already has a category with that name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+            examples:
+              category:
+                $ref: "#/components/examples/CategoryInput"
+      responses:
+        "200":
+          description: The category after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+              examples:
+                category:
+                  $ref: "#/components/examples/Category"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteCategory
+      tags: [categories]
+      summary: Delete a category
+      description: Products in the category stay and become uncategorised.
+      responses:
+        "204":
+          description: The category is gone.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /reports/monthly-spending:
+    get:
+      operationId: getMonthlySpending
+      tags: [reports]
+      summary: Get spending per month
+      description: |
+        For every calendar month from `from` to `to`, both included, the number
+        of receipts and the sum of their totals per currency. A month without
+        receipts is present with an empty `totals` list.
+
+        A receipt counts in the month of its purchase date. Receipts without a
+        date or without a total, and receipts that are `queued`, `processing`,
+        `waiting_quota` or `failed`, are left out. `excludedReceipts` counts
+        the receipts left out because the date or the total is missing. A
+        range of more than 60 months, or one that ends before it starts, is a
+        `400`.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: First month of the range.
+          schema:
+            $ref: "#/components/schemas/Month"
+          example: "2026-10"
+        - name: to
+          in: query
+          required: true
+          description: Last month of the range.
+          schema:
+            $ref: "#/components/schemas/Month"
+          example: "2026-11"
+      responses:
+        "200":
+          description: Spending per month.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlySpending"
+              examples:
+                twoMonths:
+                  $ref: "#/components/examples/MonthlySpending"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /reports/month-breakdown:
+    get:
+      operationId: getMonthBreakdown
+      tags: [reports]
+      summary: Get the breakdown of one month
+      description: |
+        The spending of one month split into groups, per currency, largest
+        group first. The same receipts count as in `getMonthlySpending`.
+
+        With `groupBy=category`, line totals are summed by the category of the
+        line's product. Lines without a product, and products without a
+        category, form the `uncategorised` group. When the lines of a receipt
+        do not add up to its total, the difference goes to the `unallocated`
+        group, so the groups always add up to the month's total.
+
+        With `groupBy=store`, receipt totals are summed by store. Receipts
+        without a store form the `uncategorised` group.
+      parameters:
+        - name: month
+          in: query
+          required: true
+          description: The month to break down.
+          schema:
+            $ref: "#/components/schemas/Month"
+          example: "2026-11"
+        - name: groupBy
+          in: query
+          required: true
+          description: What to group the spending by.
+          schema:
+            $ref: "#/components/schemas/BreakdownGrouping"
+          example: category
+      responses:
+        "200":
+          description: The breakdown of the month.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthBreakdown"
+              examples:
+                byCategory:
+                  $ref: "#/components/examples/MonthBreakdown"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get the user's settings
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+              examples:
+                settings:
+                  $ref: "#/components/examples/Settings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update the user's settings
+      description: The defaults apply to receipts uploaded afterwards.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Settings"
+            examples:
+              settings:
+                $ref: "#/components/examples/Settings"
+      responses:
+        "200":
+          description: The settings after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+              examples:
+                settings:
+                  $ref: "#/components/examples/Settings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /usage:
+    get:
+      operationId: getUsage
+      tags: [settings]
+      summary: Get the extraction allowance
+      description: |
+        Pages sent to the extraction provider in the current calendar month
+        (UTC) and the monthly limit. The allowance belongs to the whole
+        instance, not to one user. When it is used up, new receipts wait in
+        status `waiting_quota` until the next month.
+      responses:
+        "200":
+          description: The usage of the current month.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Usage"
+              examples:
+                usage:
+                  $ref: "#/components/examples/Usage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /storage:
+    get:
+      operationId: getStorageStatus
+      tags: [storage]
+      summary: Get the state of image storage and backups
+      description: |
+        Every signed-in user may read the state. `canManage` tells whether this
+        user may connect or disconnect Google Drive.
+      responses:
+        "200":
+          description: The storage state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageStatus"
+              examples:
+                connected:
+                  $ref: "#/components/examples/StorageStatusConnected"
+                reconnectNeeded:
+                  $ref: "#/components/examples/StorageStatusReconnectNeeded"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /storage/connection:
+    delete:
+      operationId: disconnectStorage
+      tags: [storage]
+      summary: Disconnect Google Drive
+      description: |
+        Deletes the stored refresh token and the connection, and nothing else.
+        Files in Drive stay where they are.
+
+        The application never revokes its access at Google, because revoking
+        may hide the files it created earlier, even after connecting again.
+        Removing the access is a manual step in the owner's Google account
+        settings and should only be taken with that risk in mind.
+
+        Admin only: any other user gets `404`.
+      responses:
+        "204":
+          description: The connection is gone. Also returned when there was none.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+      description: |
+        The session cookie set by the sign-in flow. It is `HttpOnly` and
+        `SameSite=Lax`, and `Secure` in production.
+  parameters:
+    ReceiptId:
+      name: receiptId
+      in: path
+      required: true
+      description: Id of a receipt.
+      schema:
+        type: string
+        format: uuid
+      example: 0193a1b2-0000-7000-8000-000000000100
+    ImageId:
+      name: imageId
+      in: path
+      required: true
+      description: Id of an image of the receipt.
+      schema:
+        type: string
+        format: uuid
+      example: 0193a1b2-0000-7000-8000-000000000110
+    LineItemId:
+      name: lineItemId
+      in: path
+      required: true
+      description: Id of a line item of the receipt.
+      schema:
+        type: string
+        format: uuid
+      example: 0193a1b2-0000-7000-8000-000000000201
+    FlagId:
+      name: flagId
+      in: path
+      required: true
+      description: Id of a review flag.
+      schema:
+        type: string
+        format: uuid
+      example: 0193a1b2-0000-7000-8000-000000000301
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      description: Id of a product.
+      schema:
+        type: string
+        format: uuid
+      example: 0193a1b2-0000-7000-8000-000000000401
+    StoreId:
+      name: storeId
+      in: path
+      required: true
+      description: Id of a store.
+      schema:
+        type: string
+        format: uuid
+      example: 0193a1b2-0000-7000-8000-000000000010
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      description: Id of a category.
+      schema:
+        type: string
+        format: uuid
+      example: 0193a1b2-0000-7000-8000-000000000020
+    Limit:
+      name: limit
+      in: query
+      description: Largest number of items to return.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+      example: 50
+    Cursor:
+      name: cursor
+      in: query
+      description: |
+        The `nextCursor` of the previous page. Opaque: do not build or change
+        it. Leave it out for the first page. A cursor is only valid with the
+        filters it was issued for.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+      example: eyJ2IjoxfQ
+  responses:
+    BadRequest:
+      description: |
+        The request cannot be accepted as it is: a malformed parameter or
+        body, or a value that breaks a rule. `errors` names the fields when the
+        problem is tied to them.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            invalid:
+              $ref: "#/components/examples/ProblemInvalid"
+    Unauthorized:
+      description: There is no valid session. Sign in again.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            unauthorized:
+              $ref: "#/components/examples/ProblemUnauthorized"
+    NotFound:
+      description: |
+        The resource does not exist for this user. A resource of another user
+        is reported the same way.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            notFound:
+              $ref: "#/components/examples/ProblemNotFound"
+    Conflict:
+      description: The request is valid but the current state does not allow it.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            conflict:
+              $ref: "#/components/examples/ProblemConflict"
+    PayloadTooLarge:
+      description: The request body is larger than the server accepts.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            tooLarge:
+              $ref: "#/components/examples/ProblemPayloadTooLarge"
+    Unavailable:
+      description: |
+        A dependency, such as image storage, cannot serve the request right
+        now. `code` says which and why; trying again later may work.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            storage:
+              $ref: "#/components/examples/ProblemUnavailable"
+    Error:
+      description: |
+        Any other failure, as a problem document: `403` for a cross-origin
+        request, `500` for an unexpected error, `501` for an operation that is
+        not implemented yet.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            notImplemented:
+              $ref: "#/components/examples/ProblemNotImplemented"
+            internal:
+              $ref: "#/components/examples/ProblemInternal"
+  schemas:
+    Problem:
+      type: object
+      description: |
+        An RFC 9457 problem document. `title` and `detail` are written for the
+        person using the application. Clients branch on `status` and, where
+        present, on `code`; never on the wording.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          description: Always `about:blank`; the status code carries the meaning.
+          example: about:blank
+        title:
+          type: string
+          description: Short name of the problem, the same for every occurrence.
+          example: Not Found
+        status:
+          type: integer
+          description: The HTTP status code of this response.
+          minimum: 400
+          maximum: 599
+          example: 404
+        detail:
+          type: string
+          description: What went wrong this time, in words the user can act on.
+          example: receipt not found
+        code:
+          type: string
+          description: Stable machine-readable reason, in lower-case snake_case.
+          pattern: '^[a-z][a-z0-9_]*$'
+          example: storage_reconnect_needed
+        requestId:
+          type: string
+          description: Id of the request, also in the `X-Request-Id` response header and in the server log.
+          example: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
+        errors:
+          type: array
+          description: Problems with single input fields.
+          items:
+            $ref: "#/components/schemas/FieldProblem"
+    FieldProblem:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          description: Name of the input as the client sent it.
+          example: lineTotal
+        message:
+          type: string
+          description: What is wrong with it.
+          example: must be a decimal amount with two places
+    Money:
+      type: string
+      description: |
+        An amount of money as a decimal string with exactly two places, in the
+        currency of its receipt. Negative amounts are discounts or refunds.
+      pattern: '^-?\d{1,10}\.\d{2}$'
+      example: "84.50"
+    Quantity:
+      type: string
+      description: A quantity or size as a decimal string with up to three places.
+      pattern: '^-?\d{1,9}(\.\d{1,3})?$'
+      example: "1.250"
+    Ratio:
+      type: string
+      description: A share between 0 and 1 as a decimal string with four places.
+      pattern: '^(0\.\d{4}|1\.0000)$'
+      example: "0.6530"
+    Currency:
+      type: string
+      description: ISO 4217 currency code.
+      pattern: '^[A-Z]{3}$'
+      example: TRY
+    Month:
+      type: string
+      description: A calendar month as `YYYY-MM`.
+      pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+      example: "2026-11"
+    TimeOfDay:
+      type: string
+      description: A time of day as printed on the receipt, `HH:MM`, without a time zone.
+      pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+      example: "18:42"
+    User:
+      type: object
+      required: [id, email, name, isAdmin]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          description: Display name from the Google account; may be empty.
+        isAdmin:
+          type: boolean
+          description: Whether the user may manage the instance, such as the Drive connection.
+    UploadRequest:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          description: The photos, one receipt each. Repeat the `files` part for each file.
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            format: binary
+    UploadResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/UploadResult"
+    UploadResult:
+      type: object
+      description: What happened to one uploaded file.
+      required: [index, fileName, outcome, receiptId, error]
+      properties:
+        index:
+          type: integer
+          description: Position of the file in the request, starting at 0.
+          minimum: 0
+        fileName:
+          type: string
+          description: The file name as the client sent it, for display only.
+        outcome:
+          $ref: "#/components/schemas/UploadOutcome"
+        receiptId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The new receipt for `created`, the existing one for `duplicate`, otherwise `null`.
+        error:
+          nullable: true
+          description: Why the file was refused; `null` unless the outcome is `rejected`.
+          allOf:
+            - $ref: "#/components/schemas/UploadError"
+    UploadOutcome:
+      type: string
+      description: |
+        - `created`: a receipt was created and queued for extraction.
+        - `duplicate`: this user uploaded the same bytes before; nothing was created.
+        - `rejected`: the file was refused, see `error`.
+      enum: [created, duplicate, rejected]
+    UploadError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: "#/components/schemas/UploadErrorCode"
+        message:
+          type: string
+          description: The reason in words for the user.
+    UploadErrorCode:
+      type: string
+      description: |
+        - `unsupported_type`: not a JPEG, PNG or HEIC/HEIF image.
+        - `too_large`: larger than 15 MB.
+        - `unreadable`: empty, truncated or impossible to decode.
+        - `storage_unavailable`: image storage could not take the file; try again later.
+      enum: [unsupported_type, too_large, unreadable, storage_unavailable]
+    ReceiptStatus:
+      type: string
+      description: |
+        - `queued`: uploaded, waiting for extraction.
+        - `processing`: being extracted.
+        - `waiting_quota`: the monthly extraction allowance is used up; continues next month.
+        - `needs_review`: extracted, with at least one open review flag.
+        - `ready`: extracted, with no open review flag.
+        - `failed`: extraction failed for good, see `failureReason`.
+      enum: [queued, processing, waiting_quota, needs_review, ready, failed]
+    ReceiptSource:
+      type: string
+      description: The channel the receipt came in through.
+      enum: [web]
+    StoreRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    CategoryRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    ProductRef:
+      type: object
+      required: [id, canonicalName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        canonicalName:
+          type: string
+    ReceiptSummary:
+      type: object
+      description: A receipt as shown in lists.
+      required:
+        - id
+        - title
+        - store
+        - purchasedOn
+        - currency
+        - total
+        - status
+        - failureReason
+        - source
+        - openFlagCount
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        store:
+          nullable: true
+          description: The store, or `null` when it is not known.
+          allOf:
+            - $ref: "#/components/schemas/StoreRef"
+        purchasedOn:
+          type: string
+          format: date
+          nullable: true
+          description: The purchase date, or `null` when it is not known.
+        currency:
+          $ref: "#/components/schemas/Currency"
+        total:
+          nullable: true
+          description: The amount paid, or `null` when it is not known.
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        status:
+          $ref: "#/components/schemas/ReceiptStatus"
+        failureReason:
+          type: string
+          nullable: true
+          description: Why extraction failed, in words for the user; `null` unless the status is `failed`.
+        source:
+          $ref: "#/components/schemas/ReceiptSource"
+        openFlagCount:
+          type: integer
+          description: Number of open review flags.
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+          description: When the receipt was uploaded.
+    Receipt:
+      description: A receipt with everything on it.
+      allOf:
+        - $ref: "#/components/schemas/ReceiptSummary"
+        - type: object
+          required:
+            - purchasedTime
+            - subtotal
+            - taxTotal
+            - updatedAt
+            - lineItems
+            - flags
+            - images
+          properties:
+            purchasedTime:
+              nullable: true
+              description: The time printed on the receipt, or `null`.
+              allOf:
+                - $ref: "#/components/schemas/TimeOfDay"
+            subtotal:
+              nullable: true
+              description: The amount before tax, or `null` when the receipt does not print it.
+              allOf:
+                - $ref: "#/components/schemas/Money"
+            taxTotal:
+              nullable: true
+              description: The tax, or `null` when the receipt does not print it.
+              allOf:
+                - $ref: "#/components/schemas/Money"
+            updatedAt:
+              type: string
+              format: date-time
+            lineItems:
+              type: array
+              description: The lines, in the order printed.
+              items:
+                $ref: "#/components/schemas/LineItem"
+            flags:
+              type: array
+              description: The open review flags of the receipt and its lines.
+              items:
+                $ref: "#/components/schemas/ReviewFlag"
+            images:
+              type: array
+              description: The images, in order. One per receipt in v1.
+              items:
+                $ref: "#/components/schemas/ReceiptImage"
+    ReceiptImage:
+      type: object
+      required: [id, position, contentType, sizeBytes, original]
+      properties:
+        id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          minimum: 0
+        contentType:
+          type: string
+          description: Type of the displayable image served by `getReceiptImage`.
+          enum: [image/jpeg, image/png]
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+        original:
+          nullable: true
+          description: |
+            The untouched upload, served with `variant=original`. `null` when
+            the upload was stored as it came (JPEG or PNG).
+          allOf:
+            - $ref: "#/components/schemas/OriginalImage"
+    OriginalImage:
+      type: object
+      required: [contentType, sizeBytes]
+      properties:
+        contentType:
+          type: string
+          enum: [image/heic, image/heif]
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+    ReceiptUpdate:
+      type: object
+      description: The editable fields of a receipt. Every field is replaced.
+      required: [title, currency]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        storeName:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 200
+          description: |
+            Name of the store. The store with that name is used, compared
+            without case, accents or punctuation; one is created when the user
+            has none. `null` removes the store from the receipt.
+        purchasedOn:
+          type: string
+          format: date
+          nullable: true
+        purchasedTime:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/TimeOfDay"
+        currency:
+          $ref: "#/components/schemas/Currency"
+        subtotal:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        taxTotal:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        total:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Money"
+    ReceiptPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReceiptSummary"
+        nextCursor:
+          type: string
+          nullable: true
+          description: Cursor of the next page, or `null` on the last page.
+    MatchStatus:
+      type: string
+      description: |
+        How the line relates to a product.
+        - `unmatched`: no product; matching has not run or the line is not a product (a discount).
+        - `needs_review`: matching was not sure and asks the user; no product yet.
+        - `auto_linked`: linked to an existing product by matching.
+        - `new_product`: matching found nothing similar and created a product.
+        - `confirmed`: the user chose or confirmed the product.
+      enum: [unmatched, needs_review, auto_linked, new_product, confirmed]
+    MatchMethod:
+      type: string
+      description: |
+        What linked the line to its product.
+        - `alias`: a name this product was seen under before, at the same store.
+        - `code`: a product code.
+        - `similarity`: a clearly best similar name.
+        - `user`: a decision of the user.
+      enum: [alias, code, similarity, user]
+    LineItem:
+      type: object
+      required:
+        - id
+        - position
+        - rawName
+        - name
+        - quantity
+        - quantityUnit
+        - unitPrice
+        - lineTotal
+        - productCode
+        - confidence
+        - product
+        - matchStatus
+        - matchScore
+        - matchMethod
+      properties:
+        id:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          description: Position on the receipt, starting at 0.
+          minimum: 0
+        rawName:
+          type: string
+          description: The text as extracted. Equal to `name` for a line the user added.
+        name:
+          type: string
+          description: The cleaned, editable name.
+        quantity:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Quantity"
+        quantityUnit:
+          type: string
+          nullable: true
+          description: Unit of the quantity, such as `kg` or `ad`.
+        unitPrice:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        lineTotal:
+          nullable: true
+          description: The amount of the line. Negative for a discount.
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        productCode:
+          type: string
+          nullable: true
+          description: The code printed next to the line, if any.
+        confidence:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: The extractor's confidence in the line; `null` for a line the user added.
+        product:
+          nullable: true
+          description: The product the line is linked to, or `null`.
+          allOf:
+            - $ref: "#/components/schemas/ProductRef"
+        matchStatus:
+          $ref: "#/components/schemas/MatchStatus"
+        matchScore:
+          type: number
+          format: double
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: Similarity of the line's name to its product at the time of matching.
+        matchMethod:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MatchMethod"
+    LineItemInput:
+      type: object
+      description: The editable fields of a line item. Every field is replaced.
+      required: [name, lineTotal]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        quantity:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Quantity"
+        quantityUnit:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 20
+        unitPrice:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        lineTotal:
+          $ref: "#/components/schemas/Money"
+        productCode:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 64
+    ReviewFlagKind:
+      type: string
+      description: |
+        - `low_confidence`: the extractor was unsure about the store, the date, the total or a line.
+        - `missing_field`: the receipt has no date or no total.
+        - `line_math`: quantity times unit price differs from the line total by more than 0.01.
+        - `sum_mismatch`: the line totals differ from the receipt total by more than 0.02.
+        - `uncertain_match`: matching is not sure which product a line is.
+        - `code_conflict`: the line's code points to one product and its name to another.
+        - `possible_duplicate`: another receipt has the same store, date and total.
+      enum:
+        - low_confidence
+        - missing_field
+        - line_math
+        - sum_mismatch
+        - uncertain_match
+        - code_conflict
+        - possible_duplicate
+    ReviewResolutionKind:
+      type: string
+      description: |
+        How a flag was closed.
+        - `confirmed`, `corrected`, `same_product`, `different_product`, `accepted`: by the matching `action` of the user.
+        - `superseded`: by the server, because an edit removed the cause of the flag.
+      enum: [confirmed, corrected, same_product, different_product, accepted, superseded]
+    FlaggedField:
+      type: string
+      description: The part of the receipt a flag is about.
+      enum: [store, purchased_on, total, line_item]
+    ReviewFlagBase:
+      type: object
+      description: What every review flag has, whatever its kind.
+      required: [id, receiptId, lineItemId, createdAt, resolvedAt, resolution]
+      properties:
+        id:
+          type: string
+          format: uuid
+        receiptId:
+          type: string
+          format: uuid
+        lineItemId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The line the flag is about, or `null` for a flag about the receipt itself.
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the flag was closed; `null` while it is open.
+        resolution:
+          nullable: true
+          description: How the flag was closed; `null` while it is open.
+          allOf:
+            - $ref: "#/components/schemas/ReviewResolutionKind"
+    ReviewFlag:
+      description: A review flag. `kind` decides the shape of `detail`.
+      oneOf:
+        - $ref: "#/components/schemas/LowConfidenceFlag"
+        - $ref: "#/components/schemas/MissingFieldFlag"
+        - $ref: "#/components/schemas/LineMathFlag"
+        - $ref: "#/components/schemas/SumMismatchFlag"
+        - $ref: "#/components/schemas/UncertainMatchFlag"
+        - $ref: "#/components/schemas/CodeConflictFlag"
+        - $ref: "#/components/schemas/PossibleDuplicateFlag"
+      discriminator:
+        propertyName: kind
+        mapping:
+          low_confidence: "#/components/schemas/LowConfidenceFlag"
+          missing_field: "#/components/schemas/MissingFieldFlag"
+          line_math: "#/components/schemas/LineMathFlag"
+          sum_mismatch: "#/components/schemas/SumMismatchFlag"
+          uncertain_match: "#/components/schemas/UncertainMatchFlag"
+          code_conflict: "#/components/schemas/CodeConflictFlag"
+          possible_duplicate: "#/components/schemas/PossibleDuplicateFlag"
+    LowConfidenceFlag:
+      allOf:
+        - $ref: "#/components/schemas/ReviewFlagBase"
+        - type: object
+          required: [kind, detail]
+          properties:
+            kind:
+              type: string
+              enum: [low_confidence]
+            detail:
+              $ref: "#/components/schemas/LowConfidenceDetail"
+    LowConfidenceDetail:
+      type: object
+      required: [field, confidence]
+      properties:
+        field:
+          $ref: "#/components/schemas/FlaggedField"
+        confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: The extractor's confidence, below the 0.80 threshold.
+    MissingFieldFlag:
+      allOf:
+        - $ref: "#/components/schemas/ReviewFlagBase"
+        - type: object
+          required: [kind, detail]
+          properties:
+            kind:
+              type: string
+              enum: [missing_field]
+            detail:
+              $ref: "#/components/schemas/MissingFieldDetail"
+    MissingFieldDetail:
+      type: object
+      required: [field]
+      properties:
+        field:
+          type: string
+          description: The missing field.
+          enum: [purchased_on, total]
+    LineMathFlag:
+      allOf:
+        - $ref: "#/components/schemas/ReviewFlagBase"
+        - type: object
+          required: [kind, detail]
+          properties:
+            kind:
+              type: string
+              enum: [line_math]
+            detail:
+              $ref: "#/components/schemas/LineMathDetail"
+    LineMathDetail:
+      type: object
+      required: [quantity, unitPrice, lineTotal, expectedTotal]
+      properties:
+        quantity:
+          $ref: "#/components/schemas/Quantity"
+        unitPrice:
+          $ref: "#/components/schemas/Money"
+        lineTotal:
+          $ref: "#/components/schemas/Money"
+        expectedTotal:
+          description: Quantity times unit price.
+          allOf:
+            - $ref: "#/components/schemas/Money"
+    SumMismatchFlag:
+      allOf:
+        - $ref: "#/components/schemas/ReviewFlagBase"
+        - type: object
+          required: [kind, detail]
+          properties:
+            kind:
+              type: string
+              enum: [sum_mismatch]
+            detail:
+              $ref: "#/components/schemas/SumMismatchDetail"
+    SumMismatchDetail:
+      type: object
+      required: [lineSum, total, difference]
+      properties:
+        lineSum:
+          description: Sum of the line totals, discounts included.
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        total:
+          $ref: "#/components/schemas/Money"
+        difference:
+          description: Receipt total minus the sum of the lines.
+          allOf:
+            - $ref: "#/components/schemas/Money"
+    UncertainMatchFlag:
+      allOf:
+        - $ref: "#/components/schemas/ReviewFlagBase"
+        - type: object
+          required: [kind, detail]
+          properties:
+            kind:
+              type: string
+              enum: [uncertain_match]
+            detail:
+              $ref: "#/components/schemas/UncertainMatchDetail"
+    UncertainMatchDetail:
+      type: object
+      required: [reason, candidates]
+      properties:
+        reason:
+          $ref: "#/components/schemas/UncertainMatchReason"
+        candidates:
+          type: array
+          description: The most similar products, best first.
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/MatchCandidate"
+    UncertainMatchReason:
+      type: string
+      description: |
+        - `size_conflict`: the name fits, but the size on the line differs from the product's.
+        - `code_name_mismatch`: the code fits, but the name does not.
+        - `similar_name`: the name is similar, but not clearly enough to link.
+      enum: [size_conflict, code_name_mismatch, similar_name]
+    MatchCandidate:
+      type: object
+      description: A product the line may be.
+      required: [productId, canonicalName, sizeValue, sizeUnit, score]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        canonicalName:
+          type: string
+        sizeValue:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Quantity"
+        sizeUnit:
+          type: string
+          nullable: true
+        score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Similarity of the line's name to this product.
+    CodeConflictFlag:
+      allOf:
+        - $ref: "#/components/schemas/ReviewFlagBase"
+        - type: object
+          required: [kind, detail]
+          properties:
+            kind:
+              type: string
+              enum: [code_conflict]
+            detail:
+              $ref: "#/components/schemas/CodeConflictDetail"
+    CodeConflictDetail:
+      type: object
+      required: [code, codeProduct, nameProduct]
+      properties:
+        code:
+          type: string
+          description: The code printed on the line.
+        codeProduct:
+          description: The product that owns the code.
+          allOf:
+            - $ref: "#/components/schemas/MatchCandidate"
+        nameProduct:
+          description: The product whose name fits best.
+          allOf:
+            - $ref: "#/components/schemas/MatchCandidate"
+    PossibleDuplicateFlag:
+      allOf:
+        - $ref: "#/components/schemas/ReviewFlagBase"
+        - type: object
+          required: [kind, detail]
+          properties:
+            kind:
+              type: string
+              enum: [possible_duplicate]
+            detail:
+              $ref: "#/components/schemas/PossibleDuplicateDetail"
+    PossibleDuplicateDetail:
+      type: object
+      required: [otherReceiptId]
+      properties:
+        otherReceiptId:
+          type: string
+          format: uuid
+          description: The receipt with the same store, date and total.
+    ReviewFlagEntry:
+      type: object
+      description: An open flag with what is needed to show and resolve it.
+      required: [flag, receipt, lineItem]
+      properties:
+        flag:
+          $ref: "#/components/schemas/ReviewFlag"
+        receipt:
+          $ref: "#/components/schemas/ReceiptSummary"
+        lineItem:
+          nullable: true
+          description: The line the flag is about, or `null`.
+          allOf:
+            - $ref: "#/components/schemas/LineItem"
+    ReviewFlagPage:
+      type: object
+      required: [items, nextCursor, totalOpen]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewFlagEntry"
+        nextCursor:
+          type: string
+          nullable: true
+          description: Cursor of the next page, or `null` on the last page.
+        totalOpen:
+          type: integer
+          description: Number of open flags of the user, on all pages.
+          minimum: 0
+    ReviewResolution:
+      description: How to close a review flag. `action` decides the shape.
+      oneOf:
+        - $ref: "#/components/schemas/ConfirmResolution"
+        - $ref: "#/components/schemas/CorrectResolution"
+        - $ref: "#/components/schemas/SameProductResolution"
+        - $ref: "#/components/schemas/DifferentProductResolution"
+        - $ref: "#/components/schemas/AcceptResolution"
+      discriminator:
+        propertyName: action
+        mapping:
+          confirm: "#/components/schemas/ConfirmResolution"
+          correct: "#/components/schemas/CorrectResolution"
+          same_product: "#/components/schemas/SameProductResolution"
+          different_product: "#/components/schemas/DifferentProductResolution"
+          accept: "#/components/schemas/AcceptResolution"
+    ConfirmResolution:
+      type: object
+      description: The flagged value is right as it is.
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [confirm]
+    CorrectResolution:
+      type: object
+      description: |
+        Replace the flagged value. Send exactly the one property that belongs
+        to what the flag is about: `storeName`, `purchasedOn` or `total` for a
+        flag about that receipt field, `lineItem` for a flag about a line.
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [correct]
+        storeName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        purchasedOn:
+          type: string
+          format: date
+        total:
+          $ref: "#/components/schemas/Money"
+        lineItem:
+          $ref: "#/components/schemas/LineItemInput"
+    SameProductResolution:
+      type: object
+      description: |
+        The line is this product. The line's name and code are remembered for
+        the product, so the same line links by itself next time.
+      required: [action, productId]
+      properties:
+        action:
+          type: string
+          enum: [same_product]
+        productId:
+          type: string
+          format: uuid
+          description: One of the candidates, or any other product of the user.
+    DifferentProductResolution:
+      type: object
+      description: |
+        The line is none of the suggested products. A new product is created
+        for it, and the suggestions are remembered as wrong for this name.
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [different_product]
+        canonicalName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Name of the new product. Defaults to the line's name.
+    AcceptResolution:
+      type: object
+      description: Leave the data as it is and close the flag.
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [accept]
+    LastPurchase:
+      type: object
+      description: The most recent purchase of a product.
+      required: [purchasedOn, unitPrice, currency, store]
+      properties:
+        purchasedOn:
+          type: string
+          format: date
+        unitPrice:
+          $ref: "#/components/schemas/Money"
+        currency:
+          $ref: "#/components/schemas/Currency"
+        store:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/StoreRef"
+    ProductSummary:
+      type: object
+      description: A product as shown in lists.
+      required: [id, canonicalName, category, sizeValue, sizeUnit, purchaseCount, lastPurchase]
+      properties:
+        id:
+          type: string
+          format: uuid
+        canonicalName:
+          type: string
+        category:
+          nullable: true
+          description: The category, or `null` for an uncategorised product.
+          allOf:
+            - $ref: "#/components/schemas/CategoryRef"
+        sizeValue:
+          nullable: true
+          description: Package size, with `sizeUnit`; both are `null` when unknown.
+          allOf:
+            - $ref: "#/components/schemas/Quantity"
+        sizeUnit:
+          type: string
+          nullable: true
+          description: Unit of the package size, such as `l` or `g`.
+        purchaseCount:
+          type: integer
+          description: Number of purchases that count for the price history.
+          minimum: 0
+        lastPurchase:
+          nullable: true
+          description: The most recent of those purchases, or `null` when there is none.
+          allOf:
+            - $ref: "#/components/schemas/LastPurchase"
+    Product:
+      description: A product with the names and codes it is known by.
+      allOf:
+        - $ref: "#/components/schemas/ProductSummary"
+        - type: object
+          required: [aliases, codes, createdAt, updatedAt]
+          properties:
+            aliases:
+              type: array
+              description: Names the product was seen under, most often seen first.
+              items:
+                $ref: "#/components/schemas/ProductAlias"
+            codes:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProductCode"
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+    ProductAlias:
+      type: object
+      required: [id, rawName, normalizedName, store, seenCount, lastSeenAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        rawName:
+          type: string
+          description: The name as printed on a receipt.
+        normalizedName:
+          type: string
+          description: The form used for comparing names.
+        store:
+          nullable: true
+          description: The store that prints this name, or `null` when it is not known.
+          allOf:
+            - $ref: "#/components/schemas/StoreRef"
+        seenCount:
+          type: integer
+          minimum: 1
+        lastSeenAt:
+          type: string
+          format: date-time
+    ProductCodeKind:
+      type: string
+      description: |
+        - `gtin`: a barcode number (8, 12 or 13 digits), valid at every store.
+        - `store`: a code of one store, valid only there.
+      enum: [gtin, store]
+    ProductCode:
+      type: object
+      required: [id, code, kind, store, seenCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        kind:
+          $ref: "#/components/schemas/ProductCodeKind"
+        store:
+          nullable: true
+          description: The store of a `store` code; `null` for a `gtin`.
+          allOf:
+            - $ref: "#/components/schemas/StoreRef"
+        seenCount:
+          type: integer
+          minimum: 1
+    ProductUpdate:
+      type: object
+      description: The editable fields of a product. Every field is replaced.
+      required: [canonicalName]
+      properties:
+        canonicalName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        categoryId:
+          type: string
+          format: uuid
+          nullable: true
+          description: A category of the user, or `null` for none.
+        sizeValue:
+          nullable: true
+          description: Package size. Send it together with `sizeUnit`, or neither.
+          allOf:
+            - $ref: "#/components/schemas/Quantity"
+        sizeUnit:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 20
+    MergeProductsRequest:
+      type: object
+      required: [sourceProductId]
+      properties:
+        sourceProductId:
+          type: string
+          format: uuid
+          description: The product that is merged into the one in the path and then deleted.
+    SplitProductRequest:
+      type: object
+      required: [aliasIds, canonicalName]
+      properties:
+        aliasIds:
+          type: array
+          description: The names of the product to move to the new product.
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+        canonicalName:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Name of the new product.
+    ProductPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSummary"
+        nextCursor:
+          type: string
+          nullable: true
+          description: Cursor of the next page, or `null` on the last page.
+    PriceHistory:
+      type: object
+      required: [productId, points, stores]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        points:
+          type: array
+          description: One point per purchase, oldest first.
+          items:
+            $ref: "#/components/schemas/PricePoint"
+        stores:
+          type: array
+          description: One summary per store and currency.
+          items:
+            $ref: "#/components/schemas/StorePriceSummary"
+    PricePoint:
+      type: object
+      required:
+        - receiptId
+        - lineItemId
+        - purchasedOn
+        - store
+        - unitPrice
+        - quantity
+        - quantityUnit
+        - currency
+      properties:
+        receiptId:
+          type: string
+          format: uuid
+        lineItemId:
+          type: string
+          format: uuid
+        purchasedOn:
+          type: string
+          format: date
+        store:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/StoreRef"
+        unitPrice:
+          $ref: "#/components/schemas/Money"
+        quantity:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Quantity"
+        quantityUnit:
+          type: string
+          nullable: true
+        currency:
+          $ref: "#/components/schemas/Currency"
+    StorePriceSummary:
+      type: object
+      required: [store, currency, min, max, latest, latestOn, purchaseCount]
+      properties:
+        store:
+          nullable: true
+          description: The store, or `null` for purchases without one.
+          allOf:
+            - $ref: "#/components/schemas/StoreRef"
+        currency:
+          $ref: "#/components/schemas/Currency"
+        min:
+          $ref: "#/components/schemas/Money"
+        max:
+          $ref: "#/components/schemas/Money"
+        latest:
+          $ref: "#/components/schemas/Money"
+        latestOn:
+          type: string
+          format: date
+        purchaseCount:
+          type: integer
+          minimum: 1
+    Store:
+      type: object
+      required: [id, name, receiptCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        receiptCount:
+          type: integer
+          description: Number of receipts from this store.
+          minimum: 0
+    StoreUpdate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+    StorePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Store"
+        nextCursor:
+          type: string
+          nullable: true
+          description: Cursor of the next page, or `null` on the last page.
+    Category:
+      type: object
+      required: [id, name, productCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        productCount:
+          type: integer
+          description: Number of products in the category.
+          minimum: 0
+    CategoryInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    CategoryPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Category"
+        nextCursor:
+          type: string
+          nullable: true
+          description: Cursor of the next page, or `null` on the last page.
+    MonthlySpending:
+      type: object
+      required: [from, to, months, excludedReceipts]
+      properties:
+        from:
+          $ref: "#/components/schemas/Month"
+        to:
+          $ref: "#/components/schemas/Month"
+        months:
+          type: array
+          description: Every month of the range, oldest first.
+          items:
+            $ref: "#/components/schemas/MonthSpending"
+        excludedReceipts:
+          type: integer
+          description: Receipts left out because they have no date or no total.
+          minimum: 0
+    MonthSpending:
+      type: object
+      required: [month, totals]
+      properties:
+        month:
+          $ref: "#/components/schemas/Month"
+        totals:
+          type: array
+          description: One entry per currency spent in; empty for a month without receipts.
+          items:
+            $ref: "#/components/schemas/CurrencyTotal"
+    CurrencyTotal:
+      type: object
+      required: [currency, amount, receiptCount]
+      properties:
+        currency:
+          $ref: "#/components/schemas/Currency"
+        amount:
+          $ref: "#/components/schemas/Money"
+        receiptCount:
+          type: integer
+          minimum: 1
+    BreakdownGrouping:
+      type: string
+      enum: [category, store]
+    MonthBreakdown:
+      type: object
+      required: [month, groupBy, currencies, excludedReceipts]
+      properties:
+        month:
+          $ref: "#/components/schemas/Month"
+        groupBy:
+          $ref: "#/components/schemas/BreakdownGrouping"
+        currencies:
+          type: array
+          description: One breakdown per currency spent in; empty for a month without receipts.
+          items:
+            $ref: "#/components/schemas/CurrencyBreakdown"
+        excludedReceipts:
+          type: integer
+          description: Receipts of the user left out because they have no date or no total.
+          minimum: 0
+    CurrencyBreakdown:
+      type: object
+      required: [currency, total, groups]
+      properties:
+        currency:
+          $ref: "#/components/schemas/Currency"
+        total:
+          description: The month's total in this currency; the groups add up to it.
+          allOf:
+            - $ref: "#/components/schemas/Money"
+        groups:
+          type: array
+          description: Largest amount first.
+          items:
+            $ref: "#/components/schemas/BreakdownGroup"
+    BreakdownGroupKind:
+      type: string
+      description: |
+        - `category`, `store`: a real category or store, named by `id`.
+        - `uncategorised`: spending without a category (or, by store, without a store).
+        - `unallocated`: the part of receipt totals that the lines do not account for.
+      enum: [category, store, uncategorised, unallocated]
+    BreakdownGroup:
+      type: object
+      required: [kind, id, name, amount, share, itemCount]
+      properties:
+        kind:
+          $ref: "#/components/schemas/BreakdownGroupKind"
+        id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Id of the category or store; `null` for the other kinds.
+        name:
+          type: string
+          description: Display name of the group.
+        amount:
+          $ref: "#/components/schemas/Money"
+        share:
+          description: Part of the currency's total.
+          allOf:
+            - $ref: "#/components/schemas/Ratio"
+        itemCount:
+          type: integer
+          description: Number of line items in the group, or of receipts when grouping by store.
+          minimum: 0
+    Settings:
+      type: object
+      required: [defaultCurrency, defaultReceiptTitle]
+      properties:
+        defaultCurrency:
+          description: Currency given to a receipt that does not state one.
+          allOf:
+            - $ref: "#/components/schemas/Currency"
+        defaultReceiptTitle:
+          type: string
+          description: Title given to an uploaded receipt.
+          minLength: 1
+          maxLength: 200
+    ExtractionProvider:
+      type: string
+      description: What reads receipt images on this instance.
+      enum: [azure, fake]
+    Usage:
+      type: object
+      required: [provider, period, pagesUsed, pagesLimit]
+      properties:
+        provider:
+          $ref: "#/components/schemas/ExtractionProvider"
+        period:
+          description: The current month, in UTC.
+          allOf:
+            - $ref: "#/components/schemas/Month"
+        pagesUsed:
+          type: integer
+          minimum: 0
+        pagesLimit:
+          type: integer
+          minimum: 1
+    StorageBackend:
+      type: string
+      description: Where receipt images are kept.
+      enum: [local, drive]
+    DriveState:
+      type: string
+      description: |
+        - `ok`: connected and usable.
+        - `not_connected`: Drive is needed but nobody has connected it.
+        - `reconnect_needed`: the stored authorization no longer works; connect again.
+        - `not_required`: neither images nor backups use Drive.
+      enum: [ok, not_connected, reconnect_needed, not_required]
+    BackupDestination:
+      type: string
+      description: Where database backups go; `none` when backups are off.
+      enum: [drive, local, none]
+    BackupStatus:
+      type: object
+      required: [destination, lastSuccessAt, lastError]
+      properties:
+        destination:
+          $ref: "#/components/schemas/BackupDestination"
+        lastSuccessAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When a backup last succeeded; `null` when none has.
+        lastError:
+          type: string
+          nullable: true
+          description: Stable reason code of the last failed run; `null` when the last run succeeded or none ran.
+          pattern: '^[a-z][a-z0-9_]*$'
+    StorageStatus:
+      type: object
+      required: [backend, drive, lastError, canManage, backup]
+      properties:
+        backend:
+          $ref: "#/components/schemas/StorageBackend"
+        drive:
+          $ref: "#/components/schemas/DriveState"
+        lastError:
+          type: string
+          nullable: true
+          description: Stable reason code of the last storage failure; `null` when there is none.
+          pattern: '^[a-z][a-z0-9_]*$'
+        canManage:
+          type: boolean
+          description: Whether this user may connect and disconnect Google Drive.
+        backup:
+          $ref: "#/components/schemas/BackupStatus"
+  examples:
+    User:
+      summary: An admin user
+      value:
+        id: 0193a1b2-0000-7000-8000-000000000001
+        email: ada@example.com
+        name: Ada Example
+        isAdmin: true
+    UploadResponse:
+      summary: Three files with three different outcomes
+      value:
+        results:
+          - index: 0
+            fileName: market-2026-11-02.heic
+            outcome: created
+            receiptId: 0193a1b2-0000-7000-8000-000000000100
+            error: null
+          - index: 1
+            fileName: market-2026-11-02-copy.heic
+            outcome: duplicate
+            receiptId: 0193a1b2-0000-7000-8000-000000000100
+            error: null
+          - index: 2
+            fileName: notes.pdf
+            outcome: rejected
+            receiptId: null
+            error:
+              code: unsupported_type
+              message: Only JPEG, PNG and HEIC photos can be uploaded.
+    ReceiptPage:
+      summary: A reviewed receipt and one still in the queue
+      value:
+        items:
+          - id: 0193a1b2-0000-7000-8000-000000000101
+            title: Home shopping
+            store: null
+            purchasedOn: null
+            currency: TRY
+            total: null
+            status: queued
+            failureReason: null
+            source: web
+            openFlagCount: 0
+            createdAt: "2026-11-03T09:14:40Z"
+          - id: 0193a1b2-0000-7000-8000-000000000100
+            title: Home shopping
+            store:
+              id: 0193a1b2-0000-7000-8000-000000000010
+              name: Example Market
+            purchasedOn: "2026-11-02"
+            currency: TRY
+            total: "129.40"
+            status: needs_review
+            failureReason: null
+            source: web
+            openFlagCount: 2
+            createdAt: "2026-11-02T16:05:12Z"
+        nextCursor: null
+    Receipt:
+      summary: A receipt with four lines and two open flags
+      value:
+        id: 0193a1b2-0000-7000-8000-000000000100
+        title: Home shopping
+        store:
+          id: 0193a1b2-0000-7000-8000-000000000010
+          name: Example Market
+        purchasedOn: "2026-11-02"
+        purchasedTime: "18:42"
+        currency: TRY
+        subtotal: null
+        taxTotal: "7.65"
+        total: "129.40"
+        status: needs_review
+        failureReason: null
+        source: web
+        openFlagCount: 2
+        createdAt: "2026-11-02T16:05:12Z"
+        updatedAt: "2026-11-02T16:05:31Z"
+        lineItems:
+          - id: 0193a1b2-0000-7000-8000-000000000201
+            position: 0
+            rawName: AYRAN 1LT
+            name: Ayran 1 l
+            quantity: "2"
+            quantityUnit: ad
+            unitPrice: "42.25"
+            lineTotal: "84.50"
+            productCode: "004512"
+            confidence: 0.97
+            product:
+              id: 0193a1b2-0000-7000-8000-000000000401
+              canonicalName: Ayran 1 l
+            matchStatus: auto_linked
+            matchScore: 1
+            matchMethod: alias
+          - id: 0193a1b2-0000-7000-8000-000000000202
+            position: 1
+            rawName: EKMEK
+            name: Ekmek
+            quantity: "1"
+            quantityUnit: ad
+            unitPrice: "15.00"
+            lineTotal: "15.00"
+            productCode: null
+            confidence: 0.94
+            product: null
+            matchStatus: needs_review
+            matchScore: null
+            matchMethod: null
+          - id: 0193a1b2-0000-7000-8000-000000000203
+            position: 2
+            rawName: SUT 1LT TAM YAGLI
+            name: Süt 1 l tam yağlı
+            quantity: "1"
+            quantityUnit: ad
+            unitPrice: "34.90"
+            lineTotal: "34.90"
+            productCode: null
+            confidence: 0.71
+            product:
+              id: 0193a1b2-0000-7000-8000-000000000402
+              canonicalName: Süt 1 l tam yağlı
+            matchStatus: new_product
+            matchScore: null
+            matchMethod: null
+          - id: 0193a1b2-0000-7000-8000-000000000204
+            position: 3
+            rawName: INDIRIM
+            name: İndirim
+            quantity: null
+            quantityUnit: null
+            unitPrice: null
+            lineTotal: "-5.00"
+            productCode: null
+            confidence: 0.95
+            product: null
+            matchStatus: unmatched
+            matchScore: null
+            matchMethod: null
+        flags:
+          - id: 0193a1b2-0000-7000-8000-000000000301
+            receiptId: 0193a1b2-0000-7000-8000-000000000100
+            lineItemId: 0193a1b2-0000-7000-8000-000000000203
+            createdAt: "2026-11-02T16:05:31Z"
+            resolvedAt: null
+            resolution: null
+            kind: low_confidence
+            detail:
+              field: line_item
+              confidence: 0.71
+          - id: 0193a1b2-0000-7000-8000-000000000302
+            receiptId: 0193a1b2-0000-7000-8000-000000000100
+            lineItemId: 0193a1b2-0000-7000-8000-000000000202
+            createdAt: "2026-11-02T16:05:31Z"
+            resolvedAt: null
+            resolution: null
+            kind: uncertain_match
+            detail:
+              reason: similar_name
+              candidates:
+                - productId: 0193a1b2-0000-7000-8000-000000000403
+                  canonicalName: Ekmek 350 g
+                  sizeValue: "350"
+                  sizeUnit: g
+                  score: 0.78
+                - productId: 0193a1b2-0000-7000-8000-000000000404
+                  canonicalName: Kepekli ekmek 400 g
+                  sizeValue: "400"
+                  sizeUnit: g
+                  score: 0.61
+        images:
+          - id: 0193a1b2-0000-7000-8000-000000000110
+            position: 0
+            contentType: image/jpeg
+            sizeBytes: 1843200
+            original:
+              contentType: image/heic
+              sizeBytes: 2516582
+    ReceiptUpdate:
+      summary: Correct the store and the date
+      value:
+        title: Home shopping
+        storeName: Example Market
+        purchasedOn: "2026-11-02"
+        purchasedTime: "18:42"
+        currency: TRY
+        subtotal: null
+        taxTotal: "7.65"
+        total: "129.40"
+    LineItemInput:
+      summary: Two cartons of ayran
+      value:
+        name: Ayran 1 l
+        quantity: "2"
+        quantityUnit: ad
+        unitPrice: "42.25"
+        lineTotal: "84.50"
+        productCode: "004512"
+    ReviewFlagPage:
+      summary: The oldest open flag of two
+      value:
+        items:
+          - flag:
+              id: 0193a1b2-0000-7000-8000-000000000302
+              receiptId: 0193a1b2-0000-7000-8000-000000000100
+              lineItemId: 0193a1b2-0000-7000-8000-000000000202
+              createdAt: "2026-11-02T16:05:31Z"
+              resolvedAt: null
+              resolution: null
+              kind: uncertain_match
+              detail:
+                reason: similar_name
+                candidates:
+                  - productId: 0193a1b2-0000-7000-8000-000000000403
+                    canonicalName: Ekmek 350 g
+                    sizeValue: "350"
+                    sizeUnit: g
+                    score: 0.78
+                  - productId: 0193a1b2-0000-7000-8000-000000000404
+                    canonicalName: Kepekli ekmek 400 g
+                    sizeValue: "400"
+                    sizeUnit: g
+                    score: 0.61
+            receipt:
+              id: 0193a1b2-0000-7000-8000-000000000100
+              title: Home shopping
+              store:
+                id: 0193a1b2-0000-7000-8000-000000000010
+                name: Example Market
+              purchasedOn: "2026-11-02"
+              currency: TRY
+              total: "129.40"
+              status: needs_review
+              failureReason: null
+              source: web
+              openFlagCount: 2
+              createdAt: "2026-11-02T16:05:12Z"
+            lineItem:
+              id: 0193a1b2-0000-7000-8000-000000000202
+              position: 1
+              rawName: EKMEK
+              name: Ekmek
+              quantity: "1"
+              quantityUnit: ad
+              unitPrice: "15.00"
+              lineTotal: "15.00"
+              productCode: null
+              confidence: 0.94
+              product: null
+              matchStatus: needs_review
+              matchScore: null
+              matchMethod: null
+        nextCursor: eyJ2IjoxfQ
+        totalOpen: 2
+    ResolutionConfirm:
+      summary: The value the extractor was unsure about is right
+      value:
+        action: confirm
+    ResolutionCorrectTotal:
+      summary: Replace a wrong or missing total
+      value:
+        action: correct
+        total: "129.40"
+    ResolutionCorrectLine:
+      summary: Replace a flagged line
+      value:
+        action: correct
+        lineItem:
+          name: Süt 1 l tam yağlı
+          quantity: "1"
+          quantityUnit: ad
+          unitPrice: "34.90"
+          lineTotal: "34.90"
+          productCode: null
+    ResolutionSameProduct:
+      summary: The line is one of the suggested products
+      value:
+        action: same_product
+        productId: 0193a1b2-0000-7000-8000-000000000403
+    ResolutionDifferentProduct:
+      summary: The line is a product of its own
+      value:
+        action: different_product
+        canonicalName: Köy ekmeği
+    ResolutionAccept:
+      summary: Keep the receipt as it is
+      value:
+        action: accept
+    ProductPage:
+      summary: Two products
+      value:
+        items:
+          - id: 0193a1b2-0000-7000-8000-000000000401
+            canonicalName: Ayran 1 l
+            category:
+              id: 0193a1b2-0000-7000-8000-000000000020
+              name: Dairy
+            sizeValue: "1"
+            sizeUnit: l
+            purchaseCount: 6
+            lastPurchase:
+              purchasedOn: "2026-11-02"
+              unitPrice: "42.25"
+              currency: TRY
+              store:
+                id: 0193a1b2-0000-7000-8000-000000000010
+                name: Example Market
+          - id: 0193a1b2-0000-7000-8000-000000000403
+            canonicalName: Ekmek 350 g
+            category: null
+            sizeValue: "350"
+            sizeUnit: g
+            purchaseCount: 0
+            lastPurchase: null
+        nextCursor: null
+    Product:
+      summary: A product known under two names and one store code
+      value:
+        id: 0193a1b2-0000-7000-8000-000000000401
+        canonicalName: Ayran 1 l
+        category:
+          id: 0193a1b2-0000-7000-8000-000000000020
+          name: Dairy
+        sizeValue: "1"
+        sizeUnit: l
+        purchaseCount: 6
+        lastPurchase:
+          purchasedOn: "2026-11-02"
+          unitPrice: "42.25"
+          currency: TRY
+          store:
+            id: 0193a1b2-0000-7000-8000-000000000010
+            name: Example Market
+        aliases:
+          - id: 0193a1b2-0000-7000-8000-000000000501
+            rawName: AYRAN 1LT
+            normalizedName: ayran 1 l
+            store:
+              id: 0193a1b2-0000-7000-8000-000000000010
+              name: Example Market
+            seenCount: 5
+            lastSeenAt: "2026-11-02T16:05:31Z"
+          - id: 0193a1b2-0000-7000-8000-000000000502
+            rawName: AYRN 1 L
+            normalizedName: ayrn 1 l
+            store:
+              id: 0193a1b2-0000-7000-8000-000000000011
+              name: Corner Shop
+            seenCount: 1
+            lastSeenAt: "2026-10-18T10:22:05Z"
+        codes:
+          - id: 0193a1b2-0000-7000-8000-000000000601
+            code: "004512"
+            kind: store
+            store:
+              id: 0193a1b2-0000-7000-8000-000000000010
+              name: Example Market
+            seenCount: 5
+        createdAt: "2026-09-06T11:40:00Z"
+        updatedAt: "2026-11-02T16:05:31Z"
+    ProductUpdate:
+      summary: Rename a product and set its category and size
+      value:
+        canonicalName: Ayran 1 l
+        categoryId: 0193a1b2-0000-7000-8000-000000000020
+        sizeValue: "1"
+        sizeUnit: l
+    MergeProductsRequest:
+      summary: Merge a duplicate into the product in the path
+      value:
+        sourceProductId: 0193a1b2-0000-7000-8000-000000000405
+    SplitProductRequest:
+      summary: Move one name to a new product
+      value:
+        aliasIds:
+          - 0193a1b2-0000-7000-8000-000000000502
+        canonicalName: Ayran 2 l
+    PriceHistory:
+      summary: Three purchases at two stores
+      value:
+        productId: 0193a1b2-0000-7000-8000-000000000401
+        points:
+          - receiptId: 0193a1b2-0000-7000-8000-000000000098
+            lineItemId: 0193a1b2-0000-7000-8000-000000000291
+            purchasedOn: "2026-10-04"
+            store:
+              id: 0193a1b2-0000-7000-8000-000000000010
+              name: Example Market
+            unitPrice: "39.90"
+            quantity: "1"
+            quantityUnit: ad
+            currency: TRY
+          - receiptId: 0193a1b2-0000-7000-8000-000000000099
+            lineItemId: 0193a1b2-0000-7000-8000-000000000295
+            purchasedOn: "2026-10-18"
+            store:
+              id: 0193a1b2-0000-7000-8000-000000000011
+              name: Corner Shop
+            unitPrice: "44.00"
+            quantity: "1"
+            quantityUnit: ad
+            currency: TRY
+          - receiptId: 0193a1b2-0000-7000-8000-000000000100
+            lineItemId: 0193a1b2-0000-7000-8000-000000000201
+            purchasedOn: "2026-11-02"
+            store:
+              id: 0193a1b2-0000-7000-8000-000000000010
+              name: Example Market
+            unitPrice: "42.25"
+            quantity: "2"
+            quantityUnit: ad
+            currency: TRY
+        stores:
+          - store:
+              id: 0193a1b2-0000-7000-8000-000000000010
+              name: Example Market
+            currency: TRY
+            min: "39.90"
+            max: "42.25"
+            latest: "42.25"
+            latestOn: "2026-11-02"
+            purchaseCount: 2
+          - store:
+              id: 0193a1b2-0000-7000-8000-000000000011
+              name: Corner Shop
+            currency: TRY
+            min: "44.00"
+            max: "44.00"
+            latest: "44.00"
+            latestOn: "2026-10-18"
+            purchaseCount: 1
+    StorePage:
+      summary: Two stores
+      value:
+        items:
+          - id: 0193a1b2-0000-7000-8000-000000000011
+            name: Corner Shop
+            receiptCount: 3
+          - id: 0193a1b2-0000-7000-8000-000000000010
+            name: Example Market
+            receiptCount: 14
+        nextCursor: null
+    Store:
+      summary: A store
+      value:
+        id: 0193a1b2-0000-7000-8000-000000000010
+        name: Example Market
+        receiptCount: 14
+    StoreUpdate:
+      summary: The new name
+      value:
+        name: Example Market
+    CategoryPage:
+      summary: Two categories
+      value:
+        items:
+          - id: 0193a1b2-0000-7000-8000-000000000021
+            name: Bakery
+            productCount: 4
+          - id: 0193a1b2-0000-7000-8000-000000000020
+            name: Dairy
+            productCount: 9
+        nextCursor: null
+    Category:
+      summary: A category
+      value:
+        id: 0193a1b2-0000-7000-8000-000000000020
+        name: Dairy
+        productCount: 9
+    CategoryInput:
+      summary: The name of the category
+      value:
+        name: Dairy
+    MonthlySpending:
+      summary: A month with receipts and a month without
+      value:
+        from: "2026-10"
+        to: "2026-11"
+        months:
+          - month: "2026-10"
+            totals: []
+          - month: "2026-11"
+            totals:
+              - currency: TRY
+                amount: "1294.00"
+                receiptCount: 9
+              - currency: EUR
+                amount: "23.80"
+                receiptCount: 1
+        excludedReceipts: 1
+    MonthBreakdown:
+      summary: One month by category
+      value:
+        month: "2026-11"
+        groupBy: category
+        currencies:
+          - currency: TRY
+            total: "1294.00"
+            groups:
+              - kind: category
+                id: 0193a1b2-0000-7000-8000-000000000020
+                name: Dairy
+                amount: "845.00"
+                share: "0.6530"
+                itemCount: 21
+              - kind: uncategorised
+                id: null
+                name: Uncategorised
+                amount: "436.50"
+                share: "0.3373"
+                itemCount: 17
+              - kind: unallocated
+                id: null
+                name: Unallocated
+                amount: "12.50"
+                share: "0.0097"
+                itemCount: 0
+        excludedReceipts: 1
+    Settings:
+      summary: The defaults of a new user
+      value:
+        defaultCurrency: TRY
+        defaultReceiptTitle: Home shopping
+    Usage:
+      summary: Part of the monthly allowance used
+      value:
+        provider: azure
+        period: "2026-11"
+        pagesUsed: 137
+        pagesLimit: 500
+    StorageStatusConnected:
+      summary: Drive is connected and backups work
+      value:
+        backend: drive
+        drive: ok
+        lastError: null
+        canManage: true
+        backup:
+          destination: drive
+          lastSuccessAt: "2026-11-13T03:15:42Z"
+          lastError: null
+    StorageStatusReconnectNeeded:
+      summary: The Drive authorization stopped working, seen by a non-admin
+      value:
+        backend: drive
+        drive: reconnect_needed
+        lastError: storage_reconnect_needed
+        canManage: false
+        backup:
+          destination: drive
+          lastSuccessAt: "2026-11-11T03:15:39Z"
+          lastError: storage_reconnect_needed
+    ProblemInvalid:
+      summary: A line item with a malformed amount
+      value:
+        type: about:blank
+        title: Bad Request
+        status: 400
+        detail: the line item is not valid
+        requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
+        errors:
+          - field: lineTotal
+            message: must be a decimal amount with two places
+    ProblemUnauthorized:
+      summary: No session
+      value:
+        type: about:blank
+        title: Unauthorized
+        status: 401
+        detail: sign in to continue
+        requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
+    ProblemNotFound:
+      summary: An unknown receipt, or one of another user
+      value:
+        type: about:blank
+        title: Not Found
+        status: 404
+        detail: receipt not found
+        requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
+    ProblemConflict:
+      summary: A name that is already taken
+      value:
+        type: about:blank
+        title: Conflict
+        status: 409
+        detail: a category with this name already exists
+        requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
+    ProblemPayloadTooLarge:
+      summary: A request body over the limit
+      value:
+        type: about:blank
+        title: Request Entity Too Large
+        status: 413
+        detail: the request body is too large
+        requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
+    ProblemUnavailable:
+      summary: Google Drive needs to be connected again
+      value:
+        type: about:blank
+        title: Service Unavailable
+        status: 503
+        detail: image storage needs to be reconnected
+        code: storage_reconnect_needed
+        requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
+    ProblemNotImplemented:
+      summary: An operation that is not built yet
+      value:
+        type: about:blank
+        title: Not Implemented
+        status: 501
+        detail: this operation is not implemented yet
+        requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
+    ProblemInternal:
+      summary: An unexpected error
+      value:
+        type: about:blank
+        title: Internal Server Error
+        status: 500
+        detail: something went wrong on the server
+        requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
