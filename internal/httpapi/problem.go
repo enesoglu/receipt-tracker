@@ -15,9 +15,10 @@ const problemContentType = "application/problem+json"
 // Details shown for failures that carry no message of their own. They are
 // deliberately vague: an unknown error may hold anything.
 const (
-	detailInternal = "something went wrong on the server"
-	detailBadInput = "the request is not valid"
-	detailTooLarge = "the request body is too large"
+	detailInternal  = "something went wrong on the server"
+	detailBadInput  = "the request is not valid"
+	detailTooLarge  = "the request body is too large"
+	detailBodyShape = "the request body cannot be read as this operation expects"
 )
 
 // statusError is a failure that is born in the transport layer and has no

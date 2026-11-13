@@ -11,8 +11,9 @@ The repository provides the server, embedded placeholder page, design tokens,
 development database, reproducible tooling, containers, and CI, plus the
 complete v1 database schema and validated configuration. Receipt uploading,
 authentication, extraction, matching, reports, and backups are planned in
-later work packages. The v1 API is fully specified in `api/openapi.yaml`; its
-operations are not implemented yet.
+later work packages. The v1 API is fully specified in `api/openapi.yaml`;
+every operation is routed and answers with a `501` problem document until its
+behaviour is built.
 
 The server validates its configuration, connects to PostgreSQL and applies
 the embedded migrations before it accepts requests. `/livez` and `/healthz`
@@ -167,6 +168,13 @@ error. `task generate` writes the Go server interface and types to
 `web/src/api/schema.gen.ts` (openapi-typescript). A Go test validates the
 contract, including every example against its schema. To add or change an
 operation, follow `.agents/skills/add-endpoint/SKILL.md`.
+
+Handlers live in `internal/httpapi`, one file per API tag. They return a
+response or an error; one function maps every error to an RFC 9457 problem
+document (`application/problem+json`) that carries the id from the
+`X-Request-Id` response header. Each request is logged as one JSON line,
+without its query string. The API refuses state-changing requests from other
+origins and request bodies over 1 MiB (uploads: 20 files of 15 MB).
 
 ## Database schema
 

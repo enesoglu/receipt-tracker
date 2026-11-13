@@ -19,7 +19,9 @@ type Server struct {
 	logger *slog.Logger
 }
 
-// New wires operational routes separately from future authenticated API routes.
+// New builds the router: health checks, the REST API under /api/v1, the
+// prefixes reserved for sign-in, OAuth and MCP, and the single-page app for
+// everything else.
 func New(address string, logger *slog.Logger, spa http.Handler) *Server {
 	problems := problemWriter{logger: logger}
 	router := chi.NewRouter()
@@ -39,6 +41,7 @@ func New(address string, logger *slog.Logger, spa http.Handler) *Server {
 		api.Use(crossOrigin(problems), bodyLimit(problems))
 		api.NotFound(problems.notFound)
 		api.MethodNotAllowed(problems.methodNotAllowed)
+		api.Route("/v1", func(v1 chi.Router) { mountAPI(v1, problems) })
 	})
 	// Reserved for later features; never served by the single-page app.
 	for _, prefix := range []string{"/auth", "/oauth", "/mcp", "/.well-known"} {

@@ -94,6 +94,35 @@ func TestHandler_AnswersUnknownAPIPathsWithProblems(t *testing.T) {
 	}
 }
 
+func TestHandler_ProtectsTheAPIAgainstCrossOriginAndOversizedRequests(t *testing.T) {
+	server := newTestServer(t)
+
+	t.Run("cross-site state change", func(t *testing.T) {
+		request := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/categories", strings.NewReader(`{"name":"Dairy"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Sec-Fetch-Site", "cross-site")
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want 403", response.Code)
+		}
+		if problem := decodeProblem(t, response); problem.Code == nil || *problem.Code != "cross_origin" {
+			t.Errorf("problem code = %v, want cross_origin", problem.Code)
+		}
+	})
+
+	t.Run("body over the limit", func(t *testing.T) {
+		request := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/settings", strings.NewReader(strings.Repeat("x", 1<<20+1)))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status = %d, want 413", response.Code)
+		}
+		decodeProblem(t, response)
+	})
+}
+
 func TestHandler_GivesEveryRequestItsOwnID(t *testing.T) {
 	server := newTestServer(t)
 	seen := map[string]bool{}
