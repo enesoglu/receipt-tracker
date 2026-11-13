@@ -1,0 +1,10 @@
+-- State of the OAuth authorization server used by MCP clients: registered
+-- clients, authorization codes and hashed tokens.
+--
+-- Tables: oauth_clients, oauth_codes, oauth_tokens.
+--
+-- Rules: every query on a user-owned table filters by user_id; query names
+-- are unique across all files; run `task generate` after editing.
+--
+-- Add queries above this description: sqlc copies the comment that precedes
+-- a file's first query into that query's Go documentation.

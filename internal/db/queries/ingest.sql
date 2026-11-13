@@ -1,0 +1,11 @@
+-- Receipt submission and extraction: duplicate check by image hash, the
+-- queued receipt with its image, raw extraction results and the monthly
+-- provider page counter.
+--
+-- Tables: receipts, receipt_images, extractions, provider_usage.
+--
+-- Rules: every query on a user-owned table filters by user_id; query names
+-- are unique across all files; run `task generate` after editing.
+--
+-- Add queries above this description: sqlc copies the comment that precedes
+-- a file's first query into that query's Go documentation.

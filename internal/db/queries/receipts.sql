@@ -1,0 +1,10 @@
+-- Receipts and their line items: list with filters and cursor paging, detail,
+-- edits, deletion and reprocessing.
+--
+-- Tables: receipts, line_items, receipt_images, audit_events.
+--
+-- Rules: every query on a user-owned table filters by user_id; query names
+-- are unique across all files; run `task generate` after editing.
+--
+-- Add queries above this description: sqlc copies the comment that precedes
+-- a file's first query into that query's Go documentation.

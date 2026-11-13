@@ -95,7 +95,8 @@ async function installLint() {
 }
 
 function generate() {
-  // Bootstrap has no schema or contract. Never invent one just to run a generator.
+  // Each generator runs once its source exists: sqlc from sqlc.yaml, the API
+  // bindings from api/openapi.yaml.
   if (existsSync('sqlc.yaml')) run('go', ['tool', 'sqlc', 'generate']);
   if (existsSync('api/openapi.yaml')) {
     run('go', [
@@ -118,9 +119,7 @@ function generate() {
       { cwd: join(root, 'web') },
     );
   }
-  console.log(
-    'Generation complete (sources are introduced by later work packages).',
-  );
+  console.log('Generation complete.');
 }
 
 function drift() {

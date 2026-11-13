@@ -1,0 +1,60 @@
+# sqlc reads the schema from the goose migrations and writes type-safe Go
+# for the queries in internal/db/queries. Run `task generate` after changing
+# either, and commit the generated code together with its source.
+version: "2"
+sql:
+  - engine: postgresql
+    schema: internal/db/migrations
+    queries: internal/db/queries
+    gen:
+      go:
+        package: sqlc
+        out: internal/db/sqlc
+        sql_package: pgx/v5
+        # Nullable columns become pointers (*string) instead of pgtype wrappers.
+        emit_pointers_for_null_types: true
+        # A query that finds nothing returns an empty slice, which encodes as
+        # a JSON array rather than null.
+        emit_empty_slices: true
+        overrides:
+          # Ids are google/uuid values everywhere in the application.
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+          - db_type: uuid
+            nullable: true
+            go_type:
+              import: github.com/google/uuid
+              type: NullUUID
+          # Money and quantities are exact decimals, never floats.
+          - db_type: pg_catalog.numeric
+            go_type:
+              import: github.com/shopspring/decimal
+              type: Decimal
+          - db_type: pg_catalog.numeric
+            nullable: true
+            go_type:
+              import: github.com/shopspring/decimal
+              type: NullDecimal
+          # Instants and calendar dates use the standard library.
+          - db_type: timestamptz
+            go_type:
+              import: time
+              type: Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              import: time
+              type: Time
+              pointer: true
+          - db_type: date
+            go_type:
+              import: time
+              type: Time
+          - db_type: date
+            nullable: true
+            go_type:
+              import: time
+              type: Time
+              pointer: true

@@ -1,0 +1,9 @@
+-- Review flags: raise, list the open ones and resolve.
+--
+-- Tables: review_flags.
+--
+-- Rules: every query on a user-owned table filters by user_id; query names
+-- are unique across all files; run `task generate` after editing.
+--
+-- Add queries above this description: sqlc copies the comment that precedes
+-- a file's first query into that query's Go documentation.
