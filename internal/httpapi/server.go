@@ -21,7 +21,9 @@ type Server struct {
 
 // New wires operational routes separately from future authenticated API routes.
 func New(address string, logger *slog.Logger, spa http.Handler) *Server {
+	problems := problemWriter{logger: logger}
 	router := chi.NewRouter()
+	router.Use(requestID)
 	health := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write([]byte("{\"status\":\"ok\"}\n")); err != nil {
@@ -30,7 +32,13 @@ func New(address string, logger *slog.Logger, spa http.Handler) *Server {
 	}
 	router.Get("/healthz", health)
 	router.Get("/livez", health)
-	for _, prefix := range []string{"/api", "/auth", "/oauth", "/mcp", "/.well-known"} {
+	// The API answers in problem documents, also for paths it does not have.
+	router.Route("/api", func(api chi.Router) {
+		api.NotFound(problems.notFound)
+		api.MethodNotAllowed(problems.methodNotAllowed)
+	})
+	// Reserved for later features; never served by the single-page app.
+	for _, prefix := range []string{"/auth", "/oauth", "/mcp", "/.well-known"} {
 		router.Handle(prefix, http.NotFoundHandler())
 		router.Handle(prefix+"/*", http.NotFoundHandler())
 	}
