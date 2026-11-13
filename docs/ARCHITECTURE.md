@@ -349,6 +349,12 @@ Environment variables only; `.env.example` lists them. `APP_ENV` (`dev`,
 `BACKUP_SCHEDULE`, `BACKUP_HEARTBEAT_URL` (optional), `DEV_LOGIN_EMAIL` (accepted only
 when `APP_ENV=dev`; the server refuses to start otherwise).
 
+Only `APP_LISTEN_ADDR`, `DRIVE_ROOT_FOLDER` and `AZURE_DI_MONTHLY_PAGES` have
+defaults; every other variable not marked optional is required in `dev` and
+`prod`, backend-specific variables only when that backend is selected, and the
+Google client may be omitted only in `dev` with `DEV_LOGIN_EMAIL` and no Drive
+use.
+
 ## 7. Deployment
 
 Caddy runs directly on the VPS host, terminates TLS for `receipt.enesoglu.com` and

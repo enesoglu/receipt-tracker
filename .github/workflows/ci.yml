@@ -76,9 +76,32 @@ jobs:
           bytes=$(docker image inspect receipt-tracker:ci --format '{{.Size}}')
           echo "Image bytes: $bytes"
           test "$bytes" -lt 60000000
+      - name: Refuse to start without configuration
+        run: |
+          if docker run --rm receipt-tracker:ci > unconfigured.log 2>&1; then
+            echo "The server started without configuration"
+            exit 1
+          fi
+          cat unconfigured.log
+          grep -q 'DATABASE_URL is required' unconfigured.log
       - name: Smoke-test embedded app and health endpoints
         run: |
-          docker run -d --name receipt-smoke -p 127.0.0.1:8080:8080 receipt-tracker:ci
+          # A complete production configuration made of synthetic values, with
+          # no external service. The key is generated here and never stored.
+          docker run -d --name receipt-smoke -p 127.0.0.1:8080:8080 \
+            -e APP_ENV=prod \
+            -e APP_BASE_URL=https://receipt.example.com \
+            -e DATABASE_URL='postgres://receipt:receipt@receipt-smoke-db:5432/receipt?sslmode=disable' \
+            -e APP_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+            -e ALLOWED_EMAILS=smoke@example.com \
+            -e ADMIN_EMAIL=smoke@example.com \
+            -e GOOGLE_CLIENT_ID=smoke-client-id \
+            -e GOOGLE_CLIENT_SECRET=smoke-client-secret \
+            -e STORAGE_BACKEND=local \
+            -e STORAGE_LOCAL_DIR=/tmp/receipt-images \
+            -e EXTRACTOR=fake \
+            -e BACKUP_DESTINATION=none \
+            receipt-tracker:ci
           trap 'docker logs receipt-smoke; docker rm -f receipt-smoke' EXIT
           curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:8080/healthz
           curl --fail http://127.0.0.1:8080/livez
