@@ -118,6 +118,11 @@ function generate() {
       ],
       { cwd: join(root, 'web') },
     );
+    // The generated schema is linted like any other source file, so it is
+    // written in the project's own style.
+    run('npm', ['exec', '--', 'prettier', '--write', 'src/api/schema.gen.ts'], {
+      cwd: join(root, 'web'),
+    });
   }
   console.log('Generation complete.');
 }

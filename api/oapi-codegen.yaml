@@ -1,0 +1,15 @@
+# oapi-codegen writes the Go server interface and the request and response
+# types from openapi.yaml. Run `task generate` after changing the contract and
+# commit the generated file together with it.
+package: httpapi
+output: internal/httpapi/api.gen.go
+generate:
+  chi-server: true
+  strict-server: true
+  models: true
+compatibility:
+  # Enum constants always carry their type name, so adding a value to one
+  # enum can never rename the constants of another.
+  always-prefix-enum-values: true
+  # Middleware runs in the order it is listed.
+  apply-chi-middleware-first-to-last: true
