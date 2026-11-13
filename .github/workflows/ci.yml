@@ -60,6 +60,11 @@ jobs:
         run: go install github.com/go-task/task/v3/cmd/task@v3.54.0
       - run: task setup
       - run: task check
+        env:
+          # Windows runners cannot run the Linux PostgreSQL container, so this
+          # job checks the tooling only. The Ubuntu and per-commit jobs run
+          # every database test.
+          TEST_SKIP_DATABASE: "1"
   docker:
     name: Build and smoke-test runtime image
     runs-on: ubuntu-24.04
