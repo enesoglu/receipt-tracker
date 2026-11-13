@@ -1,0 +1,26 @@
+# Owner-only planning material (prompts, progress files, guide)
+/planning/
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Build output
+/bin/
+/dist/
+/web/dist/
+/web/node_modules/
+/internal/web/dist/*
+!/internal/web/dist/.gitkeep
+
+# Local data
+/data/
+*.dump
+coverage.out
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
