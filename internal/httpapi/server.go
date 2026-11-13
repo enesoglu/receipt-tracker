@@ -23,7 +23,9 @@ type Server struct {
 func New(address string, logger *slog.Logger, spa http.Handler) *Server {
 	problems := problemWriter{logger: logger}
 	router := chi.NewRouter()
-	router.Use(requestID)
+	// Outermost first: the id exists before anything is logged, and the log
+	// line sees the status that panic recovery wrote.
+	router.Use(requestID, requestLog(logger), recoverer(problems))
 	health := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write([]byte("{\"status\":\"ok\"}\n")); err != nil {
@@ -34,6 +36,7 @@ func New(address string, logger *slog.Logger, spa http.Handler) *Server {
 	router.Get("/livez", health)
 	// The API answers in problem documents, also for paths it does not have.
 	router.Route("/api", func(api chi.Router) {
+		api.Use(crossOrigin(problems), bodyLimit(problems))
 		api.NotFound(problems.notFound)
 		api.MethodNotAllowed(problems.methodNotAllowed)
 	})
