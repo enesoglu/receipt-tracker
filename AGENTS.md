@@ -112,6 +112,8 @@ rebase conflict in a generated file, regenerate instead of merging by hand.
 - Database code is tested against real Postgres (`TEST_DATABASE_URL`, set by
   `task test`). External services are replaced by hand-written fakes behind
   the consumer's interface or by `httptest` servers. No mock generators.
+- `TEST_SKIP_DATABASE=1` exists only for the Windows CI job, which checks
+  tooling; never set it anywhere else.
 - Every endpoint and MCP tool that touches user-owned data has an isolation
   test: user B requesting user A's resource gets 404 and no data.
 - Fixtures in `testdata/` are synthetic. Real receipts, names, emails and
