@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Go and web checks (Ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.3"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.54.0
+      - run: task setup
+      - run: task db:up
+      - name: Generated drift, Go lint/tests, web lint/typecheck/tests/build
+        run: task check
+      - name: Reject tracked planning files or environment secrets
+        shell: bash
+        run: |
+          if git ls-files | grep -E '^planning/|(^|/)\.env($|\.)' | grep -v '^\.env\.example$'; then
+            exit 1
+          fi
+      - name: Validate development Compose
+        run: docker compose -f deploy/compose.dev.yaml config --quiet
+  windows:
+    name: Go and web checks (PowerShell)
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.3"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.54.0
+      - run: task setup
+      - run: task check
+  docker:
+    name: Build and smoke-test runtime image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image under 60 MB
+        run: |
+          docker build -f deploy/Dockerfile -t receipt-tracker:ci .
+          bytes=$(docker image inspect receipt-tracker:ci --format '{{.Size}}')
+          echo "Image bytes: $bytes"
+          test "$bytes" -lt 60000000
+      - name: Smoke-test embedded app and health endpoints
+        run: |
+          docker run -d --name receipt-smoke -p 127.0.0.1:8080:8080 receipt-tracker:ci
+          trap 'docker logs receipt-smoke; docker rm -f receipt-smoke' EXIT
+          curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:8080/healthz
+          curl --fail http://127.0.0.1:8080/livez
+          curl --fail http://127.0.0.1:8080/ | grep 'Receipt tracker'
+  policy:
+    name: PR title and branch name
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.3"
+      - run: node web/scripts/commits.mjs pr
+  commits:
+    name: Validate every commit independently
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18.4-alpine3.23
+        env:
+          POSTGRES_USER: receipt
+          POSTGRES_PASSWORD: receipt
+          POSTGRES_DB: receipt_tracker_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U receipt -d receipt_tracker_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgres://receipt:receipt@localhost:5432/receipt_tracker_test?sslmode=disable
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.3"
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.54.0
+      - name: Validate metadata and task check in isolated commit snapshots
+        run: node web/scripts/commits.mjs check "$BASE_SHA" "$HEAD_SHA"
+  ci:
+    name: ci
+    if: always()
+    needs: [checks, windows, docker, policy, commits]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every applicable check
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")'
