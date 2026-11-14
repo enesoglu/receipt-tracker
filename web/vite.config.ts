@@ -12,5 +12,9 @@ export default defineConfig({
       ]),
     ),
   },
-  test: { environment: 'jsdom', setupFiles: ['./src/test-setup.ts'] },
+  test: {
+    environment: 'jsdom',
+    environmentOptions: { jsdom: { url: 'http://localhost/' } },
+    setupFiles: ['./src/test-setup.ts'],
+  },
 });

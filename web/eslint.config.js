@@ -29,4 +29,10 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['src/api/client.ts'],
+    rules: {
+      'no-restricted-globals': 'off',
+    },
+  },
 );

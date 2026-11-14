@@ -39,13 +39,26 @@ function isProblem(value: unknown): value is Problem {
   );
 }
 
+function resolveDefaultBaseUrl(): string {
+  if (
+    typeof window !== 'undefined' &&
+    window.location.origin &&
+    window.location.origin !== 'null'
+  ) {
+    return `${window.location.origin}/api/v1`;
+  }
+  return '/api/v1';
+}
+
 /**
  * Creates a typed client for the contract in `api/openapi.yaml`. The
  * application uses the shared `api` instance; tests pass their own `fetch`.
  */
 export function createApiClient(options: ClientOptions = {}): Client<paths> {
   return createClient<paths>({
-    baseUrl: '/api/v1',
+    baseUrl: resolveDefaultBaseUrl(),
+    // Resolve global fetch per call so MSW in tests can intercept after imports.
+    fetch: (request) => fetch(request),
     // The contract sends lists as one comma-separated value (`ids=a,b`).
     querySerializer: { array: { style: 'form', explode: false } },
     ...options,
