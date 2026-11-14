@@ -14,6 +14,8 @@ import { Spinner } from '../components/ui/Spinner';
 import { SignInPage } from '../features/auth/SignInPage';
 import { UiPreviewPage } from '../features/dev/UiPreviewPage';
 import { PlaceholderPage } from '../features/placeholders/PlaceholderPage';
+import { ReceiptDetailPage } from '../features/receipts/ReceiptDetailPage';
+import { ReceiptsListPage } from '../features/receipts/ReceiptsListPage';
 import { UploadPage } from '../features/upload/UploadPage';
 import { AuthGate } from './AuthGate';
 
@@ -66,20 +68,8 @@ export function AppRouterContent({ queryClient }: AppRouterContentProps) {
 
         <Route element={<AuthGate />}>
           <Route path="/" element={<Navigate to="/receipts" replace />} />
-          <Route
-            path="/receipts"
-            element={
-              <PlaceholderPage
-                eyebrow="Receipts"
-                title="Receipts"
-                description="Browse uploaded grocery receipts, check totals, and inspect extracted line items."
-                emptyTitle="No receipts view yet"
-                emptyDescription="The receipts table, search filters, and detail view will live here."
-                actionLabel="Go to Upload"
-                actionTo="/upload"
-              />
-            }
-          />
+          <Route path="/receipts" element={<ReceiptsListPage />} />
+          <Route path="/receipts/:receiptId" element={<ReceiptDetailPage />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route
             path="/review"
