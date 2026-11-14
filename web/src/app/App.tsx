@@ -14,6 +14,7 @@ import { Spinner } from '../components/ui/Spinner';
 import { SignInPage } from '../features/auth/SignInPage';
 import { UiPreviewPage } from '../features/dev/UiPreviewPage';
 import { PlaceholderPage } from '../features/placeholders/PlaceholderPage';
+import { UploadPage } from '../features/upload/UploadPage';
 import { AuthGate } from './AuthGate';
 
 function LoginRoute() {
@@ -79,18 +80,7 @@ export function AppRouterContent({ queryClient }: AppRouterContentProps) {
               />
             }
           />
-          <Route
-            path="/upload"
-            element={
-              <PlaceholderPage
-                eyebrow="Upload"
-                title="Upload receipts"
-                description="Send up to 20 receipt photos at once for extraction and product matching."
-                emptyTitle="Upload flow coming next"
-                emptyDescription="Drag-and-drop and camera capture will connect here via POST /api/v1/receipts."
-              />
-            }
-          />
+          <Route path="/upload" element={<UploadPage />} />
           <Route
             path="/review"
             element={
