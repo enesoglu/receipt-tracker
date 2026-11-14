@@ -15,7 +15,6 @@ import {
   mockProduct,
   mockProductPage,
   mockReceipt,
-  mockReviewFlagPage,
   mockSettings,
   mockStorageStatus,
   mockStore,
@@ -24,7 +23,9 @@ import {
   mockUsage,
   mockUser,
   queryMockReceipts,
+  queryMockReviewFlags,
   registerMockUploads,
+  resolveMockReviewFlag,
   setMockAuthMode,
 } from './data';
 import { readUploadedFiles } from './multipart';
@@ -223,16 +224,13 @@ export const handlers = [
   http.get('/api/v1/review-flags', () => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json(mockReviewFlagPage);
+    return HttpResponse.json(queryMockReviewFlags());
   }),
 
-  http.post('/api/v1/review-flags/:flagId/resolve', () => {
+  http.post('/api/v1/review-flags/:flagId/resolve', ({ params }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json({
-      ...mockReceipt,
-      openFlagCount: 1,
-    });
+    return HttpResponse.json(resolveMockReviewFlag(String(params.flagId)));
   }),
 
   http.get('/api/v1/products', () => {

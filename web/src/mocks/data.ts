@@ -624,11 +624,13 @@ const ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.heic', '.heif'];
 
 let uploadedMockEntries: MockUploadedEntry[] = [];
 let nextMockUploadIndex = 700;
+let resolvedMockFlagIds = new Set<string>();
 
-/** Clears runtime mock state created during uploads so tests stay isolated. */
+/** Clears runtime mock state created during uploads and reviews so tests stay isolated. */
 export function resetMockState(): void {
   uploadedMockEntries = [];
   nextMockUploadIndex = 700;
+  resolvedMockFlagIds = new Set<string>();
 }
 
 function hasAllowedUploadType(file: { name: string; type: string }): boolean {
@@ -913,8 +915,50 @@ export function getMockReceiptById(
     (entry) => entry.receipt.id === receiptId,
   );
   if (uploaded) return uploaded.receipt;
+  const nowIso = new Date().toISOString();
+  const flags = mockReceipt.flags.map((flag) =>
+    resolvedMockFlagIds.has(flag.id)
+      ? { ...flag, resolvedAt: flag.resolvedAt ?? nowIso }
+      : flag,
+  );
+  const openFlagCount = flags.filter((flag) => flag.resolvedAt === null).length;
   return {
     ...mockReceipt,
     id: receiptId,
+    openFlagCount,
+    status: openFlagCount === 0 ? 'ready' : mockReceipt.status,
+    flags,
   };
+}
+
+/** Returns remaining open mock review flags for the interactive review queue. */
+export function queryMockReviewFlags(): components['schemas']['ReviewFlagPage'] {
+  const orderedFlags = [mockReceipt.flags[1], mockReceipt.flags[0]];
+  const openItems: components['schemas']['ReviewFlagEntry'][] = [];
+  for (const flag of orderedFlags) {
+    if (!flag || resolvedMockFlagIds.has(flag.id)) continue;
+    const lineItem =
+      flag.lineItemId !== null
+        ? (mockReceipt.lineItems.find((item) => item.id === flag.lineItemId) ??
+          null)
+        : null;
+    openItems.push({
+      flag,
+      receipt: mockReceiptPage.items[1],
+      lineItem,
+    });
+  }
+  return {
+    items: openItems,
+    nextCursor: null,
+    totalOpen: openItems.length,
+  };
+}
+
+/** Marks a mock review flag as resolved and returns the updated receipt. */
+export function resolveMockReviewFlag(
+  flagId: string,
+): components['schemas']['Receipt'] {
+  resolvedMockFlagIds.add(flagId);
+  return getMockReceiptById(mockReceipt.id) ?? mockReceipt;
 }
