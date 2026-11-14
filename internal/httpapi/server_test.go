@@ -14,7 +14,11 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/enesoglu/receipt-tracker/internal/auth"
+	"github.com/enesoglu/receipt-tracker/internal/config"
+	"github.com/enesoglu/receipt-tracker/internal/db/dbtest"
 	"github.com/enesoglu/receipt-tracker/internal/httpapi"
+	"github.com/enesoglu/receipt-tracker/internal/testutil"
 	"github.com/enesoglu/receipt-tracker/internal/web"
 )
 
@@ -23,7 +27,7 @@ func TestHandler_ServesHealthAndSPA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa, nil, nil)
 	tests := []struct {
 		path, accept, body string
 		status             int
@@ -52,9 +56,28 @@ func TestHandler_ServesHealthAndSPA(t *testing.T) {
 	}
 }
 
-func newTestServer(t *testing.T) *httpapi.Server {
+type authenticatedServer struct {
+	server *httpapi.Server
+	cookie *http.Cookie
+}
+
+func (s authenticatedServer) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.AddCookie(s.cookie)
+		s.server.Handler().ServeHTTP(w, r)
+	})
+}
+
+func newTestServer(t *testing.T) authenticatedServer {
 	t.Helper()
-	return httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler())
+	pool := dbtest.New(t)
+	cfg := config.Config{Environment: config.EnvDev, AllowedEmails: []string{"transport@example.com"}, DevLoginEmail: "transport@example.com"}
+	users := auth.New(pool, cfg, nil, time.Now)
+	sessions, stop := auth.NewSessions(pool, false)
+	t.Cleanup(stop)
+	user := testutil.NewUser(t, users)
+	request := testutil.Request(t, sessions, user.ID, http.MethodGet, "/", nil)
+	return authenticatedServer{server: httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions), cookie: request.Cookies()[0]}
 }
 
 // decodeProblem reads a problem document strictly: an unknown member means
@@ -150,7 +173,7 @@ func TestServe_StopsOnCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler())
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), nil, nil)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(ctx, listener) }()
 	cancel()

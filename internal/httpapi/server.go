@@ -10,7 +10,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
+
+	"github.com/enesoglu/receipt-tracker/internal/auth"
 )
 
 // Server owns the listener and shuts it down when its context is canceled.
@@ -22,8 +25,14 @@ type Server struct {
 // New builds the router: health checks, the REST API under /api/v1, the
 // prefixes reserved for sign-in, OAuth and MCP, and the single-page app for
 // everything else.
-func New(address string, logger *slog.Logger, spa http.Handler) *Server {
+func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager) *Server {
 	problems := problemWriter{logger: logger}
+	authentication := authHandlers{users: users, sessions: sessions}
+	if sessions != nil {
+		sessions.ErrorFunc = func(w http.ResponseWriter, r *http.Request, _ error) {
+			problems.write(w, r, errors.New("session storage failed"))
+		}
+	}
 	router := chi.NewRouter()
 	// Outermost first: the id exists before anything is logged, and the log
 	// line sees the status that panic recovery wrote.
@@ -41,9 +50,16 @@ func New(address string, logger *slog.Logger, spa http.Handler) *Server {
 		api.Use(crossOrigin(problems), bodyLimit(problems))
 		api.NotFound(problems.notFound)
 		api.MethodNotAllowed(problems.methodNotAllowed)
-		api.Route("/v1", func(v1 chi.Router) { mountAPI(v1, problems) })
+		api.Route("/v1", func(v1 chi.Router) {
+			if sessions != nil {
+				v1.Use(sessions.LoadAndSave)
+			}
+			v1.Use(RequireUser(users, sessions, problems.write))
+			mountAPI(v1, problems, authentication)
+		})
 	})
-	// Reserved for later features; never served by the single-page app.
+	authentication.mount(router, problems)
+	// Reserved paths are never served by the single-page app.
 	for _, prefix := range []string{"/auth", "/oauth", "/mcp", "/.well-known"} {
 		router.Handle(prefix, http.NotFoundHandler())
 		router.Handle(prefix+"/*", http.NotFoundHandler())
