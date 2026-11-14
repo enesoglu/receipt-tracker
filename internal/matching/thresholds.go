@@ -38,6 +38,10 @@ const (
 	// question shows the user.
 	maxOffered = 3
 
+	// maxAliasCandidates is how many of the user's aliases the similarity
+	// lookup returns. Products that own the line's code come on top.
+	maxAliasCandidates = 20
+
 	// scoreTolerance absorbs binary rounding when a score is compared with
 	// a threshold, so that a score that is exactly on a threshold in
 	// decimal arithmetic (0.95 - 0.87 = 0.08) reaches it.

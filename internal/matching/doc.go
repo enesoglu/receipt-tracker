@@ -113,4 +113,14 @@
 // name, and passes them to Decide. The source is an interface defined
 // here, with only the one method the matcher needs, so tests can replace
 // it with a small hand-written fake.
+//
+// [SQLSource] is the real source. It asks PostgreSQL for the user's 20
+// aliases nearest to the line's key: "ORDER BY normalized_name <-> key"
+// sorts by trigram distance (1 minus similarity) and walks a GiST index on
+// (user_id, normalized_name), so it does not compute the similarity of
+// every alias. A second query, run only when the line has a code, adds the
+// products that own the code with all their names. Both queries also
+// report the user's rejections of the key, so a line costs one or two
+// round trips. Pass NewSQLSource a transaction to match lines while
+// writing them.
 package matching
