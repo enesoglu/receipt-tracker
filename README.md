@@ -176,6 +176,10 @@ document (`application/problem+json`) that carries the id from the
 without its query string. The API refuses state-changing requests from other
 origins and request bodies over 1 MiB (uploads: 20 files of 15 MB).
 
+The web app reaches the API only through `web/src/api/client.ts`: a typed
+`openapi-fetch` client for the generated schema, and `unwrap`, which returns
+the data of a call or throws an `ApiError` holding the problem document.
+
 ## Database schema
 
 The schema is a series of goose migrations in `internal/db/migrations`,
