@@ -171,32 +171,63 @@ per receipt later without a schema change.
 ASCII for the comparison key; drop punctuation and VAT markers (`%08`, `*`);
 split letter/digit boundaries (`1LT` → `1 lt`); canonical units (`lt`→`l`,
 `gr`→`g`, `adet`→`ad`). The result is a token list plus an optional size
-signature (value + unit, `1 l`, `500 g`).
+signature. The signature keeps the printed value and unit (`1 l`, `500 g`)
+for display. In the comparison key a size is converted to the base unit of
+its dimension, volume to `ml` and mass to `g`, with exact decimal arithmetic
+and a decimal comma accepted: `1 L`, `100 CL` and `1000 ML` all give
+`1000 ml`, and `1,5 KG` gives `1500 g`. Two spellings of one amount are
+therefore the same size for alias equality, for candidate lookup and for
+rule 2.
 
 **Candidates.** Up to 20 of the user's aliases by `pg_trgm` similarity, plus
-every product that owns the line's product code.
+every product that owns the line's product code. A product's score is the
+best score among its aliases; the runner-up is the next-best other product
+that rule 2 has not blocked. Candidates are ordered by score, then products
+that are not blocked before blocked ones, then product id.
+A product owns the line's code when it has that code as a store code of the
+line's store, or as a valid GTIN from any store.
 
-**Score (0–1).** `0.6 × token score + 0.4 × trigram Dice`. The token score is a
-set overlap in which a token also matches when one is a prefix of the other
-(length ≥ 3), because receipts abbreviate (`AYRN` / `AYRAN`).
+**Score (0–1).** `0.6 × token score + 0.4 × trigram Dice`, both on comparison
+keys. The token score is `2m / (a + b)`, where `a` and `b` are the numbers of
+tokens in the two keys and `m` is the largest number of matching token pairs
+that can be formed when each token is used in at most one pair; it is 0 when
+either key is empty. Two tokens match when they are equal.
+Receipts abbreviate by cutting words short and by dropping vowels, so two
+letter tokens also match when the shorter has at least three letters, both
+start with the same letter, and the shorter can be produced from a prefix of
+the longer by deleting vowels (`a e i o u`): `DOM` / `DOMATES`,
+`AYRN` / `AYRAN`, `PNR` / `PINAR`, `CKL` / `CIKOLATA`, but not
+`KOLA` / `KOLONYA`. Number tokens match only when equal. A token matches at
+most one token on the other side. When both names print a size, the score is
+computed on the keys without their size tokens, because rule 2 already
+compares the sizes and shared size tokens would make unrelated products look
+alike. When only one name prints a size, its tokens stay, so the missing size
+lowers the score. If removing the sizes leaves either name empty, the full
+keys are scored.
 
-**Decide**, first rule that applies:
+**Decide.** Rules 1 and 2 filter candidates; then the first rule that applies
+decides:
 
 | # | Condition | Decision |
 | --- | --- | --- |
 | 1 | A `match_rejections` row exists for (name, product) | Skip that candidate |
-| 2 | Size signatures present on both sides and different | Never auto-link; ask if score ≥ 0.55 |
+| 2 | Sizes present on both sides and different (amount or dimension) | The candidate is blocked: never auto-linked, but it can be offered in a question |
 | 3 | Exact normalised alias, same store, alias maps to one product | Auto-link |
-| 4 | Code match (same store, or valid GTIN across stores) and score ≥ 0.50 | Auto-link |
-| 5 | Code match and score < 0.50 | Ask: "same code, different name" |
-| 6 | Code points to product A, name best-matches product B with score ≥ 0.90 | Ask: code conflict |
-| 7 | Score ≥ 0.90 and at least 0.08 above the runner-up | Auto-link |
-| 8 | 0.55 ≤ score < 0.90 | Ask, showing the top three candidates |
-| 9 | Otherwise | Create a new product with the cleaned name |
+| 4 | More than one product owns the line's code | Ask: ambiguous code, showing the owners |
+| 5 | One product A owns the code, and a product B that does not own it and is not blocked scores ≥ 0.90 and at least 0.08 above A | Ask: code conflict (A by code, B by name) |
+| 6 | One product A owns the code, A scores ≥ 0.50 and is not blocked | Auto-link A |
+| 7 | One product A owns the code (every other case) | Ask: "same code, different name" |
+| 8 | The best product that is not blocked scores ≥ 0.90 and at least 0.08 above the runner-up, and no blocked product scores higher than it | Auto-link |
+| 9 | Best score ≥ 0.55 | Ask, showing the top three candidates |
+| 10 | Otherwise | Create a new product with the cleaned name |
 
 Codes are a strong signal, never proof: a store code only counts inside its
 store, a GTIN (8/12/13 digits with a valid check digit) counts everywhere, and
-rules 5 and 6 route disagreements to the user. Thresholds live in one file.
+rules 4, 5 and 7 route disagreements to the user. When code and name both
+fit, the code breaks a tie between similar names (rule 6). The other sizes of
+a product are blocked by rule 2 and do not compete with the size that fits;
+a blocked product that fits the name better than every other candidate
+suggests a new size, so the line is asked. Thresholds live in one file.
 
 **Learning.** "Same product" adds the alias (and code) to the product. "Different"
 writes a `match_rejections` row and creates a new product. **Merge** moves
@@ -214,7 +245,8 @@ Flags are created only for suspicious data:
 | `missing_field` | No date or no total |
 | `line_math` | `quantity × unit_price` differs from `line_total` by more than 0.01 |
 | `sum_mismatch` | Sum of line totals differs from the receipt total by more than 0.02 |
-| `uncertain_match`, `code_conflict` | Matching rules 2, 5, 6, 8 |
+| `uncertain_match` | Matching rules 4, 7 and 9 |
+| `code_conflict` | Matching rule 5 |
 | `possible_duplicate` | Same store, date and total as another receipt |
 
 The review screen lists open flags; each resolution (edit, confirm, pick a
