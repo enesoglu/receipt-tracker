@@ -3,7 +3,8 @@
 A self-hosted app that turns grocery receipt photos into structured data,
 product price history, and spending reports. One Go binary serves the React
 application; PostgreSQL is the only companion service. The project is MIT
-licensed.
+licensed; the notices of the third-party components compiled into the server
+are in [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES).
 
 ## Status
 

@@ -20,6 +20,7 @@ RUN apk add --no-cache ca-certificates postgresql18-client \
 WORKDIR /app
 COPY --from=build /server ./server
 COPY LICENSE ./LICENSE
+COPY THIRD_PARTY_LICENSES ./THIRD_PARTY_LICENSES
 USER app
 ENV APP_ENV=prod APP_LISTEN_ADDR=:8080
 EXPOSE 8080
