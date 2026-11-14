@@ -44,6 +44,18 @@ function mockAuthenticatedApi() {
         response: new Response(null, { status: 200 }),
       }) as never;
     }
+    if (path === '/receipts') {
+      return Promise.resolve({
+        data: { items: [], nextCursor: null },
+        response: new Response(null, { status: 200 }),
+      }) as never;
+    }
+    if (path === '/stores') {
+      return Promise.resolve({
+        data: { items: [], nextCursor: null },
+        response: new Response(null, { status: 200 }),
+      }) as never;
+    }
     return Promise.reject(makeProblem(404, 'Not found')) as never;
   });
 }
