@@ -21,6 +21,11 @@ tasks:
     desc: Run the server and web app with reload
     cmds:
       - node web/scripts/tasks.mjs dev
+  server:
+    desc: Build and run the server with .env and optional arguments
+    cmds:
+      - node web/scripts/tasks.mjs embed
+      - node web/scripts/server-dev.mjs {{.CLI_ARGS}}
   generate:
     desc: Regenerate database and API bindings when their sources exist
     cmds:

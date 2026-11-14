@@ -43,3 +43,32 @@ preserve the previous state. A background refresh runs at startup and every
 Backups can reuse `drive.Service.Access(ctx)` to obtain the authorized Drive
 service and app root. Image operations still require caller ownership checks;
 Drive file IDs are private storage references, never public image URLs.
+
+## Recovery probe
+
+`task server -- <args>` builds the server with embedded web assets, loads
+`.env` using the same parser as `task dev`, and forwards arguments. Shell
+variables win over `.env`; a missing file is allowed. The Go binary itself
+reads environment variables only.
+
+After connecting the test root, run:
+
+```powershell
+task server -- storage probe --write
+task server -- storage probe --list
+```
+
+Save the marker reference, then repeat `--list` after reauthorization. A
+successful recovery lists that same reference as `readable` and creates no
+second root folder. `--list` reads every visible non-folder file in the root,
+prints names and private references, and exits unsuccessfully if the listing
+is empty or any file is unreadable. Subfolders are listed as `folder` and are
+not treated as downloadable files. No HTTP session is needed by the command;
+it uses the encrypted connection in the configured database.
+
+The owner-run exercise must test both a fresh local connection without
+revoking Google access and revocation in the Google account followed by fresh
+consent. Use the same client ID and only `receipt-tracker-test`. Record both
+results before declaring storage complete; run this exercise only after the
+Drive implementation PR has merged. Neither production data nor real Google
+credentials belong in test fixtures or command output.
