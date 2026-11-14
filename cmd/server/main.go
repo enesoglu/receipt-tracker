@@ -17,6 +17,9 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/config"
 	"github.com/enesoglu/receipt-tracker/internal/db"
 	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
+	"github.com/enesoglu/receipt-tracker/internal/extract"
+	"github.com/enesoglu/receipt-tracker/internal/extract/azure"
+	"github.com/enesoglu/receipt-tracker/internal/extract/fake"
 	"github.com/enesoglu/receipt-tracker/internal/httpapi"
 	"github.com/enesoglu/receipt-tracker/internal/ingest"
 	"github.com/enesoglu/receipt-tracker/internal/jobs"
@@ -85,6 +88,18 @@ func run(logger *slog.Logger) error {
 	}
 	go driveStorage.Run(ctx)
 	worker := jobs.New(pool, logger, time.Now, jobs.Options{})
+	usage := extract.NewUsage(pool, string(cfg.Extraction.Extractor), cfg.Extraction.MonthlyPages, time.Now)
+	var extractor extract.Extractor = fake.New(usage)
+	if cfg.Extraction.Extractor == config.ExtractorAzure {
+		extractor, err = azure.New(azure.Options{
+			Endpoint: cfg.Extraction.AzureEndpoint, Key: cfg.Extraction.AzureKey.Reveal(), Meter: usage, Logger: logger,
+		})
+		if err != nil {
+			return fmt.Errorf("configure extraction: %w", err)
+		}
+	}
+	// Handlers are registered before the worker starts reading them.
+	worker.Register(jobs.KindExtractReceipt, extract.NewJob(pool, images, extractor, usage, extract.NewStoreResult(pool, time.Now), logger, time.Now))
 	workerDone := make(chan error, 1)
 	go func() {
 		err := worker.Run(ctx)

@@ -10,7 +10,146 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
 )
+
+const addProviderUsage = `-- name: AddProviderUsage :exec
+INSERT INTO provider_usage (provider, period, pages, updated_at)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (provider, period) DO UPDATE
+SET pages = provider_usage.pages + EXCLUDED.pages, updated_at = EXCLUDED.updated_at
+`
+
+type AddProviderUsageParams struct {
+	Provider string
+	Period   string
+	Pages    int32
+	Now      time.Time
+}
+
+func (q *Queries) AddProviderUsage(ctx context.Context, arg AddProviderUsageParams) error {
+	_, err := q.db.Exec(ctx, addProviderUsage,
+		arg.Provider,
+		arg.Period,
+		arg.Pages,
+		arg.Now,
+	)
+	return err
+}
+
+const applyExtractedReceipt = `-- name: ApplyExtractedReceipt :exec
+UPDATE receipts SET
+    store_id = $1,
+    purchased_on = $2,
+    purchased_time = $3,
+    currency = COALESCE($4, currency),
+    subtotal = $5,
+    tax_total = $6,
+    total = $7,
+    status = 'needs_review',
+    failure_reason = NULL,
+    updated_at = $8
+WHERE user_id = $9 AND id = $10
+`
+
+type ApplyExtractedReceiptParams struct {
+	StoreID       uuid.NullUUID
+	PurchasedOn   *time.Time
+	PurchasedTime pgtype.Time
+	Currency      *string
+	Subtotal      decimal.NullDecimal
+	TaxTotal      decimal.NullDecimal
+	Total         decimal.NullDecimal
+	Now           time.Time
+	UserID        uuid.UUID
+	ReceiptID     uuid.UUID
+}
+
+func (q *Queries) ApplyExtractedReceipt(ctx context.Context, arg ApplyExtractedReceiptParams) error {
+	_, err := q.db.Exec(ctx, applyExtractedReceipt,
+		arg.StoreID,
+		arg.PurchasedOn,
+		arg.PurchasedTime,
+		arg.Currency,
+		arg.Subtotal,
+		arg.TaxTotal,
+		arg.Total,
+		arg.Now,
+		arg.UserID,
+		arg.ReceiptID,
+	)
+	return err
+}
+
+const createExtractedLineItem = `-- name: CreateExtractedLineItem :exec
+INSERT INTO line_items (
+    user_id, receipt_id, position, raw_name, name, quantity, quantity_unit,
+    unit_price, line_total, product_code, confidence, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10, $11, $12, $12
+)
+`
+
+type CreateExtractedLineItemParams struct {
+	UserID       uuid.UUID
+	ReceiptID    uuid.UUID
+	Position     int32
+	RawName      string
+	Name         string
+	Quantity     decimal.NullDecimal
+	QuantityUnit *string
+	UnitPrice    decimal.NullDecimal
+	LineTotal    decimal.NullDecimal
+	ProductCode  *string
+	Confidence   *float64
+	Now          time.Time
+}
+
+func (q *Queries) CreateExtractedLineItem(ctx context.Context, arg CreateExtractedLineItemParams) error {
+	_, err := q.db.Exec(ctx, createExtractedLineItem,
+		arg.UserID,
+		arg.ReceiptID,
+		arg.Position,
+		arg.RawName,
+		arg.Name,
+		arg.Quantity,
+		arg.QuantityUnit,
+		arg.UnitPrice,
+		arg.LineTotal,
+		arg.ProductCode,
+		arg.Confidence,
+		arg.Now,
+	)
+	return err
+}
+
+const createExtraction = `-- name: CreateExtraction :exec
+INSERT INTO extractions (user_id, receipt_id, provider, model, raw, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreateExtractionParams struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+	Provider  string
+	Model     string
+	Raw       []byte
+	Now       time.Time
+}
+
+func (q *Queries) CreateExtraction(ctx context.Context, arg CreateExtractionParams) error {
+	_, err := q.db.Exec(ctx, createExtraction,
+		arg.UserID,
+		arg.ReceiptID,
+		arg.Provider,
+		arg.Model,
+		arg.Raw,
+		arg.Now,
+	)
+	return err
+}
 
 const createQueuedReceipt = `-- name: CreateQueuedReceipt :exec
 INSERT INTO receipts (id, user_id, title, currency, status, source, created_at, updated_at)
@@ -83,6 +222,42 @@ func (q *Queries) CreateReceiptImage(ctx context.Context, arg CreateReceiptImage
 	return err
 }
 
+const deleteExtractedLineItems = `-- name: DeleteExtractedLineItems :exec
+DELETE FROM line_items WHERE user_id = $1 AND receipt_id = $2
+`
+
+type DeleteExtractedLineItemsParams struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+}
+
+func (q *Queries) DeleteExtractedLineItems(ctx context.Context, arg DeleteExtractedLineItemsParams) error {
+	_, err := q.db.Exec(ctx, deleteExtractedLineItems, arg.UserID, arg.ReceiptID)
+	return err
+}
+
+const failExtraction = `-- name: FailExtraction :exec
+UPDATE receipts SET status = 'failed', failure_reason = $1, updated_at = $2
+WHERE user_id = $3 AND id = $4
+`
+
+type FailExtractionParams struct {
+	FailureReason *string
+	Now           time.Time
+	UserID        uuid.UUID
+	ReceiptID     uuid.UUID
+}
+
+func (q *Queries) FailExtraction(ctx context.Context, arg FailExtractionParams) error {
+	_, err := q.db.Exec(ctx, failExtraction,
+		arg.FailureReason,
+		arg.Now,
+		arg.UserID,
+		arg.ReceiptID,
+	)
+	return err
+}
+
 const findReceiptByImageHash = `-- name: FindReceiptByImageHash :one
 SELECT receipt_id FROM receipt_images
 WHERE user_id = $1 AND sha256 = $2
@@ -100,6 +275,72 @@ func (q *Queries) FindReceiptByImageHash(ctx context.Context, arg FindReceiptByI
 	return receipt_id, err
 }
 
+const getExtractionTarget = `-- name: GetExtractionTarget :one
+SELECT r.status, i.storage_ref, i.content_type
+FROM receipts r
+JOIN receipt_images i ON i.user_id = r.user_id AND i.receipt_id = r.id AND i.position = 0
+WHERE r.user_id = $1 AND r.id = $2
+`
+
+type GetExtractionTargetParams struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+}
+
+type GetExtractionTargetRow struct {
+	Status      string
+	StorageRef  string
+	ContentType string
+}
+
+func (q *Queries) GetExtractionTarget(ctx context.Context, arg GetExtractionTargetParams) (GetExtractionTargetRow, error) {
+	row := q.db.QueryRow(ctx, getExtractionTarget, arg.UserID, arg.ReceiptID)
+	var i GetExtractionTargetRow
+	err := row.Scan(&i.Status, &i.StorageRef, &i.ContentType)
+	return i, err
+}
+
+const getLatestExtraction = `-- name: GetLatestExtraction :one
+SELECT provider, raw FROM extractions
+WHERE user_id = $1 AND receipt_id = $2
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetLatestExtractionParams struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+}
+
+type GetLatestExtractionRow struct {
+	Provider string
+	Raw      []byte
+}
+
+func (q *Queries) GetLatestExtraction(ctx context.Context, arg GetLatestExtractionParams) (GetLatestExtractionRow, error) {
+	row := q.db.QueryRow(ctx, getLatestExtraction, arg.UserID, arg.ReceiptID)
+	var i GetLatestExtractionRow
+	err := row.Scan(&i.Provider, &i.Raw)
+	return i, err
+}
+
+const getProviderUsage = `-- name: GetProviderUsage :one
+SELECT pages FROM provider_usage
+WHERE provider = $1 AND period = $2
+`
+
+type GetProviderUsageParams struct {
+	Provider string
+	Period   string
+}
+
+func (q *Queries) GetProviderUsage(ctx context.Context, arg GetProviderUsageParams) (int32, error) {
+	row := q.db.QueryRow(ctx, getProviderUsage, arg.Provider, arg.Period)
+	var pages int32
+	err := row.Scan(&pages)
+	return pages, err
+}
+
 const getUploadDefaults = `-- name: GetUploadDefaults :one
 SELECT default_receipt_title, default_currency FROM user_settings
 WHERE user_id = $1
@@ -115,4 +356,52 @@ func (q *Queries) GetUploadDefaults(ctx context.Context, userID uuid.UUID) (GetU
 	var i GetUploadDefaultsRow
 	err := row.Scan(&i.DefaultReceiptTitle, &i.DefaultCurrency)
 	return i, err
+}
+
+const setExtractionStatus = `-- name: SetExtractionStatus :exec
+UPDATE receipts SET status = $1, failure_reason = NULL, updated_at = $2
+WHERE user_id = $3 AND id = $4
+`
+
+type SetExtractionStatusParams struct {
+	Status    string
+	Now       time.Time
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+}
+
+func (q *Queries) SetExtractionStatus(ctx context.Context, arg SetExtractionStatusParams) error {
+	_, err := q.db.Exec(ctx, setExtractionStatus,
+		arg.Status,
+		arg.Now,
+		arg.UserID,
+		arg.ReceiptID,
+	)
+	return err
+}
+
+const upsertExtractedStore = `-- name: UpsertExtractedStore :one
+INSERT INTO stores (user_id, name, normalized_name, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $4)
+ON CONFLICT (user_id, normalized_name) DO UPDATE SET updated_at = EXCLUDED.updated_at
+RETURNING id
+`
+
+type UpsertExtractedStoreParams struct {
+	UserID         uuid.UUID
+	Name           string
+	NormalizedName string
+	Now            time.Time
+}
+
+func (q *Queries) UpsertExtractedStore(ctx context.Context, arg UpsertExtractedStoreParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, upsertExtractedStore,
+		arg.UserID,
+		arg.Name,
+		arg.NormalizedName,
+		arg.Now,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
