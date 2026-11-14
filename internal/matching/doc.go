@@ -56,4 +56,48 @@
 // size, it stays, so a name without one scores a little lower.
 //
 // Weights and other tuning numbers live in thresholds.go.
+//
+// # Deciding
+//
+// [Decide] takes the line, the candidate products and the user's earlier
+// rejections, and returns a [Decision]: link automatically, ask the user,
+// or create a new product. Linking the wrong product corrupts the price
+// history, so it links only when the evidence is clear and asks otherwise.
+//
+// First every candidate gets a score: the best [Score] among its aliases.
+// Two rules then filter the candidates:
+//
+//   - Rule 1 drops a product the user already said this name is not.
+//   - Rule 2 blocks a product whose size differs from the line's ("1 L"
+//     against "2 L", or "1 L" against "1 KG"). A blocked product is never
+//     linked automatically, but it can still be offered in a question.
+//
+// The candidates are sorted by score, best first; among equal scores,
+// products that are not blocked come first, then the order is by product
+// id, so the input order never matters. Then the first of these rules that
+// applies decides:
+//
+//   - Rule 3 links the product that has the line's exact key as an alias
+//     at the same store, if exactly one product does.
+//   - Rules 4 to 7 handle a product code on the line. A code counts when it
+//     is a valid GTIN ([ValidGTIN]) recorded for the product, or the
+//     product's code at this very store. Several owners: ask (rule 4). The
+//     name clearly better for another product that is not blocked (at
+//     least 0.90, and 0.08 above the owner): ask about the conflict (rule
+//     5). Otherwise the owner is linked if its name fits at least 0.50 and
+//     it is not blocked (rule 6), and asked about if not (rule 7).
+//   - Rule 8 links the best product that is not blocked when it scores at
+//     least 0.90 and leads the next product that is not blocked by at
+//     least 0.08. Blocked products are other sizes and do not compete,
+//     because without their sizes "SUT 1L" and "SUT 2L" score the same.
+//     But if a blocked product scores higher than every product that is
+//     not blocked, the line is probably a new size of it, and rule 8 does
+//     not link.
+//   - Rule 9 asks, showing the best three, when the best scores at least
+//     0.55.
+//   - Rule 10 creates a new product.
+//
+// The decision carries the rule number and a [Reason], so a caller can
+// raise the right review flag. Scores are compared with thresholds with a
+// tiny tolerance, so that a score exactly on a threshold reaches it.
 package matching
