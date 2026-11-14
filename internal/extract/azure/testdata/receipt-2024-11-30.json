@@ -1,0 +1,70 @@
+{
+  "status": "succeeded",
+  "createdDateTime": "2026-11-14T12:00:01Z",
+  "lastUpdatedDateTime": "2026-11-14T12:00:04Z",
+  "analyzeResult": {
+    "apiVersion": "2024-11-30",
+    "modelId": "prebuilt-receipt",
+    "stringIndexType": "textElements",
+    "content": "SYNTHETIC MARKET\nSUT 1LT 2 X 32,50 65,00\nEKMEK 15,00\nINDIRIM -10,00\nTOPLAM 70,00",
+    "pages": [
+      {"pageNumber": 1, "spans": [{"offset": 0, "length": 82}]}
+    ],
+    "documents": [
+      {
+        "docType": "receipt.retailMeal",
+        "spans": [{"offset": 0, "length": 82}],
+        "confidence": 0.984,
+        "fields": {
+          "MerchantName": {"type": "string", "valueString": "SYNTHETIC MARKET", "content": "SYNTHETIC MARKET", "confidence": 0.973},
+          "TransactionTime": {"type": "time", "valueTime": "18:42:07", "content": "18:42", "confidence": 0.951},
+          "Subtotal": {"type": "currency", "valueCurrency": {"amount": 63.74, "currencySymbol": "₺"}, "content": "63,74", "confidence": 0.902},
+          "TotalTax": {"type": "currency", "valueCurrency": {"amount": 6.26}, "content": "6,26", "confidence": 0.889},
+          "Total": {"type": "currency", "valueCurrency": {"amount": 7.0E1, "currencySymbol": "₺", "currencyCode": "TRY"}, "content": "70,00", "confidence": 0.979},
+          "CountryRegion": {"type": "countryRegion", "valueCountryRegion": "TUR", "confidence": 0.99},
+          "Items": {
+            "type": "array",
+            "valueArray": [
+              {
+                "type": "object",
+                "confidence": 0.94,
+                "valueObject": {
+                  "Description": {"type": "string", "valueString": "SUT 1LT", "content": "SUT 1LT", "confidence": 0.952},
+                  "Quantity": {"type": "number", "valueNumber": 2, "content": "2", "confidence": 0.931},
+                  "QuantityUnit": {"type": "string", "valueString": "AD", "confidence": 0.61},
+                  "Price": {"type": "currency", "valueCurrency": {"amount": 32.5, "currencyCode": "TRY"}, "content": "32,50", "confidence": 0.944},
+                  "TotalPrice": {"type": "currency", "valueCurrency": {"amount": 65, "currencyCode": "TRY"}, "content": "65,00", "confidence": 0.961},
+                  "ProductCode": {"type": "string", "valueString": "8690000000012", "confidence": 0.82}
+                }
+              },
+              {
+                "type": "object",
+                "confidence": 0.91,
+                "valueObject": {
+                  "Description": {"type": "string", "content": "EKMEK", "confidence": 0.918},
+                  "TotalPrice": {"type": "currency", "valueCurrency": {"amount": 15.0}, "content": "15,00", "confidence": 0.957}
+                }
+              },
+              {
+                "type": "object",
+                "confidence": 0.77,
+                "valueObject": {
+                  "Description": {"type": "string", "valueString": "INDIRIM", "confidence": 0.801},
+                  "TotalPrice": {"type": "currency", "valueCurrency": {"amount": -10.00}, "content": "-10,00", "confidence": 0.772}
+                }
+              },
+              {
+                "type": "object",
+                "confidence": 0.31,
+                "valueObject": {
+                  "Quantity": {"type": "number", "content": "1,5", "confidence": 0.3},
+                  "TotalPrice": {"type": "currency", "content": "??", "confidence": 0.2}
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
