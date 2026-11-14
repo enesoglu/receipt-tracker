@@ -29,4 +29,31 @@
 // Normalize is idempotent on the key: normalising a key gives the same key
 // back. That matters because the key is what the database stores for a
 // known name, and stored keys are normalised again when they are compared.
+//
+// # Scoring two names
+//
+// [Score] gives two names a similarity between 0 and 1:
+//
+//	score = 0.6 × token score + 0.4 × trigram Dice
+//
+// The token score looks at whole words. Two tokens match when they are
+// equal or when the shorter is an abbreviation of the longer: at least
+// three letters, the same first letter, and only cut short or stripped of
+// vowels ("dom" for "domates", "pnr" for "pinar"). Each token pairs with
+// at most one token on the other side, and the score is 2m / (a + b) for m
+// pairs between a and b tokens. "pnr sut 1000 ml" and "pinar sut 1000 ml"
+// pair all four tokens, so their token score is 1.
+//
+// The trigram Dice coefficient looks at spelling. Each word is cut into
+// overlapping three-character pieces ("sut" padded to "  sut " gives
+// "  s", " su", "sut", "ut "), and the score is twice the number of shared
+// pieces divided by the number of pieces on both sides. It rewards names
+// that are spelled alike even where no word matches.
+//
+// When both names print a size, both parts are computed without the size
+// tokens: "PIRINC 1KG" and "SEKER 1 KG" share nothing but their size, and
+// sizes are judged separately (rule 2 below). When only one name prints a
+// size, it stays, so a name without one scores a little lower.
+//
+// Weights and other tuning numbers live in thresholds.go.
 package matching
