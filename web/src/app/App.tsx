@@ -16,6 +16,7 @@ import { UiPreviewPage } from '../features/dev/UiPreviewPage';
 import { PlaceholderPage } from '../features/placeholders/PlaceholderPage';
 import { ReceiptDetailPage } from '../features/receipts/ReceiptDetailPage';
 import { ReceiptsListPage } from '../features/receipts/ReceiptsListPage';
+import { ReviewQueuePage } from '../features/review/ReviewQueuePage';
 import { UploadPage } from '../features/upload/UploadPage';
 import { AuthGate } from './AuthGate';
 
@@ -71,18 +72,7 @@ export function AppRouterContent({ queryClient }: AppRouterContentProps) {
           <Route path="/receipts" element={<ReceiptsListPage />} />
           <Route path="/receipts/:receiptId" element={<ReceiptDetailPage />} />
           <Route path="/upload" element={<UploadPage />} />
-          <Route
-            path="/review"
-            element={
-              <PlaceholderPage
-                eyebrow="Review"
-                title="Review queue"
-                description="Resolve low-confidence OCR lines and ambiguous product matches."
-                emptyTitle="Review queue coming next"
-                emptyDescription="Open review flags and one-click resolution controls will live here."
-              />
-            }
-          />
+          <Route path="/review" element={<ReviewQueuePage />} />
           <Route
             path="/products"
             element={
