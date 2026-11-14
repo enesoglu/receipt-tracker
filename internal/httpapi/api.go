@@ -36,8 +36,9 @@ func notImplemented() error {
 // only returns a response object or an error. All three ways a request can
 // fail end in the problem writer: a parameter that cannot be bound, a body
 // that cannot be decoded, and an error from the handler.
-func mountAPI(router chi.Router, problems problemWriter, authentication authHandlers, storage storageHandlers) {
-	strict := NewStrictHandlerWithOptions(handlers{authHandlers: authentication, storageHandlers: storage}, nil, StrictHTTPServerOptions{
+func mountAPI(router chi.Router, problems problemWriter, authentication authHandlers, storage storageHandlers, ingestion Ingestion) {
+	all := handlers{authHandlers: authentication, storageHandlers: storage, uploadsHandlers: uploadsHandlers{uploads: ingestion.Uploads}}
+	strict := NewStrictHandlerWithOptions(all, []StrictMiddlewareFunc{uploadDeadlines}, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			problems.write(w, r, apperr.Wrap(apperr.Invalid, detailBodyShape, err))
 		},

@@ -26,7 +26,7 @@ type Server struct {
 // New builds the router: health checks, the REST API under /api/v1, the
 // prefixes reserved for sign-in, OAuth and MCP, and the single-page app for
 // everything else.
-func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager, storage *drive.Service) *Server {
+func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager, storage *drive.Service, ingestion Ingestion) *Server {
 	problems := problemWriter{logger: logger}
 	authentication := authHandlers{users: users, sessions: sessions}
 	if sessions != nil {
@@ -78,7 +78,7 @@ func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Serv
 				v1.Use(sessions.LoadAndSave)
 			}
 			v1.Use(RequireUser(users, sessions, problems.write), validateDriveQuery(problems))
-			mountAPI(v1, problems, authentication, storageHandlers{storage: storage})
+			mountAPI(v1, problems, authentication, storageHandlers{storage: storage}, ingestion)
 		})
 	})
 	authentication.mount(router, problems)

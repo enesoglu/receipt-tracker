@@ -52,7 +52,7 @@ func (f *authFixture) configure(t *testing.T) {
 	sessions, stop := auth.NewSessions(f.pool, f.cfg.Environment == config.EnvProd)
 	t.Cleanup(stop)
 	f.sessions = sessions
-	f.server = httpapi.New(":0", slog.New(slog.NewJSONHandler(&f.logged, nil)), http.NotFoundHandler(), f.users, f.sessions, nil)
+	f.server = httpapi.New(":0", slog.New(slog.NewJSONHandler(&f.logged, nil)), http.NotFoundHandler(), f.users, f.sessions, nil, httpapi.Ingestion{})
 }
 
 func (f *authFixture) request(t *testing.T, method, target string, cookies ...*http.Cookie) *httptest.ResponseRecorder {

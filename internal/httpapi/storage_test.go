@@ -40,7 +40,7 @@ func TestStorage_AdminConsentIsolationAndHealth(t *testing.T) {
 		t.Fatal(err)
 	}
 	var logs bytes.Buffer
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(&logs, nil)), http.NotFoundHandler(), users, sessions, service)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(&logs, nil)), http.NotFoundHandler(), users, sessions, service, httpapi.Ingestion{})
 	request := func(user uuid.UUID, method, path string) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRequestWithContext(t.Context(), method, path, nil)
