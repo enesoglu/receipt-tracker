@@ -12,7 +12,7 @@ import (
 )
 
 func TestNew_LocalSelectsConfiguredDirectory(t *testing.T) {
-	store, err := backend.New(t.Context(), config.Storage{Backend: config.StorageLocal, LocalDir: t.TempDir()})
+	store, err := backend.New(t.Context(), config.Storage{Backend: config.StorageLocal, LocalDir: t.TempDir()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestNew_LocalSelectsConfiguredDirectory(t *testing.T) {
 }
 
 func TestNew_DriveDoesNotFallBackToLocal(t *testing.T) {
-	store, err := backend.New(t.Context(), config.Storage{Backend: config.StorageDrive, LocalDir: t.TempDir()})
+	store, err := backend.New(t.Context(), config.Storage{Backend: config.StorageDrive, LocalDir: t.TempDir()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestNew_DriveDoesNotFallBackToLocal(t *testing.T) {
 }
 
 func TestNew_UnknownBackendIsInvalid(t *testing.T) {
-	if _, err := backend.New(t.Context(), config.Storage{Backend: "unknown"}); !errors.Is(err, apperr.Invalid) {
+	if _, err := backend.New(t.Context(), config.Storage{Backend: "unknown"}, nil); !errors.Is(err, apperr.Invalid) {
 		t.Fatalf("unknown backend: %v", err)
 	}
 }

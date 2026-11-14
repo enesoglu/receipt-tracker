@@ -90,7 +90,7 @@ func plannedOperations() map[string][]string {
 		"categories": {"createCategory", "deleteCategory", "listCategories", "updateCategory"},
 		"reports":    {"getMonthBreakdown", "getMonthlySpending"},
 		"settings":   {"getSettings", "getUsage", "updateSettings"},
-		"storage":    {"disconnectStorage", "getStorageStatus"},
+		"storage":    {"completeDrive", "connectDrive", "disconnectStorage", "getStorageStatus"},
 	}
 }
 
@@ -140,7 +140,7 @@ func TestContract_OperationsFollowTheConventions(t *testing.T) {
 			responses := op.spec.Responses.Map()
 			success := 0
 			for status, ref := range responses {
-				if !strings.HasPrefix(status, "2") {
+				if !strings.HasPrefix(status, "2") && status != "302" && status != "303" {
 					// Every error is the shared problem document.
 					media := ref.Value.Content.Get("application/problem+json")
 					if media == nil || media.Schema.Ref != "#/components/schemas/Problem" {

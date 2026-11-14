@@ -77,7 +77,7 @@ tags:
     description: |
       The state of image storage and backups, and the Google Drive connection.
 
-      Connecting Google Drive is a browser redirect flow outside this contract,
+      Connecting Google Drive is a browser redirect flow in this contract,
       open to the admin only (anyone else gets `404`):
 
       - `GET /api/v1/storage/drive/connect` redirects to Google's consent page
@@ -1199,6 +1199,67 @@ paths:
       responses:
         "204":
           description: The connection is gone. Also returned when there was none.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /storage/drive/connect:
+    get:
+      operationId: connectDrive
+      tags: [storage]
+      summary: Authorize Google Drive storage
+      description: Admin only. Requests drive.file with offline access, consent and PKCE. Other users get 404.
+      responses:
+        "302":
+          description: Redirect to Google consent.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /storage/drive/callback:
+    get:
+      operationId: completeDrive
+      tags: [storage]
+      summary: Complete Google Drive authorization
+      description: Admin only. Consumes a single-use state bound to the signed-in admin, replaces the encrypted token without revoking and reuses an existing root folder.
+      parameters:
+        - name: state
+          description: Single-use state from the connect redirect.
+          example: synthetic-state
+          in: query
+          schema:
+            type: string
+        - name: code
+          description: Authorization code from Google.
+          example: synthetic-code
+          in: query
+          schema:
+            type: string
+        - name: error
+          description: Consent refusal reported by Google.
+          example: access_denied
+          in: query
+          schema:
+            type: string
+      responses:
+        "303":
+          description: Redirect to settings after connecting.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":

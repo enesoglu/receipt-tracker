@@ -1980,6 +1980,18 @@ type ListReviewFlagsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// CompleteDriveParams defines parameters for CompleteDrive.
+type CompleteDriveParams struct {
+	// State Single-use state from the connect redirect.
+	State *string `form:"state,omitempty" json:"state,omitempty"`
+
+	// Code Authorization code from Google.
+	Code *string `form:"code,omitempty" json:"code,omitempty"`
+
+	// Error Consent refusal reported by Google.
+	Error *string `form:"error,omitempty" json:"error,omitempty"`
+}
+
 // ListStoresParams defines parameters for ListStores.
 type ListStoresParams struct {
 	// Limit Largest number of items to return.
@@ -2609,6 +2621,12 @@ type ServerInterface interface {
 	// DisconnectStorage Disconnect Google Drive
 	// (DELETE /storage/connection)
 	DisconnectStorage(w http.ResponseWriter, r *http.Request)
+	// CompleteDrive Complete Google Drive authorization
+	// (GET /storage/drive/callback)
+	CompleteDrive(w http.ResponseWriter, r *http.Request, params CompleteDriveParams)
+	// ConnectDrive Authorize Google Drive storage
+	// (GET /storage/drive/connect)
+	ConnectDrive(w http.ResponseWriter, r *http.Request)
 	// ListStores List stores
 	// (GET /stores)
 	ListStores(w http.ResponseWriter, r *http.Request, params ListStoresParams)
@@ -2801,6 +2819,18 @@ func (_ Unimplemented) GetStorageStatus(w http.ResponseWriter, r *http.Request) 
 // DisconnectStorage Disconnect Google Drive
 // (DELETE /storage/connection)
 func (_ Unimplemented) DisconnectStorage(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CompleteDrive Complete Google Drive authorization
+// (GET /storage/drive/callback)
+func (_ Unimplemented) CompleteDrive(w http.ResponseWriter, r *http.Request, params CompleteDriveParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ConnectDrive Authorize Google Drive storage
+// (GET /storage/drive/connect)
+func (_ Unimplemented) ConnectDrive(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3811,6 +3841,79 @@ func (siw *ServerInterfaceWrapper) DisconnectStorage(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// CompleteDrive operation middleware
+func (siw *ServerInterfaceWrapper) CompleteDrive(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CompleteDriveParams
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "code" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "code", r.URL.Query(), &params.Code, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "code"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "error" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "error", r.URL.Query(), &params.Error, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "error"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "error", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CompleteDrive(w, r, params)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConnectDrive operation middleware
+func (siw *ServerInterfaceWrapper) ConnectDrive(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectDrive(w, r)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListStores operation middleware
 func (siw *ServerInterfaceWrapper) ListStores(w http.ResponseWriter, r *http.Request) {
 
@@ -4108,6 +4211,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/storage/connection", wrapper.DisconnectStorage)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/storage/drive/connect", wrapper.ConnectDrive)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/storage/drive/callback", wrapper.CompleteDrive)
 	})
 
 	return r
@@ -6574,6 +6683,163 @@ func (response DisconnectStoragedefaultApplicationProblemPlusJSONResponse) Visit
 	return err
 }
 
+type CompleteDriveRequestObject struct {
+	Params CompleteDriveParams
+}
+
+type CompleteDriveResponseObject interface {
+	VisitCompleteDriveResponse(w http.ResponseWriter) error
+}
+
+type CompleteDrive303ResponseHeaders struct {
+	Location string
+}
+
+type CompleteDrive303Response struct {
+	Headers CompleteDrive303ResponseHeaders
+}
+
+func (response CompleteDrive303Response) VisitCompleteDriveResponse(w http.ResponseWriter) error {
+	w.Header().Set("Location", fmt.Sprint(response.Headers.Location))
+	w.WriteHeader(303)
+	return nil
+}
+
+type CompleteDrive400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CompleteDrive400ApplicationProblemPlusJSONResponse) VisitCompleteDriveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteDrive401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CompleteDrive401ApplicationProblemPlusJSONResponse) VisitCompleteDriveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteDrive404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CompleteDrive404ApplicationProblemPlusJSONResponse) VisitCompleteDriveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CompleteDrivedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CompleteDrivedefaultApplicationProblemPlusJSONResponse) VisitCompleteDriveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectDriveRequestObject struct {
+}
+
+type ConnectDriveResponseObject interface {
+	VisitConnectDriveResponse(w http.ResponseWriter) error
+}
+
+type ConnectDrive302ResponseHeaders struct {
+	Location string
+}
+
+type ConnectDrive302Response struct {
+	Headers ConnectDrive302ResponseHeaders
+}
+
+func (response ConnectDrive302Response) VisitConnectDriveResponse(w http.ResponseWriter) error {
+	w.Header().Set("Location", fmt.Sprint(response.Headers.Location))
+	w.WriteHeader(302)
+	return nil
+}
+
+type ConnectDrive401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ConnectDrive401ApplicationProblemPlusJSONResponse) VisitConnectDriveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectDrive404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response ConnectDrive404ApplicationProblemPlusJSONResponse) VisitConnectDriveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConnectDrivedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ConnectDrivedefaultApplicationProblemPlusJSONResponse) VisitConnectDriveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListStoresRequestObject struct {
 	Params ListStoresParams
 }
@@ -6895,6 +7161,12 @@ type StrictServerInterface interface {
 	// DisconnectStorage Disconnect Google Drive
 	// (DELETE /storage/connection)
 	DisconnectStorage(ctx context.Context, request DisconnectStorageRequestObject) (DisconnectStorageResponseObject, error)
+	// CompleteDrive Complete Google Drive authorization
+	// (GET /storage/drive/callback)
+	CompleteDrive(ctx context.Context, request CompleteDriveRequestObject) (CompleteDriveResponseObject, error)
+	// ConnectDrive Authorize Google Drive storage
+	// (GET /storage/drive/connect)
+	ConnectDrive(ctx context.Context, request ConnectDriveRequestObject) (ConnectDriveResponseObject, error)
 	// ListStores List stores
 	// (GET /stores)
 	ListStores(ctx context.Context, request ListStoresRequestObject) (ListStoresResponseObject, error)
@@ -7784,6 +8056,56 @@ func (sh *strictHandler) DisconnectStorage(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DisconnectStorageResponseObject); ok {
 		if err := validResponse.VisitDisconnectStorageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CompleteDrive operation middleware
+func (sh *strictHandler) CompleteDrive(w http.ResponseWriter, r *http.Request, params CompleteDriveParams) {
+	var request CompleteDriveRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CompleteDrive(ctx, request.(CompleteDriveRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CompleteDrive")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CompleteDriveResponseObject); ok {
+		if err := validResponse.VisitCompleteDriveResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConnectDrive operation middleware
+func (sh *strictHandler) ConnectDrive(w http.ResponseWriter, r *http.Request) {
+	var request ConnectDriveRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConnectDrive(ctx, request.(ConnectDriveRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConnectDrive")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConnectDriveResponseObject); ok {
+		if err := validResponse.VisitConnectDriveResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
