@@ -1,0 +1,103 @@
+Third-party notices for receipt-tracker
+=======================================
+
+receipt-tracker itself is MIT licensed; see LICENSE. The Docker image
+contains this file next to LICENSE because the components below are compiled
+into the server binary and their licences require their notices to travel
+with it. Every component listed here is under a permissive licence; there is
+no copyleft component.
+
+Each entry gives the component, the version in go.mod, where its source is,
+its licence identifier, its copyright notice, and the full licence text.
+
+
+-------------------------------------------------------------------------------
+gen2brain/h265
+-------------------------------------------------------------------------------
+
+Component:  github.com/gen2brain/h265 (HEVC and HEIC decoder, pure Go)
+Version:    v0.2.5
+Source:     https://github.com/gen2brain/h265
+Licence:    MIT
+Copyright:  Copyright (c) 2025 roticv
+            Copyright (c) 2026 Karpeles Lab Inc.
+Used for:   decoding uploaded HEIC/HEIF photos before they are converted to
+            JPEG (internal/ingest).
+
+The decoder is a port of two pure-Rust decoders, whose notices are the two
+copyright lines above and are carried by the licence below:
+
+  - rust_h265, https://github.com/roticv/rust_h265, offered under
+    "MIT OR Apache-2.0" (LICENSE-MIT, LICENSE-APACHE); gen2brain/h265 uses it
+    under MIT ("Copyright (c) 2025 roticv").
+  - oxideav-h265, https://github.com/OxideAV/oxideav-h265, MIT
+    ("Copyright (c) 2026 Karpelès Lab Inc.").
+
+The upstream README adds that the software "gives you no special rights on
+the HEVC patents".
+
+MIT License
+
+Copyright (c) 2025 roticv
+Copyright (c) 2026 Karpeles Lab Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+golang.org/x/image
+-------------------------------------------------------------------------------
+
+Component:  golang.org/x/image (image scaling, package draw)
+Version:    v0.48.0
+Source:     https://go.googlesource.com/image
+Licence:    BSD-3-Clause
+Copyright:  Copyright 2009 The Go Authors.
+Used for:   scaling converted photos down to their maximum size
+            (internal/ingest).
+
+The repository also carries an additional patent grant from Google (PATENTS).
+
+Copyright 2009 The Go Authors.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google LLC nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
