@@ -41,7 +41,7 @@ change through a dedicated `chore(deps)` PR.
 | Extraction | Azure Document Intelligence REST `2024-11-30`, stdlib `net/http` client | Small surface (submit + poll); no SDK needed |
 | Image storage | `storage.Store` interface; `local` and `drive` (`google.golang.org/api/drive/v3`) adapters | Required; Drive via official client |
 | Backups | `pg_dump` custom format streamed to a `backup.Destination`; `drive` and `local` adapters | Reuses the Drive authorization; no extra account or service (policy risk in §8) |
-| HEIC decoding | `gen2brain/heic` with the `nodynamic` build tag (MIT repository, embedded LGPL decoder, WASM via wazero, no cgo) | Works the same on Windows, Ubuntu and Alpine with no system packages; an external `heif-dec` would add LGPL binaries and a Windows install step |
+| HEIC decoding | `gen2brain/h265` (MIT, pure Go, no cgo, no dependencies) | Works the same on Windows, Ubuntu and Alpine with no system packages and no LGPL component; `gen2brain/heic` moved to an AGPL decoder in v0.6.0 |
 | MCP | `modelcontextprotocol/go-sdk` v1, Streamable HTTP | Official SDK; transport Claude and Gemini expect |
 | Small libraries | `google/uuid`, `golang.org/x/text` (normalisation), `golang.org/x/image` (downscaling) | Standard choices; no cgo |
 | Logging | stdlib `log/slog`, JSON | Standard library |
@@ -434,7 +434,7 @@ are sent by the app. Postgres runs with small memory settings (`shared_buffers=6
 | --- | --- | --- |
 | Drive API policy lists "backup of user or app content from a developer's app or project to Drive" as not allowed without Google's written consent, and database dumps go to Drive | Google could disable the OAuth project or its Drive access, which would stop backups and image storage together | **Accepted by the owner while the app is personal-use only. Revisit before any public launch**: switch `BACKUP_DESTINATION` to another adapter or obtain consent. The destination is behind an interface for this reason. Receipt images as primary content are not named by the policy (page last updated July 2022) |
 | Backups and images share one Drive grant | Losing the grant stops both | Restore is tested; a new grant must still see old files (tested before go-live, §5.7); dumps can be downloaded from the Drive web UI |
-| HEIC decoding runs in WASM | Memory spike on a large photo on a small VPS | One conversion at a time; measured in the hardening package |
+| The HEIC decoder is young (first release 2026) | Some iPhone files fail to decode, or a malformed file crashes the decoder | Behind a converter interface; grid, 10-bit and rotation fixtures from an independent encoder; panics become per-file errors; fuzz test; one conversion at a time; peak memory measured |
 | Google OAuth app left in "Testing" | Drive refresh token expires every 7 days (sign-in scopes are exempt) | Publish the app to "In production"; `drive.file` is non-sensitive. Reconnect flow and a visible storage status exist anyway |
 | Refresh token revoked or unused for 6 months | Image reads and uploads fail | Storage status endpoint, clear UI error, reconnect button |
 | Azure free tier: 500 pages/month, 4 MB, 1 request/s | Uploads wait or fail | Quota counter, `waiting_quota` state, downscale for OCR, serial worker |
@@ -449,8 +449,9 @@ are sent by the app. Postgres runs with small memory settings (`shared_buffers=6
 | Revoking the app's Drive access in the Google account may hide files created before the revocation, even after re-authorizing (2015 report on a deprecated API; unverified today) | Images and dumps unreadable by the app | The app never revokes (disconnect only deletes the stored token); manual revocation is documented with a warning; the effect is tested early against a throwaway folder; Picker re-grant is the planned mitigation for dumps (§5.7) |
 | Caddy access logs under `/var/log/caddy/` are not in the host backup | Logs are lost with the host | Accepted: logs are disposable |
 
-Not verified from official sources: the exact licence version of the decoder
-embedded in `gen2brain/heic` and its peak memory (see §9); whether failed Azure analyses count toward
+Not verified from official sources: the decoder's coverage of every HEIF
+variant phones produce (tested with fixtures, not with a corpus of real
+photos); whether failed Azure analyses count toward
 the monthly allowance (the counter counts every accepted submission); the exact
 JSON shape of currency fields in the `2024-11-30` response (the extraction
 package must confirm it against the REST reference); an official Google
@@ -462,13 +463,9 @@ requirements.
 
 ## 9. Licensing
 
-The project's own code is MIT (`LICENSE`). Dependencies must be under an
-MIT-compatible permissive licence, with one exception accepted by the owner:
-the HEIC decoder embedded in `gen2brain/heic` is LGPL. It is used unmodified,
-as a separate component the user can replace, which LGPL permits alongside
-MIT code. The ingestion package verifies the decoder's exact licence and
-records it, with the required notices and licence text, in
-`THIRD_PARTY_LICENSES` at the repository root; the file ships in the Docker
-image. If the decoder turns out to be under anything other than a permissive
-licence or LGPL, work stops and the owner decides. Any further non-permissive
-dependency needs the owner's approval and an entry in the same file.
+The project's own code is MIT (`LICENSE`). All dependencies are under
+MIT-compatible permissive licences, with no exception. `THIRD_PARTY_LICENSES`
+at the repository root records the notices shipped in the Docker image, such
+as the MIT notice of the HEIC decoder `gen2brain/h265`, and the file ships in
+the image. Any non-permissive dependency needs the owner's approval and an
+entry in the same file.
