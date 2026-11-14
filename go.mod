@@ -1,6 +1,6 @@
 module github.com/enesoglu/receipt-tracker
 
-go 1.26.0
+go 1.26.4
 
 toolchain go1.26.11
 
@@ -8,6 +8,7 @@ require (
 	github.com/alexedwards/scs/pgxstore v0.0.0-20251002162104-209de6e426de
 	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/gen2brain/h265 v0.2.5
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/google/go-cmp v0.7.0
@@ -16,6 +17,7 @@ require (
 	github.com/oapi-codegen/runtime v1.9.0
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/shopspring/decimal v1.6.0
+	golang.org/x/image v0.48.0
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/text v0.44.0
 	google.golang.org/api v0.315.0
