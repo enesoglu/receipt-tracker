@@ -10,16 +10,18 @@ licensed.
 The repository provides the server, embedded placeholder page, design tokens,
 development database, reproducible tooling, containers, and CI, plus the
 complete v1 database schema, validated configuration, Google sign-in and
-server-side sessions. Receipt uploading, extraction, matching, reports and
-backups are planned in later work packages. The v1 API is fully specified in
-`api/openapi.yaml`. API requests require a session; authenticated operations
-answer with a `501` problem document until their behaviour is built, except
-for the implemented signed-in user and logout operations.
+server-side sessions. Receipt photos can be uploaded (JPEG, PNG, and HEIC/HEIF
+converted to JPEG); each becomes a queued receipt with a job for the
+background worker. Extraction, matching, reports and backups are planned in
+later work packages. The v1 API is fully specified in `api/openapi.yaml`. API
+requests require a session; authenticated operations answer with a `501`
+problem document until their behaviour is built, except for the implemented
+signed-in user, logout, storage and upload operations.
 
 The server validates its configuration, connects to PostgreSQL and applies
 the embedded migrations before it accepts requests. `/livez` and `/healthz`
 currently report process health. Database and Drive readiness monitoring
-arrives with those integrations. The app does not yet read or store receipts.
+arrives with those integrations.
 
 ## Prerequisites
 
