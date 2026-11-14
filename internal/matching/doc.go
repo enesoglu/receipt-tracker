@@ -100,4 +100,8 @@
 // The decision carries the rule number and a [Reason], so a caller can
 // raise the right review flag. Scores are compared with thresholds with a
 // tiny tolerance, so that a score exactly on a threshold reaches it.
+//
+// testdata/golden.json holds about a hundred worked examples modelled on
+// Turkish grocery receipts, several for every rule; reading a few of them
+// next to the rules above is the quickest way to see the engine at work.
 package matching
