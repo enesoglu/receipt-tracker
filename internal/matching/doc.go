@@ -104,4 +104,13 @@
 // testdata/golden.json holds about a hundred worked examples modelled on
 // Turkish grocery receipts, several for every rule; reading a few of them
 // next to the rules above is the quickest way to see the engine at work.
+//
+// # Matching a line for a user
+//
+// Everything above is pure: no database, no clock, no randomness. [Matcher]
+// connects it to the user's data. [Matcher.MatchLine] normalises the line's
+// name, asks a [CandidateSource] for the candidates and rejections of that
+// name, and passes them to Decide. The source is an interface defined
+// here, with only the one method the matcher needs, so tests can replace
+// it with a small hand-written fake.
 package matching
