@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/db"
 	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
 	"github.com/enesoglu/receipt-tracker/internal/httpapi"
+	"github.com/enesoglu/receipt-tracker/internal/jobs"
 	"github.com/enesoglu/receipt-tracker/internal/storage/backend"
 	"github.com/enesoglu/receipt-tracker/internal/storage/drive"
 	"github.com/enesoglu/receipt-tracker/internal/web"
@@ -81,5 +83,18 @@ func run(logger *slog.Logger) error {
 		return driveStorage.Probe(ctx, os.Args[1:], os.Stdout)
 	}
 	go driveStorage.Run(ctx)
-	return httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage).Run(ctx)
+	worker := jobs.New(pool, logger, time.Now, jobs.Options{})
+	workerDone := make(chan error, 1)
+	go func() {
+		err := worker.Run(ctx)
+		if err != nil {
+			// Without a worker nothing is extracted, so the server stops too.
+			stop()
+		}
+		workerDone <- err
+	}()
+	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage).Run(ctx)
+	// The worker finishes its current job before the pool is closed.
+	stop()
+	return errors.Join(serveErr, <-workerDone)
 }
