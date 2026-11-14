@@ -28,6 +28,7 @@ All commands run through `task` and behave the same in PowerShell and bash.
 | `task setup` | Install tools and frontend dependencies |
 | `task db:up` | Start the development Postgres |
 | `task dev` | Run the server and the web dev server with reload |
+| `task server -- <args>` | Build and run the server with `.env` and optional arguments |
 | `task generate` | Regenerate sqlc, OpenAPI server and TypeScript client |
 | `task lint` | Lint and format-check Go and web |
 | `task test` | All Go and web tests (needs `task db:up`) |

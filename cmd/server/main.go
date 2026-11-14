@@ -77,6 +77,9 @@ func run(logger *slog.Logger) error {
 			logger.Error("close image storage", "error", err)
 		}
 	}()
+	if len(os.Args) > 1 {
+		return driveStorage.Probe(ctx, os.Args[1:], os.Stdout)
+	}
 	go driveStorage.Run(ctx)
 	return httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage).Run(ctx)
 }

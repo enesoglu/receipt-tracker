@@ -88,6 +88,7 @@ persists until explicitly removed.
 | `task setup`    | Download pinned Go modules, install web packages, and install the verified linter |
 | `task db:up`    | Start Postgres and wait for both development and test databases                   |
 | `task dev`      | Run Go and Vite with reload                                                       |
+| `task server -- <args>` | Build and run the server with `.env` and optional arguments |
 | `task generate` | Regenerate sqlc code and the Go and TypeScript API bindings from their sources     |
 | `task lint`     | Check Go formatting/lint, strict TypeScript, ESLint, Prettier, and UI policy      |
 | `task test`     | Build embedded assets, then run Go and web tests                                  |
@@ -153,9 +154,9 @@ BACKUP_DESTINATION=none
 DEV_LOGIN_EMAIL=you@example.com
 ```
 
-`task dev` loads `.env` from the repository root when it exists; the binary
+`task dev` and `task server` load `.env` from the repository root when it exists; the binary
 itself never reads files. A variable that is already set in the shell takes
-precedence over the file. Tests never see `.env`: only the development server
+precedence over the file. Tests never see `.env`: only the explicit server
 script loads it. See [the architecture](docs/ARCHITECTURE.md) for the binding
 design.
 
