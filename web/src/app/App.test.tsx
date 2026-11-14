@@ -33,6 +33,17 @@ function mockAuthenticatedApi() {
         response: new Response(null, { status: 200 }),
       }) as never;
     }
+    if (path === '/usage') {
+      return Promise.resolve({
+        data: {
+          provider: 'azure',
+          period: '2026-11',
+          pagesUsed: 12,
+          pagesLimit: 500,
+        },
+        response: new Response(null, { status: 200 }),
+      }) as never;
+    }
     return Promise.reject(makeProblem(404, 'Not found')) as never;
   });
 }
