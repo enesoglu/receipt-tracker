@@ -16,6 +16,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/config"
 	"github.com/enesoglu/receipt-tracker/internal/db"
 	"github.com/enesoglu/receipt-tracker/internal/httpapi"
+	"github.com/enesoglu/receipt-tracker/internal/storage/backend"
 	"github.com/enesoglu/receipt-tracker/internal/web"
 )
 
@@ -34,6 +35,15 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("load configuration: %w", err)
 	}
+	images, err := backend.New(ctx, cfg.Storage)
+	if err != nil {
+		return fmt.Errorf("open image storage: %w", err)
+	}
+	defer func() {
+		if err := images.Close(); err != nil {
+			logger.Error("close image storage", "error", err)
+		}
+	}()
 	pool, err := db.Open(ctx, cfg.DatabaseURL.Reveal())
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
