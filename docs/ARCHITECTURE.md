@@ -30,7 +30,7 @@ change through a dedicated `chore(deps)` PR.
 | Language | Go 1.26 | Required; current stable line |
 | HTTP router | `go-chi/chi` v5 | Thin, stdlib `net/http` compatible, very widely used |
 | API contract | OpenAPI 3.0 in `api/openapi.yaml`; `oapi-codegen` v2 (strict server, chi) | Contract-first; backend and frontend generate from one file |
-| Database | PostgreSQL 18 (`postgres:18-alpine`) | Required; built-in `uuidv7()`; `pg_trgm` for candidate lookup |
+| Database | PostgreSQL 18 (`postgres:18-alpine`) | Required; built-in `uuidv7()`; `pg_trgm` and `btree_gist` (both bundled) for candidate lookup |
 | DB access | `jackc/pgx` v5 + `sqlc` | Plain SQL, generated type-safe Go, no ORM behaviour to learn around |
 | Migrations | `pressly/goose` v3, SQL files, embedded, applied at startup | Simple, conventional, one binary |
 | Money and quantities | `shopspring/decimal` + `NUMERIC` columns | Exact arithmetic; no floats for money |
@@ -109,7 +109,7 @@ All ids are `uuid` (`uuidv7()`), all timestamps `timestamptz` in UTC, all money
 | `extractions` | `receipt_id`, `provider`, `model`, `raw` (jsonb), `created_at`; lets matching be re-run without spending quota |
 | `line_items` | `receipt_id`, `position`, `raw_name`, `name`, `quantity`, `quantity_unit`, `unit_price`, `line_total`, `product_code`, `confidence`, `product_id`, `match_status`, `match_score`, `match_method` |
 | `products` | `canonical_name`, `category_id`, `size_value`, `size_unit` |
-| `product_aliases` | `product_id`, `raw_name`, `normalized_name`, `store_id` (nullable), `seen_count`, `last_seen_at`; trigram index on `normalized_name` |
+| `product_aliases` | `product_id`, `raw_name`, `normalized_name`, `store_id` (nullable), `seen_count`, `last_seen_at`; trigram index on `normalized_name`, and a GiST trigram index on (`user_id`, `normalized_name`) for the nearest-name lookup of matching |
 | `product_codes` | `product_id`, `code`, `kind` (`gtin`, `store`), `store_id` (set for `store` codes), `seen_count` |
 | `match_rejections` | `product_id`, `normalized_name`, `store_id`: "the user said these are different" |
 | `review_flags` | `receipt_id`, `line_item_id` (nullable), `kind`, `detail` (jsonb), `resolved_at`, `resolution` |
