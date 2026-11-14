@@ -1,0 +1,889 @@
+{
+  "cases": [
+    {
+      "name": "exact alias at the same store links",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "PINAR SÜT 1 LT", "store": "migros"}]}
+      ],
+      "line": {"name": "PINAR SUT 1LT", "store": "migros"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "exact alias wins over the same name at another store",
+      "products": [
+        {"id": "sut_bim", "aliases": [{"name": "SUT 1 L", "store": "bim"}]},
+        {"id": "sut_migros", "aliases": [{"name": "SUT 1 L", "store": "migros"}]}
+      ],
+      "line": {"name": "SÜT 1LT", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "sut_bim", "candidates": ["sut_bim", "sut_migros"]}
+    },
+    {
+      "name": "Turkish letters do not matter for an exact alias",
+      "products": [
+        {"id": "seker", "aliases": [{"name": "ŞEKER 1 KG", "store": "a101"}]}
+      ],
+      "line": {"name": "SEKER 1KG", "store": "a101"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "seker", "candidates": ["seker"]}
+    },
+    {
+      "name": "litre and millilitre spellings are one alias",
+      "products": [
+        {"id": "kola", "aliases": [{"name": "KOLA 1 L", "store": "sok"}]}
+      ],
+      "line": {"name": "KOLA 1000 ML", "store": "sok"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "kola", "candidates": ["kola"]}
+    },
+    {
+      "name": "centilitre and a decimal comma are one alias",
+      "products": [
+        {"id": "su", "aliases": [{"name": "SU 50CL", "store": "migros"}]}
+      ],
+      "line": {"name": "SU 0,5 LT", "store": "migros"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "su", "candidates": ["su"]}
+    },
+    {
+      "name": "count suffix and ADET are one alias",
+      "products": [
+        {"id": "yumurta", "aliases": [{"name": "YUMURTA 10'LU", "store": "bim"}]}
+      ],
+      "line": {"name": "YUMURTA 10 ADET", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "yumurta", "candidates": ["yumurta"]}
+    },
+    {
+      "name": "VAT rate printed after the name is ignored",
+      "products": [
+        {"id": "ekmek", "aliases": [{"name": "EKMEK", "store": "a101"}]}
+      ],
+      "line": {"name": "EKMEK %01", "store": "a101"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "ekmek", "candidates": ["ekmek"]}
+    },
+    {
+      "name": "dotted capital I matches a plain I",
+      "products": [
+        {"id": "ayran", "aliases": [{"name": "İÇİM AYRAN 200 ML", "store": "carrefour"}]}
+      ],
+      "line": {"name": "ICIM AYRAN 200ML", "store": "carrefour"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "ayran", "candidates": ["ayran"]}
+    },
+    {
+      "name": "exact alias at the store wins over a barcode",
+      "products": [
+        {"id": "ayran", "aliases": [{"name": "AYRAN 1 L"}], "codes": [{"code": "8690000000012", "kind": "gtin"}]},
+        {"id": "milk", "aliases": [{"name": "PINAR SUT 1 L", "store": "migros"}]}
+      ],
+      "line": {"name": "PINAR SUT 1LT", "code": "8690000000012", "store": "migros"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "milk", "candidates": ["milk", "ayran"]}
+    },
+    {
+      "name": "fat content tells two milks apart",
+      "products": [
+        {"id": "milk_15", "aliases": [{"name": "SUT %1,5 YAGLI 1L", "store": "migros"}]},
+        {"id": "milk_3", "aliases": [{"name": "SUT %3 YAGLI 1L", "store": "migros"}]}
+      ],
+      "line": {"name": "SÜT %3 YAĞLI 1 LT", "store": "migros"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "milk_3", "candidates": ["milk_3", "milk_15"]}
+    },
+    {
+      "name": "multipack written two ways",
+      "products": [
+        {"id": "ayran_6", "aliases": [{"name": "6X200ML AYRAN", "store": "bim"}]}
+      ],
+      "line": {"name": "6 X 200 ML AYRAN", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "ayran_6", "candidates": ["ayran_6"]}
+    },
+    {
+      "name": "abbreviated alias known at this store",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "PNR SUT 1L", "store": "bim"}, {"name": "PINAR SUT 1 LT", "store": "migros"}]}
+      ],
+      "line": {"name": "PNR SUT 1 LT", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "exact alias at the store beats the same name without a store",
+      "products": [
+        {"id": "baget_sok", "aliases": [{"name": "TAVUK BAGET 1 KG", "store": "sok"}]},
+        {"id": "baget_x", "aliases": [{"name": "TAVUK BAGET 1 KG"}]}
+      ],
+      "line": {"name": "TAVUK BAGET 1KG", "store": "sok"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "baget_sok", "candidates": ["baget_sok", "baget_x"]}
+    },
+    {
+      "name": "yogurt with and without Turkish letters and units",
+      "products": [
+        {"id": "yogurt", "aliases": [{"name": "YOĞURT 1 KG", "store": "a101"}]}
+      ],
+      "line": {"name": "YOGURT 1000 GR", "store": "a101"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "yogurt", "candidates": ["yogurt"]}
+    },
+    {
+      "name": "same alias on two products at one store is asked",
+      "products": [
+        {"id": "baget_a", "aliases": [{"name": "TAVUK BAGET", "store": "migros"}]},
+        {"id": "baget_b", "aliases": [{"name": "TAVUK BAGET", "store": "migros"}]}
+      ],
+      "line": {"name": "TAVUK BAGET", "store": "migros"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["baget_a", "baget_b"]}
+    },
+    {
+      "name": "exact name without any store links by name",
+      "products": [
+        {"id": "makarna", "aliases": [{"name": "MAKARNA 500 G"}]}
+      ],
+      "line": {"name": "MAKARNA 500GR"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "makarna", "candidates": ["makarna"]}
+    },
+    {
+      "name": "exact name from another store links by name",
+      "products": [
+        {"id": "pirinc", "aliases": [{"name": "PIRINC 1 KG", "store": "bim"}]}
+      ],
+      "line": {"name": "PIRINC 1KG", "store": "a101"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "pirinc", "candidates": ["pirinc"]}
+    },
+    {
+      "name": "unknown line store never counts as the alias store",
+      "products": [
+        {"id": "un", "aliases": [{"name": "UN 2 KG", "store": "migros"}]}
+      ],
+      "line": {"name": "UN 2KG"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "un", "candidates": ["un"]}
+    },
+    {
+      "name": "rejected exact alias becomes a new product",
+      "covers": [1],
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L", "store": "migros"}]}
+      ],
+      "rejections": [{"product": "milk", "name": "SUT 1L"}],
+      "line": {"name": "SUT 1L", "store": "migros"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": []}
+    },
+    {
+      "name": "rejection hands the line to the other product",
+      "covers": [1],
+      "products": [
+        {"id": "ayran_a101", "aliases": [{"name": "AYRAN 1 LT", "store": "a101"}]},
+        {"id": "ayran_bim", "aliases": [{"name": "AYRAN 1 L", "store": "bim"}]}
+      ],
+      "rejections": [{"product": "ayran_bim", "name": "AYRAN 1L"}],
+      "line": {"name": "AYRAN 1L", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "ayran_a101", "candidates": ["ayran_a101"]}
+    },
+    {
+      "name": "rejection breaks a tie between equal names",
+      "covers": [1],
+      "products": [
+        {"id": "peynir_a", "aliases": [{"name": "BEYAZ PEYNIR 500 G"}]},
+        {"id": "peynir_b", "aliases": [{"name": "BEYAZ PEYNIR 500 G"}]}
+      ],
+      "rejections": [{"product": "peynir_b", "name": "BEYAZ PEYNIR 500GR"}],
+      "line": {"name": "BEYAZ PEYNIR 500GR"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "peynir_a", "candidates": ["peynir_a"]}
+    },
+    {
+      "name": "rejection of another name does not apply",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L", "store": "migros"}]}
+      ],
+      "rejections": [{"product": "milk", "name": "SUT 2L"}],
+      "line": {"name": "SUT 1L", "store": "migros"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "rejected barcode owner leaves the name to decide",
+      "covers": [1],
+      "products": [
+        {"id": "kola_code", "aliases": [{"name": "KOLA 1 L"}], "codes": [{"code": "8690000000029", "kind": "gtin"}]},
+        {"id": "kola_name", "aliases": [{"name": "KOLA 1 LT"}]}
+      ],
+      "rejections": [{"product": "kola_code", "name": "KOLA 1L"}],
+      "line": {"name": "KOLA 1L", "code": "8690000000029"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "kola_name", "candidates": ["kola_name"]}
+    },
+    {
+      "name": "rejection applies at every store",
+      "covers": [1],
+      "products": [
+        {"id": "domates", "aliases": [{"name": "DOMATES 1 KG", "store": "bim"}]}
+      ],
+      "rejections": [{"product": "domates", "name": "DOMATES 1KG"}],
+      "line": {"name": "DOMATES 1KG", "store": "migros"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": []}
+    },
+    {
+      "name": "rejection leaves one owner of a shared barcode",
+      "covers": [1],
+      "products": [
+        {"id": "cay", "aliases": [{"name": "CAY 1 KG"}], "codes": [{"code": "8690000000036", "kind": "gtin"}]},
+        {"id": "siyah_cay", "aliases": [{"name": "SIYAH CAY 1 KG"}], "codes": [{"code": "8690000000036", "kind": "gtin"}]}
+      ],
+      "rejections": [{"product": "cay", "name": "CAY 1KG"}],
+      "line": {"name": "CAY 1KG", "code": "8690000000036"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "siyah_cay", "candidates": ["siyah_cay"]}
+    },
+    {
+      "name": "same barcode on another size is a size conflict",
+      "covers": [2],
+      "products": [
+        {"id": "milk_2l", "aliases": [{"name": "SUT 2 L"}], "codes": [{"code": "8690000000043", "kind": "gtin"}]}
+      ],
+      "line": {"name": "SUT 1L", "code": "8690000000043"},
+      "want": {"outcome": "ask", "rule": 7, "reason": "size_conflict", "candidates": ["milk_2l"]}
+    },
+    {
+      "name": "long name of another size is not linked",
+      "covers": [2],
+      "products": [
+        {"id": "milk_2l", "aliases": [{"name": "PINAR YARIM YAGLI LAKTOZSUZ KAKAOLU UHT SUT 2 L"}]}
+      ],
+      "line": {"name": "PINAR YARIM YAGLI LAKTOZSUZ KAKAOLU UHT SUT 1 L"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "size_conflict", "candidates": ["milk_2l"]}
+    },
+    {
+      "name": "volume against mass under one store code",
+      "covers": [2],
+      "products": [
+        {"id": "deterjan", "aliases": [{"name": "DETERJAN 3 KG"}], "codes": [{"code": "8803", "kind": "store", "store": "bim"}]}
+      ],
+      "line": {"name": "DETERJAN 3L", "code": "8803", "store": "bim"},
+      "want": {"outcome": "ask", "rule": 7, "reason": "size_conflict", "candidates": ["deterjan"]}
+    },
+    {
+      "name": "egg packs of another count",
+      "covers": [2],
+      "products": [
+        {"id": "yumurta_10", "aliases": [{"name": "YUMURTA 10LU"}]}
+      ],
+      "line": {"name": "YUMURTA 15LI"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "size_conflict", "candidates": ["yumurta_10"]}
+    },
+    {
+      "name": "recorded product size blocks an alias without one",
+      "covers": [2],
+      "products": [
+        {"id": "ayran", "aliases": [{"name": "AYRAN"}], "codes": [{"code": "8690000000050", "kind": "gtin"}], "size": "1 l"}
+      ],
+      "line": {"name": "AYRAN 2L", "code": "8690000000050"},
+      "want": {"outcome": "ask", "rule": 7, "reason": "size_conflict", "candidates": ["ayran"]}
+    },
+    {
+      "name": "other size above a weaker name is asked",
+      "covers": [2],
+      "products": [
+        {"id": "milk_1l", "aliases": [{"name": "PINAR SUT 1 L"}]},
+        {"id": "milk_plain", "aliases": [{"name": "PINAR SUT"}]}
+      ],
+      "line": {"name": "PINAR SUT 2L"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "size_conflict", "candidates": ["milk_1l", "milk_plain"]}
+    },
+    {
+      "name": "other sizes of a product do not compete",
+      "covers": [2],
+      "products": [
+        {"id": "sut_1l", "aliases": [{"name": "PINAR SUT 1 LT"}]},
+        {"id": "sut_2l", "aliases": [{"name": "PINAR SUT 2 L"}]},
+        {"id": "sut_500ml", "aliases": [{"name": "PINAR SUT 500 ML"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "sut_1l", "candidates": ["sut_1l", "sut_2l", "sut_500ml"]}
+    },
+    {
+      "name": "only other sizes are known",
+      "covers": [2],
+      "products": [
+        {"id": "sut_2l", "aliases": [{"name": "PINAR SUT 2 L"}]},
+        {"id": "sut_500ml", "aliases": [{"name": "PINAR SUT 500 ML"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "size_conflict", "candidates": ["sut_2l", "sut_500ml"]}
+    },
+    {
+      "name": "other size scoring above the best name suggests a new size",
+      "covers": [2],
+      "products": [
+        {"id": "sut_2l", "aliases": [{"name": "PINAR SUT 2 L"}]},
+        {"id": "sutu_1l", "aliases": [{"name": "PINAR SUTU 1 L"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "size_conflict", "candidates": ["sut_2l", "sutu_1l"]}
+    },
+    {
+      "name": "litre and millilitre are no size conflict",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1000 ML"}], "codes": [{"code": "8690000000067", "kind": "gtin"}]}
+      ],
+      "line": {"name": "SUT 1LT", "code": "8690000000067"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "a size on one side only does not block",
+      "products": [
+        {"id": "ayran", "aliases": [{"name": "AYRAN"}], "codes": [{"code": "8690000000074", "kind": "gtin"}]}
+      ],
+      "line": {"name": "AYRAN 1L", "code": "8690000000074"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "ayran", "candidates": ["ayran"]}
+    },
+    {
+      "name": "barcode owner of another size against an exact name",
+      "covers": [2],
+      "products": [
+        {"id": "milk_1l", "aliases": [{"name": "PINAR SUT 1 LT"}]},
+        {"id": "milk_2l", "aliases": [{"name": "PINAR SUT 2 L"}], "codes": [{"code": "8690000000081", "kind": "gtin"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L", "code": "8690000000081"},
+      "want": {"outcome": "ask", "rule": 7, "reason": "size_conflict", "candidates": ["milk_2l", "milk_1l"]}
+    },
+    {
+      "name": "another size is no code conflict",
+      "covers": [2],
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}], "codes": [{"code": "8690000000098", "kind": "gtin"}]},
+        {"id": "milk_2l", "aliases": [{"name": "PINAR SUT 2 L"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L", "code": "8690000000098"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "milk", "candidates": ["milk", "milk_2l"]}
+    },
+    {
+      "name": "barcode on two products is asked",
+      "products": [
+        {"id": "ayran", "aliases": [{"name": "AYRAN 1 L"}], "codes": [{"code": "8690000000104", "kind": "gtin"}]},
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}], "codes": [{"code": "8690000000104", "kind": "gtin"}]}
+      ],
+      "line": {"name": "SUT 1L", "code": "8690000000104"},
+      "want": {"outcome": "ask", "rule": 4, "reason": "ambiguous_code", "candidates": ["milk", "ayran"]}
+    },
+    {
+      "name": "store code on two products at one store is asked",
+      "products": [
+        {"id": "makarna", "aliases": [{"name": "MAKARNA 500 G"}], "codes": [{"code": "1187", "kind": "store", "store": "bim"}]},
+        {"id": "spagetti", "aliases": [{"name": "SPAGETTI 500 G"}], "codes": [{"code": "1187", "kind": "store", "store": "bim"}]}
+      ],
+      "line": {"name": "MAKARNA 500GR", "code": "1187", "store": "bim"},
+      "want": {"outcome": "ask", "rule": 4, "reason": "ambiguous_code", "candidates": ["makarna", "spagetti"]}
+    },
+    {
+      "name": "same store code at another store is not shared",
+      "products": [
+        {"id": "makarna", "aliases": [{"name": "MAKARNA 500 G"}], "codes": [{"code": "1187", "kind": "store", "store": "bim"}]},
+        {"id": "spagetti", "aliases": [{"name": "SPAGETTI 500 G"}], "codes": [{"code": "1187", "kind": "store", "store": "a101"}]}
+      ],
+      "line": {"name": "MAKARNA 500GR", "code": "1187", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "makarna", "candidates": ["makarna", "spagetti"]}
+    },
+    {
+      "name": "shared barcode is asked even when another name fits",
+      "products": [
+        {"id": "fasulye", "aliases": [{"name": "FASULYE 1 KG"}], "codes": [{"code": "8690000000111", "kind": "gtin"}]},
+        {"id": "mercimek", "aliases": [{"name": "MERCIMEK 1 KG", "store": "bim"}]},
+        {"id": "nohut", "aliases": [{"name": "NOHUT 1 KG"}], "codes": [{"code": "8690000000111", "kind": "gtin"}]}
+      ],
+      "line": {"name": "MERCIMEK 1KG", "code": "8690000000111", "store": "migros"},
+      "want": {"outcome": "ask", "rule": 4, "reason": "ambiguous_code", "candidates": ["fasulye", "nohut"]}
+    },
+    {
+      "name": "four owners of one barcode show the best three",
+      "products": [
+        {"id": "siyah_zeytin", "aliases": [{"name": "SIYAH ZEYTIN 500 G"}], "codes": [{"code": "8690000000128", "kind": "gtin"}]},
+        {"id": "yesil_zeytin", "aliases": [{"name": "YESIL ZEYTIN 500 G"}], "codes": [{"code": "8690000000128", "kind": "gtin"}]},
+        {"id": "zeytin", "aliases": [{"name": "ZEYTIN 500 G"}], "codes": [{"code": "8690000000128", "kind": "gtin"}]},
+        {"id": "zeytinyagi", "aliases": [{"name": "ZEYTINYAGI 1 L"}], "codes": [{"code": "8690000000128", "kind": "gtin"}]}
+      ],
+      "line": {"name": "ZEYTIN 500G", "code": "8690000000128"},
+      "want": {"outcome": "ask", "rule": 4, "reason": "ambiguous_code", "candidates": ["zeytin", "zeytinyagi", "siyah_zeytin"]}
+    },
+    {
+      "name": "barcode of a chocolate on a milk line is a code conflict",
+      "products": [
+        {"id": "cikolata", "aliases": [{"name": "SUTLU CIKOLATA 80 G"}], "codes": [{"code": "8690000000135", "kind": "gtin"}]},
+        {"id": "milk", "aliases": [{"name": "PINAR SUT 1 LT"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L", "code": "8690000000135"},
+      "want": {"outcome": "ask", "rule": 5, "reason": "code_conflict", "candidates": ["cikolata", "milk"]}
+    },
+    {
+      "name": "store code of tea on a tomato line is a code conflict",
+      "products": [
+        {"id": "cay", "aliases": [{"name": "CAY 1 KG"}], "codes": [{"code": "8803", "kind": "store", "store": "sok"}]},
+        {"id": "domates", "aliases": [{"name": "DOMATES 1 KG"}]}
+      ],
+      "line": {"name": "DOMATES 1KG", "code": "8803", "store": "sok"},
+      "want": {"outcome": "ask", "rule": 5, "reason": "code_conflict", "candidates": ["cay", "domates"]}
+    },
+    {
+      "name": "barcode from another store against a clear name",
+      "products": [
+        {"id": "deterjan", "aliases": [{"name": "BULASIK DETERJANI 1 L"}], "codes": [{"code": "8690000000142", "kind": "gtin"}]},
+        {"id": "yag", "aliases": [{"name": "ZEYTINYAGI 1 LT", "store": "migros"}]}
+      ],
+      "line": {"name": "ZEYTINYAGI 1L", "code": "8690000000142", "store": "bim"},
+      "want": {"outcome": "ask", "rule": 5, "reason": "code_conflict", "candidates": ["deterjan", "yag"]}
+    },
+    {
+      "name": "store code decides between two equal names",
+      "products": [
+        {"id": "milk_code", "aliases": [{"name": "PINAR SUT 1 L"}], "codes": [{"code": "40213", "kind": "store", "store": "bim"}]},
+        {"id": "milk_name", "aliases": [{"name": "PINAR SUT 1 LT"}]}
+      ],
+      "line": {"name": "PNR SUT 1L", "code": "40213", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "milk_code", "candidates": ["milk_code", "milk_name"]}
+    },
+    {
+      "name": "a name less than 0.08 better does not overrule the barcode",
+      "products": [
+        {"id": "sut", "aliases": [{"name": "PINAR SUT 1 LT"}]},
+        {"id": "sutu", "aliases": [{"name": "PINAR SUTU 1 L"}], "codes": [{"code": "8690000000159", "kind": "gtin"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L", "code": "8690000000159"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "sutu", "candidates": ["sutu", "sut"]}
+    },
+    {
+      "name": "store code links an abbreviated name",
+      "products": [
+        {"id": "yogurt", "aliases": [{"name": "YOĞURT 1 KG"}], "codes": [{"code": "30017", "kind": "store", "store": "a101"}]}
+      ],
+      "line": {"name": "YGRT 1KG", "code": "30017", "store": "a101"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "yogurt", "candidates": ["yogurt"]}
+    },
+    {
+      "name": "barcode links across stores",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "TAM YAGLI SUT 1 L", "store": "migros"}], "codes": [{"code": "8690000000173", "kind": "gtin"}]}
+      ],
+      "line": {"name": "TAM YAĞLI SÜT 1LT", "code": "8690000000173", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "barcode links when the name fits only partly",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}], "codes": [{"code": "8690000000180", "kind": "gtin"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L", "code": "8690000000180"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "GTIN-8 barcode",
+      "products": [
+        {"id": "sakiz", "aliases": [{"name": "SAKIZ"}], "codes": [{"code": "86900003", "kind": "gtin"}]}
+      ],
+      "line": {"name": "SAKIZ NANE", "code": "86900003"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "sakiz", "candidates": ["sakiz"]}
+    },
+    {
+      "name": "GTIN-12 barcode",
+      "products": [
+        {"id": "cips", "aliases": [{"name": "PATATES CIPSI 150 G"}], "codes": [{"code": "012345678905", "kind": "gtin"}]}
+      ],
+      "line": {"name": "PATATES CIPS 150G", "code": "012345678905"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "cips", "candidates": ["cips"]}
+    },
+    {
+      "name": "store code links a weighed item",
+      "products": [
+        {"id": "salatalik", "aliases": [{"name": "SALATALIK 1 KG"}], "codes": [{"code": "552190", "kind": "store", "store": "sok"}]}
+      ],
+      "line": {"name": "SALATALIK KG", "code": "552190", "store": "sok"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "salatalik", "candidates": ["salatalik"]}
+    },
+    {
+      "name": "store code links a name with a missing vowel",
+      "products": [
+        {"id": "makarna", "aliases": [{"name": "MAKARNA 500 G"}], "codes": [{"code": "1187", "kind": "store", "store": "bim"}]}
+      ],
+      "line": {"name": "MAKRNA 500G", "code": "1187", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "makarna", "candidates": ["makarna"]}
+    },
+    {
+      "name": "barcode and name agree",
+      "products": [
+        {"id": "beyaz", "aliases": [{"name": "BEYAZ PEYNIR 400 G"}]},
+        {"id": "kasar", "aliases": [{"name": "KASAR PEYNIRI 400 G"}], "codes": [{"code": "8690000000197", "kind": "gtin"}]}
+      ],
+      "line": {"name": "KASAR PEYNIR 400G", "code": "8690000000197"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "kasar", "candidates": ["kasar", "beyaz"]}
+    },
+    {
+      "name": "store code with a name too short to trust is asked",
+      "products": [
+        {"id": "salatalik", "aliases": [{"name": "SALATALIK 1 KG"}], "codes": [{"code": "552190", "kind": "store", "store": "sok"}]}
+      ],
+      "line": {"name": "SLTLK KG", "code": "552190", "store": "sok"},
+      "want": {"outcome": "ask", "rule": 7, "reason": "code_name_mismatch", "candidates": ["salatalik"]}
+    },
+    {
+      "name": "barcode of cat food on a cheese line is asked",
+      "products": [
+        {"id": "mama", "aliases": [{"name": "KEDI MAMASI 1 KG"}], "codes": [{"code": "8690000000203", "kind": "gtin"}]}
+      ],
+      "line": {"name": "PEYNIR 1KG", "code": "8690000000203"},
+      "want": {"outcome": "ask", "rule": 7, "reason": "code_name_mismatch", "candidates": ["mama"]}
+    },
+    {
+      "name": "barcode of a product without known names is asked",
+      "products": [
+        {"id": "urun", "aliases": [], "codes": [{"code": "8690000000210", "kind": "gtin"}]}
+      ],
+      "line": {"name": "NANE LIMON 1L", "code": "8690000000210"},
+      "want": {"outcome": "ask", "rule": 7, "reason": "code_name_mismatch", "candidates": ["urun"]}
+    },
+    {
+      "name": "store code of a shampoo on a toothpaste line",
+      "products": [
+        {"id": "macun", "aliases": [{"name": "DIS MACUNU 100 ML"}]},
+        {"id": "sampuan", "aliases": [{"name": "SAMPUAN"}], "codes": [{"code": "77120", "kind": "store", "store": "carrefour"}]}
+      ],
+      "line": {"name": "DIS MACUNU 75ML", "code": "77120", "store": "carrefour"},
+      "want": {"outcome": "ask", "rule": 7, "reason": "code_name_mismatch", "candidates": ["sampuan", "macun"]}
+    },
+    {
+      "name": "Turkish letters only",
+      "products": [
+        {"id": "gofret", "aliases": [{"name": "ÇİKOLATALI GOFRET"}]}
+      ],
+      "line": {"name": "CIKOLATALI GOFRET"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "gofret", "candidates": ["gofret"]}
+    },
+    {
+      "name": "clear winner among cheeses",
+      "products": [
+        {"id": "beyaz", "aliases": [{"name": "BEYAZ PEYNIR 500 G"}]},
+        {"id": "kasar", "aliases": [{"name": "KASAR PEYNIRI 500 G"}]}
+      ],
+      "line": {"name": "KASAR PEYNIR 500G"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "kasar", "candidates": ["kasar", "beyaz"]}
+    },
+    {
+      "name": "litres written as millilitres",
+      "products": [
+        {"id": "su", "aliases": [{"name": "SU 5 LT"}]}
+      ],
+      "line": {"name": "SU 5000ML"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "su", "candidates": ["su"]}
+    },
+    {
+      "name": "decimal point and decimal comma",
+      "products": [
+        {"id": "domates", "aliases": [{"name": "DOMATES 1.5 KG"}]}
+      ],
+      "line": {"name": "DOMATES 1,5KG"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "domates", "candidates": ["domates"]}
+    },
+    {
+      "name": "fat content picks the right milk",
+      "products": [
+        {"id": "milk_15", "aliases": [{"name": "SUT %1,5 YAGLI 1L"}]},
+        {"id": "milk_3", "aliases": [{"name": "SUT %3 YAGLI 1L"}]}
+      ],
+      "line": {"name": "SUT %3 YAGLI 1 LT"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "milk_3", "candidates": ["milk_3", "milk_15"]}
+    },
+    {
+      "name": "VAT rate after the size",
+      "products": [
+        {"id": "peynir", "aliases": [{"name": "BEYAZ PEYNIR 500 G"}]}
+      ],
+      "line": {"name": "BEYAZ PEYNIR 500GR %08"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "peynir", "candidates": ["peynir"]}
+    },
+    {
+      "name": "price markers and punctuation",
+      "products": [
+        {"id": "yag", "aliases": [{"name": "ZEYTINYAGI 1 L"}]}
+      ],
+      "line": {"name": "*ZEYTINYAGI 1LT*"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "yag", "candidates": ["yag"]}
+    },
+    {
+      "name": "full-width characters",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}]}
+      ],
+      "line": {"name": "ＳＵＴ １Ｌ"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "Turkish dotless i in lower case",
+      "products": [
+        {"id": "ispanak", "aliases": [{"name": "ISPANAK 500 G"}]}
+      ],
+      "line": {"name": "ıspanak 500 gr"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "ispanak", "candidates": ["ispanak"]}
+    },
+    {
+      "name": "kasar with and without Turkish letters",
+      "products": [
+        {"id": "kasar", "aliases": [{"name": "KAŞAR PEYNİRİ 400 G"}]}
+      ],
+      "line": {"name": "KASAR PEYNIRI 400GR"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "kasar", "candidates": ["kasar"]}
+    },
+    {
+      "name": "last letter cut off",
+      "products": [
+        {"id": "cips", "aliases": [{"name": "PATATES CIPSI"}]}
+      ],
+      "line": {"name": "PATATES CIPS"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "cips", "candidates": ["cips"]}
+    },
+    {
+      "name": "word cut short",
+      "products": [
+        {"id": "spagetti", "aliases": [{"name": "MAKARNA SPAGETTI"}]}
+      ],
+      "line": {"name": "MAKARNA SPAGET"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "spagetti", "candidates": ["spagetti"]}
+    },
+    {
+      "name": "dried apricots with a Turkish place name",
+      "products": [
+        {"id": "kayisi", "aliases": [{"name": "KURU KAYISI IĞDIR 500 G"}]}
+      ],
+      "line": {"name": "kuru kayisi igdir 500gr"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "kayisi", "candidates": ["kayisi"]}
+    },
+    {
+      "name": "circumflex and soft g",
+      "products": [
+        {"id": "havlu", "aliases": [{"name": "KÂĞIT HAVLU 8 RULO"}]}
+      ],
+      "line": {"name": "KAGIT HAVLU 8 RULO"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "havlu", "candidates": ["havlu"]}
+    },
+    {
+      "name": "two sizes of a spread for a line without size",
+      "products": [
+        {"id": "krema_400", "aliases": [{"name": "FINDIK KREMASI 400 G"}]},
+        {"id": "krema_700", "aliases": [{"name": "FINDIK KREMASI 700 G"}]}
+      ],
+      "line": {"name": "FINDIK KREMASI"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["krema_400", "krema_700"]}
+    },
+    {
+      "name": "words cut short next to a size",
+      "products": [
+        {"id": "salca", "aliases": [{"name": "DOMATES SALCASI 830 G"}]}
+      ],
+      "line": {"name": "DOM. SALCA 830GR"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["salca"]}
+    },
+    {
+      "name": "vowels dropped from two words",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "YARIM YAGLI SUT 1 L"}]}
+      ],
+      "line": {"name": "YRM YGL SUT 1L"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["milk"]}
+    },
+    {
+      "name": "part of a longer name",
+      "products": [
+        {"id": "tavuk", "aliases": [{"name": "TAVUK GOGUS FILETO 1 KG"}]}
+      ],
+      "line": {"name": "TAVUK GOGUS"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["tavuk"]}
+    },
+    {
+      "name": "question shows the best three of four",
+      "products": [
+        {"id": "ayran_1l", "aliases": [{"name": "PINAR AYRAN 1 L"}]},
+        {"id": "sut_1l", "aliases": [{"name": "PINAR SUT 1 L"}]},
+        {"id": "sut_2l", "aliases": [{"name": "PINAR SUT 2 L"}]},
+        {"id": "sut_500ml", "aliases": [{"name": "PINAR SUT 500 ML"}]}
+      ],
+      "line": {"name": "PINAR SUT"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["sut_500ml", "sut_1l", "sut_2l"]}
+    },
+    {
+      "name": "same name on two products without a store",
+      "products": [
+        {"id": "cay_a", "aliases": [{"name": "SIYAH CAY 1 KG"}]},
+        {"id": "cay_b", "aliases": [{"name": "SIYAH CAY 1000 G"}]}
+      ],
+      "line": {"name": "SIYAH CAY 1KG"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["cay_a", "cay_b"]}
+    },
+    {
+      "name": "strong name without a clear lead",
+      "products": [
+        {"id": "sut", "aliases": [{"name": "PINAR SUT 1 L"}]},
+        {"id": "sutu", "aliases": [{"name": "PINAR SUTU 1 L"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["sut", "sutu"]}
+    },
+    {
+      "name": "vowel-dropped brand is asked",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "PINAR SUT 1 LT"}]}
+      ],
+      "line": {"name": "PNR SUT 1L"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["milk"]}
+    },
+    {
+      "name": "abbreviated first word",
+      "products": [
+        {"id": "gofret", "aliases": [{"name": "CIKOLATALI GOFRET"}]}
+      ],
+      "line": {"name": "CKL GOFRET"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["gofret"]}
+    },
+    {
+      "name": "abbreviation without a code is asked",
+      "products": [
+        {"id": "yogurt", "aliases": [{"name": "YOGURT 1 KG"}]}
+      ],
+      "line": {"name": "YGRT 1KG"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["yogurt"]}
+    },
+    {
+      "name": "two words without vowels",
+      "products": [
+        {"id": "salca", "aliases": [{"name": "DOMATES SALCASI 830 G"}]}
+      ],
+      "line": {"name": "DMTS SLCS 830G"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["salca"]}
+    },
+    {
+      "name": "barcode with a wrong check digit is ignored",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}], "codes": [{"code": "8690000000013", "kind": "gtin"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L", "code": "8690000000013"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["milk"]}
+    },
+    {
+      "name": "barcode recorded as a store code counts only at that store",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}], "codes": [{"code": "8690000000234", "kind": "store", "store": "bim"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L", "code": "8690000000234", "store": "migros"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "similar_name", "candidates": ["milk"]}
+    },
+    {
+      "name": "store code of another store is ignored",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}], "codes": [{"code": "40213", "kind": "store", "store": "bim"}]}
+      ],
+      "line": {"name": "SUT 1L", "code": "40213", "store": "migros"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "store code needs the line's store",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}], "codes": [{"code": "40213", "kind": "store", "store": "bim"}]}
+      ],
+      "line": {"name": "SUT 1L", "code": "40213"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "code that no product owns is ignored",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}]}
+      ],
+      "line": {"name": "SUT 1L", "code": "8690000000227"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "milk", "candidates": ["milk"]}
+    },
+    {
+      "name": "no products yet",
+      "products": [],
+      "line": {"name": "DETERJAN 3KG"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": []}
+    },
+    {
+      "name": "unrelated product of the same size",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}]}
+      ],
+      "line": {"name": "BULASIK DETERJANI 1L"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["milk"]}
+    },
+    {
+      "name": "rice is not sugar",
+      "products": [
+        {"id": "seker", "aliases": [{"name": "SEKER 1 KG"}]}
+      ],
+      "line": {"name": "PIRINC 1KG"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["seker"]}
+    },
+    {
+      "name": "flour is not salt",
+      "products": [
+        {"id": "tuz", "aliases": [{"name": "TUZ 1 KG"}]}
+      ],
+      "line": {"name": "UN 1KG"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["tuz"]}
+    },
+    {
+      "name": "water is not milk",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}]}
+      ],
+      "line": {"name": "SU 1L"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["milk"]}
+    },
+    {
+      "name": "cola is not water",
+      "products": [
+        {"id": "su", "aliases": [{"name": "SU 1 L"}]}
+      ],
+      "line": {"name": "KOLA 1L"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["su"]}
+    },
+    {
+      "name": "ayran is not kefir",
+      "products": [
+        {"id": "kefir", "aliases": [{"name": "KEFIR 1 L"}]}
+      ],
+      "line": {"name": "AYRAN 1L"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["kefir"]}
+    },
+    {
+      "name": "pasta is not rice",
+      "products": [
+        {"id": "pirinc", "aliases": [{"name": "PIRINC 500 G"}]}
+      ],
+      "line": {"name": "MAKARNA 500G"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["pirinc"]}
+    },
+    {
+      "name": "cola is not cologne",
+      "products": [
+        {"id": "kolonya", "aliases": [{"name": "KOLONYA"}]}
+      ],
+      "line": {"name": "KOLA"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["kolonya"]}
+    },
+    {
+      "name": "one word with a size against the word alone",
+      "products": [
+        {"id": "ayran", "aliases": [{"name": "AYRAN"}]}
+      ],
+      "line": {"name": "AYRAN 1L"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["ayran"]}
+    },
+    {
+      "name": "line without letters or numbers",
+      "products": [
+        {"id": "milk", "aliases": [{"name": "SUT 1 L"}]}
+      ],
+      "line": {"name": "*** %08 ***"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["milk"]}
+    },
+    {
+      "name": "milk is not ayran of the same brand",
+      "products": [
+        {"id": "ayran", "aliases": [{"name": "PINAR AYRAN 1 L"}]}
+      ],
+      "line": {"name": "PINAR SUT 1L"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["ayran"]}
+    },
+    {
+      "name": "cheese is not cat food",
+      "products": [
+        {"id": "mama", "aliases": [{"name": "KEDI MAMASI 1 KG"}]}
+      ],
+      "line": {"name": "PEYNIR 1KG"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["mama"]}
+    }
+  ]
+}
