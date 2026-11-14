@@ -452,9 +452,7 @@ are sent by the app. Postgres runs with small memory settings (`shared_buffers=6
 Not verified from official sources: the decoder's coverage of every HEIF
 variant phones produce (tested with fixtures, not with a corpus of real
 photos); whether failed Azure analyses count toward
-the monthly allowance (the counter counts every accepted submission); the exact
-JSON shape of currency fields in the `2024-11-30` response (the extraction
-package must confirm it against the REST reference); an official Google
+the monthly allowance (the counter counts every accepted submission); an official Google
 statement that service accounts have no personal Drive quota (only community
 and vendor sources found; this is why the Drive adapter uses the owner's OAuth
 grant); whether "In production" with only non-sensitive scopes ever requires
