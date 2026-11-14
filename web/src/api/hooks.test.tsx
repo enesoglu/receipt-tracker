@@ -152,10 +152,19 @@ describe('API query and mutation hooks', () => {
 
     const { client, Wrapper } = createWrapper();
 
-    const listHook = renderHook(() => useReceipts({ status: 'needs_review' }), {
-      wrapper: Wrapper,
-    });
+    const listHook = renderHook(
+      () => useReceipts({ status: 'needs_review' }, { enabled: true }),
+      {
+        wrapper: Wrapper,
+      },
+    );
     await waitFor(() => expect(listHook.result.current.isSuccess).toBe(true));
+
+    const disabledListHook = renderHook(
+      () => useReceipts({ ids: ['rec-disabled'] }, { enabled: false }),
+      { wrapper: Wrapper },
+    );
+    expect(disabledListHook.result.current.fetchStatus).toBe('idle');
 
     const detailHook = renderHook(() => useReceipt('rec-1'), {
       wrapper: Wrapper,
