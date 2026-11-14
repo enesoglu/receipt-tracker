@@ -19,7 +19,7 @@ line items as extracted. Matching, review rules, reports and backups are
 planned in later work packages. The v1 API is fully specified in `api/openapi.yaml`. API
 requests require a session; authenticated operations answer with a `501`
 problem document until their behaviour is built, except for the implemented
-signed-in user, logout, storage and upload operations.
+signed-in user, logout, storage, upload and usage operations.
 
 The server validates its configuration, connects to PostgreSQL and applies
 the embedded migrations before it accepts requests. `/livez` and `/healthz`

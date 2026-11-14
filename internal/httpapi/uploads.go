@@ -18,6 +18,7 @@ import (
 // leaves its operations answering 501, as before they were built.
 type Ingestion struct {
 	Uploads Uploader
+	Usage   UsageReporter
 }
 
 // Uploader is what the upload operation needs from the ingest service.
