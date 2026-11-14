@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw';
 import type { components } from '../api/schema.gen';
 import {
   getMockAuthMode,
+  getMockReceiptById,
   mockCategory,
   mockCategoryPage,
   mockImageBytes,
@@ -14,7 +15,6 @@ import {
   mockProduct,
   mockProductPage,
   mockReceipt,
-  mockReceiptPage,
   mockReviewFlagPage,
   mockSettings,
   mockStorageStatus,
@@ -23,8 +23,11 @@ import {
   mockUploadResponse,
   mockUsage,
   mockUser,
+  queryMockReceipts,
+  registerMockUploads,
   setMockAuthMode,
 } from './data';
+import { readUploadedFiles } from './multipart';
 
 function problemJson(
   status: number,
@@ -65,28 +68,31 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
 
-  http.post('/api/v1/receipts', () => {
+  http.post('/api/v1/receipts', async ({ request }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json(mockUploadResponse, { status: 207 });
+    const files = await readUploadedFiles(request);
+    if (files.length === 0) {
+      return HttpResponse.json(mockUploadResponse, { status: 200 });
+    }
+    return HttpResponse.json(registerMockUploads(files), { status: 200 });
   }),
 
-  http.get('/api/v1/receipts', () => {
+  http.get('/api/v1/receipts', ({ request }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json(mockReceiptPage);
+    const url = new URL(request.url);
+    return HttpResponse.json(queryMockReceipts(url.searchParams));
   }),
 
   http.get('/api/v1/receipts/:receiptId', ({ params }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    if (params.receiptId === 'missing') {
+    const receipt = getMockReceiptById(String(params.receiptId));
+    if (!receipt) {
       return problemJson(404, mockProblemNotFound);
     }
-    return HttpResponse.json({
-      ...mockReceipt,
-      id: String(params.receiptId),
-    });
+    return HttpResponse.json(receipt);
   }),
 
   http.put('/api/v1/receipts/:receiptId', async ({ request, params }) => {
@@ -122,7 +128,7 @@ export const handlers = [
         id: String(params.receiptId),
         status: 'queued',
       },
-      { status: 202 },
+      { status: 200 },
     );
   }),
 

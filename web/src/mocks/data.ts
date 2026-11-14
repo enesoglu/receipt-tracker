@@ -44,9 +44,10 @@ export function setMockAuthMode(mode: MockAuthMode): void {
   }
 }
 
-/** Resets mock authentication state to signed_in and clears persisted overrides. */
+/** Resets mock authentication and stateful mock upload data. */
 export function resetMockAuth(): void {
   memoryAuthMode = 'signed_in';
+  resetMockState();
   if (typeof window !== 'undefined') {
     try {
       window.localStorage.removeItem(MOCK_AUTH_STORAGE_KEY);
@@ -603,3 +604,315 @@ export const mockImageBytes = new Uint8Array([
   0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01,
   0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, 0xff, 0xd9,
 ]);
+
+interface MockUploadedEntry {
+  receipt: components['schemas']['Receipt'];
+  polls: number;
+  signature: string;
+}
+
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+const ALLOWED_UPLOAD_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/heic',
+  'image/heif',
+]);
+const ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.heic', '.heif'];
+
+let uploadedMockEntries: MockUploadedEntry[] = [];
+let nextMockUploadIndex = 700;
+
+/** Clears runtime mock state created during uploads so tests stay isolated. */
+export function resetMockState(): void {
+  uploadedMockEntries = [];
+  nextMockUploadIndex = 700;
+}
+
+function hasAllowedUploadType(file: { name: string; type: string }): boolean {
+  const mime = file.type.toLowerCase();
+  if (ALLOWED_UPLOAD_TYPES.has(mime)) return true;
+  if (mime === '' || mime === 'application/octet-stream') {
+    const lowerName = file.name.toLowerCase();
+    return ALLOWED_UPLOAD_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+  }
+  return false;
+}
+
+function toSummary(
+  receipt: components['schemas']['Receipt'],
+): components['schemas']['ReceiptSummary'] {
+  return {
+    id: receipt.id,
+    title: receipt.title,
+    store: receipt.store,
+    purchasedOn: receipt.purchasedOn,
+    currency: receipt.currency,
+    total: receipt.total,
+    status: receipt.status,
+    failureReason: receipt.failureReason,
+    source: receipt.source,
+    openFlagCount: receipt.openFlagCount,
+    createdAt: receipt.createdAt,
+  };
+}
+
+function advancePolledUpload(entry: MockUploadedEntry, fileName: string): void {
+  entry.polls += 1;
+  if (entry.polls === 1) {
+    entry.receipt = { ...entry.receipt, status: 'processing' };
+    return;
+  }
+  if (
+    entry.receipt.status !== 'queued' &&
+    entry.receipt.status !== 'processing'
+  ) {
+    return;
+  }
+
+  const lower = fileName.toLowerCase();
+  const nowIso = '2026-11-14T18:00:00Z';
+  if (lower.includes('fail')) {
+    entry.receipt = {
+      ...entry.receipt,
+      status: 'failed',
+      failureReason: 'Could not extract fields from the receipt photo.',
+      updatedAt: nowIso,
+    };
+    return;
+  }
+  if (lower.includes('quota')) {
+    entry.receipt = {
+      ...entry.receipt,
+      status: 'waiting_quota',
+      updatedAt: nowIso,
+    };
+    return;
+  }
+  if (lower.includes('review')) {
+    entry.receipt = {
+      ...entry.receipt,
+      status: 'needs_review',
+      store: { id: mockStore.id, name: mockStore.name },
+      purchasedOn: '2026-11-14',
+      total: '48.50',
+      openFlagCount: 1,
+      updatedAt: nowIso,
+    };
+    return;
+  }
+
+  entry.receipt = {
+    ...entry.receipt,
+    status: 'ready',
+    store: { id: mockStore.id, name: mockStore.name },
+    purchasedOn: '2026-11-14',
+    total: '64.20',
+    openFlagCount: 0,
+    updatedAt: nowIso,
+  };
+}
+
+/** Processes uploaded file metadata into stateful mock receipts and UploadResults. */
+export function registerMockUploads(
+  files: readonly { name: string; type: string; size: number }[],
+): components['schemas']['UploadResponse'] {
+  const results: components['schemas']['UploadResult'][] = files.map(
+    (file, index) => {
+      if (!hasAllowedUploadType(file)) {
+        return {
+          index,
+          fileName: file.name,
+          outcome: 'rejected',
+          receiptId: null,
+          error: {
+            code: 'unsupported_type',
+            message: 'Only JPEG, PNG and HEIC photos can be uploaded.',
+          },
+        };
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        return {
+          index,
+          fileName: file.name,
+          outcome: 'rejected',
+          receiptId: null,
+          error: {
+            code: 'too_large',
+            message: 'Photo exceeds the 15 MB limit.',
+          },
+        };
+      }
+      if (file.size === 0) {
+        return {
+          index,
+          fileName: file.name,
+          outcome: 'rejected',
+          receiptId: null,
+          error: {
+            code: 'unreadable',
+            message: 'File is empty or unreadable.',
+          },
+        };
+      }
+
+      const signature = `${file.name}:${file.size}`;
+      const existing = uploadedMockEntries.find(
+        (entry) => entry.signature === signature,
+      );
+      if (existing) {
+        return {
+          index,
+          fileName: file.name,
+          outcome: 'duplicate',
+          receiptId: existing.receipt.id,
+          error: null,
+        };
+      }
+
+      const seq = nextMockUploadIndex++;
+      const receiptId = `0193a1b2-0000-7000-8000-${String(seq).padStart(12, '0')}`;
+      const imageId = `0193a1b2-0000-7000-8000-${String(seq + 1000).padStart(12, '0')}`;
+      const nowIso = '2026-11-14T18:00:00Z';
+      const isHeic =
+        file.name.toLowerCase().endsWith('.heic') ||
+        file.name.toLowerCase().endsWith('.heif') ||
+        file.type.toLowerCase().includes('heic') ||
+        file.type.toLowerCase().includes('heif');
+
+      const receipt: components['schemas']['Receipt'] = {
+        id: receiptId,
+        title: mockSettings.defaultReceiptTitle,
+        store: null,
+        purchasedOn: null,
+        purchasedTime: null,
+        currency: mockSettings.defaultCurrency,
+        subtotal: null,
+        taxTotal: null,
+        total: null,
+        status: 'queued',
+        failureReason: null,
+        source: 'web',
+        openFlagCount: 0,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        lineItems: [],
+        flags: [],
+        images: [
+          {
+            id: imageId,
+            position: 0,
+            contentType: 'image/jpeg',
+            sizeBytes: file.size,
+            original: isHeic
+              ? {
+                  contentType: 'image/heic',
+                  sizeBytes: file.size,
+                }
+              : null,
+          },
+        ],
+      };
+
+      uploadedMockEntries.unshift({ receipt, polls: 0, signature });
+      return {
+        index,
+        fileName: file.name,
+        outcome: 'created',
+        receiptId,
+        error: null,
+      };
+    },
+  );
+
+  return { results };
+}
+
+/** Filters and paginates mock receipts according to listReceipts query parameters. */
+export function queryMockReceipts(
+  searchParams: URLSearchParams,
+): components['schemas']['ReceiptPage'] {
+  const ids = searchParams
+    .getAll('ids')
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (ids.length > 0) {
+    for (const entry of uploadedMockEntries) {
+      if (ids.includes(entry.receipt.id)) {
+        const fileName = entry.signature.split(':')[0] ?? '';
+        advancePolledUpload(entry, fileName);
+      }
+    }
+  }
+
+  const allSummaries: components['schemas']['ReceiptSummary'][] = [
+    ...uploadedMockEntries.map((entry) => toSummary(entry.receipt)),
+    ...mockReceiptPage.items,
+  ];
+
+  const status = searchParams.get('status')?.trim() || null;
+  const month = searchParams.get('month')?.trim() || null;
+  const storeId = searchParams.get('storeId')?.trim() || null;
+  const q = searchParams.get('q')?.trim().toLowerCase() || null;
+
+  const filtered = allSummaries.filter((summary) => {
+    if (ids.length > 0 && !ids.includes(summary.id)) return false;
+    if (status && summary.status !== status) return false;
+    if (month && !(summary.purchasedOn?.startsWith(month) ?? false)) {
+      return false;
+    }
+    if (storeId && summary.store?.id !== storeId) return false;
+    if (q) {
+      const titleMatch = summary.title.toLowerCase().includes(q);
+      const storeMatch = summary.store?.name.toLowerCase().includes(q) ?? false;
+      const uploadedDetail = uploadedMockEntries.find(
+        (entry) => entry.receipt.id === summary.id,
+      )?.receipt;
+      const detail =
+        uploadedDetail ??
+        (summary.id === mockReceipt.id ? mockReceipt : undefined);
+      const lineMatch =
+        detail?.lineItems.some(
+          (line) =>
+            line.name.toLowerCase().includes(q) ||
+            line.rawName.toLowerCase().includes(q),
+        ) ?? false;
+      if (!titleMatch && !storeMatch && !lineMatch) return false;
+    }
+    return true;
+  });
+
+  const rawLimit = Number.parseInt(searchParams.get('limit') ?? '50', 10);
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit >= 1 && rawLimit <= 100
+      ? rawLimit
+      : 50;
+  const rawOffset = Number.parseInt(searchParams.get('cursor') ?? '0', 10);
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+
+  const pageItems = filtered.slice(offset, offset + limit);
+  const nextOffset = offset + pageItems.length;
+  const nextCursor = nextOffset < filtered.length ? String(nextOffset) : null;
+
+  return {
+    items: pageItems,
+    nextCursor,
+  };
+}
+
+/** Looks up a stateful uploaded mock receipt before falling back to mockReceipt. */
+export function getMockReceiptById(
+  receiptId: string,
+): components['schemas']['Receipt'] | null {
+  if (receiptId === 'missing') return null;
+  const uploaded = uploadedMockEntries.find(
+    (entry) => entry.receipt.id === receiptId,
+  );
+  if (uploaded) return uploaded.receipt;
+  return {
+    ...mockReceipt,
+    id: receiptId,
+  };
+}

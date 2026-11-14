@@ -66,6 +66,20 @@ describe('MSW API handlers', () => {
     );
     expect(reprocessed.status).toBe('queued');
 
+    const filteredByStatus = await unwrap(
+      api.GET('/receipts', { params: { query: { status: 'queued' } } }),
+    );
+    expect(filteredByStatus.items).toHaveLength(1);
+    expect(filteredByStatus.items[0].status).toBe('queued');
+
+    const filteredBySearch = await unwrap(
+      api.GET('/receipts', { params: { query: { q: 'ayran' } } }),
+    );
+    expect(filteredBySearch.items).toHaveLength(1);
+    expect(filteredBySearch.items[0].id).toBe(
+      '0193a1b2-0000-7000-8000-000000000100',
+    );
+
     const imageRes = await api.GET('/receipts/{receiptId}/images/{imageId}', {
       params: {
         path: {
@@ -302,5 +316,57 @@ describe('MSW API handlers', () => {
         screen.getByRole('heading', { name: 'Sign in to your account' }),
       ).toBeInTheDocument(),
     );
+  });
+
+  it('tracks multipart uploads and advances polled statuses across requests', async () => {
+    const upload = await unwrap(
+      api.POST('/receipts', {
+        body: { files: [] },
+        bodySerializer: () => {
+          const form = new FormData();
+          form.append(
+            'files',
+            new File(['a'], 'ready.jpg', { type: 'image/jpeg' }),
+          );
+          form.append('files', new File(['b'], 'review.heic', { type: '' }));
+          form.append(
+            'files',
+            new File(['c'], 'notes.pdf', { type: 'application/pdf' }),
+          );
+          return form;
+        },
+      }),
+    );
+
+    expect(upload.results).toHaveLength(3);
+    expect(upload.results[0]).toMatchObject({
+      outcome: 'created',
+      error: null,
+    });
+    expect(upload.results[1]).toMatchObject({
+      outcome: 'created',
+      error: null,
+    });
+    expect(upload.results[2]).toMatchObject({ outcome: 'rejected' });
+
+    const ids = upload.results
+      .map((entry) => entry.receiptId)
+      .filter((id): id is string => id !== null);
+
+    const firstPoll = await unwrap(
+      api.GET('/receipts', { params: { query: { ids } } }),
+    );
+    expect(firstPoll.items.map((item) => item.status)).toEqual([
+      'processing',
+      'processing',
+    ]);
+
+    const secondPoll = await unwrap(
+      api.GET('/receipts', { params: { query: { ids } } }),
+    );
+    expect(secondPoll.items.map((item) => item.status)).toEqual([
+      'needs_review',
+      'ready',
+    ]);
   });
 });

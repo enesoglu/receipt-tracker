@@ -10,10 +10,28 @@ export type ReceiptUpdate = components['schemas']['ReceiptUpdate'];
 export type LineItem = components['schemas']['LineItem'];
 export type LineItemInput = components['schemas']['LineItemInput'];
 
+export interface UseReceiptsOptions {
+  enabled?: boolean;
+  refetchInterval?:
+    | number
+    | false
+    | ((data: ReceiptPage | undefined, isError: boolean) => number | false);
+}
+
 /** Lists receipts matching optional filter and cursor parameters. */
-export function useReceipts(params: ReceiptListParams = {}) {
+export function useReceipts(
+  params: ReceiptListParams = {},
+  options: UseReceiptsOptions = {},
+) {
+  const { enabled, refetchInterval } = options;
   return useQuery({
     queryKey: queryKeys.receipts.list(params),
+    enabled,
+    refetchInterval:
+      typeof refetchInterval === 'function'
+        ? (query) =>
+            refetchInterval(query.state.data, query.state.status === 'error')
+        : refetchInterval,
     queryFn: () => unwrap(api.GET('/receipts', { params: { query: params } })),
   });
 }
