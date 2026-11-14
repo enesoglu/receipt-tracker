@@ -16,8 +16,3 @@ func (settingsHandlers) GetSettings(_ context.Context, _ GetSettingsRequestObjec
 func (settingsHandlers) UpdateSettings(_ context.Context, _ UpdateSettingsRequestObject) (UpdateSettingsResponseObject, error) {
 	return nil, notImplemented()
 }
-
-// GetUsage returns the extraction pages used this month and the limit.
-func (settingsHandlers) GetUsage(_ context.Context, _ GetUsageRequestObject) (GetUsageResponseObject, error) {
-	return nil, notImplemented()
-}

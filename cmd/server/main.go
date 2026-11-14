@@ -110,7 +110,7 @@ func run(logger *slog.Logger) error {
 		workerDone <- err
 	}()
 	uploads := ingest.New(pool, images, string(cfg.Storage.Backend), ingest.NewHEICConverter(logger), worker, logger, time.Now)
-	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage, httpapi.Ingestion{Uploads: uploads}).Run(ctx)
+	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage, httpapi.Ingestion{Uploads: uploads, Usage: usage}).Run(ctx)
 	// The worker finishes its current job before the pool is closed.
 	stop()
 	return errors.Join(serveErr, <-workerDone)
