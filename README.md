@@ -9,11 +9,12 @@ licensed.
 
 The repository provides the server, embedded placeholder page, design tokens,
 development database, reproducible tooling, containers, and CI, plus the
-complete v1 database schema and validated configuration. Receipt uploading,
-authentication, extraction, matching, reports, and backups are planned in
-later work packages. The v1 API is fully specified in `api/openapi.yaml`;
-every operation is routed and answers with a `501` problem document until its
-behaviour is built.
+complete v1 database schema, validated configuration, Google sign-in and
+server-side sessions. Receipt uploading, extraction, matching, reports and
+backups are planned in later work packages. The v1 API is fully specified in
+`api/openapi.yaml`. API requests require a session; authenticated operations
+answer with a `501` problem document until their behaviour is built, except
+for the implemented signed-in user and logout operations.
 
 The server validates its configuration, connects to PostgreSQL and applies
 the embedded migrations before it accepts requests. `/livez` and `/healthz`
@@ -225,3 +226,44 @@ security fix required by the lint toolchain.
 Pull requests are rebase-merged after every check is green. Configure branch
 protection on `main` to require the final check named **ci**, require pull
 requests, and enforce linear history. There is no deployment workflow.
+
+## Sign-in and sessions
+
+Register a Google web OAuth client with the redirect URI
+`<APP_BASE_URL>/auth/google/callback`, and configure `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET`. Open `/auth/google/login` to sign in. Only verified
+addresses in `ALLOWED_EMAILS` are admitted (case-insensitive); all others see
+`access is closed`. The first sign-in creates the user, default settings and
+eight grocery/household categories in one transaction. `ADMIN_EMAIL` determines
+the admin flag on each sign-in. Admission removal also invalidates existing
+sessions on their next API request.
+
+Sign-in requests use `openid email profile`, state, nonce and PKCE S256. A
+single-use pending attempt expires after ten minutes and is bound to a short-lived
+`auth_binding` cookie. Attempts are held in memory, bounded to 4,096 entries;
+restart the sign-in after a server restart. Google endpoints are fixed at startup,
+with signing keys fetched on demand, so starting the server needs no Google
+network request. Google access and refresh tokens are never stored.
+
+Sessions use scs and PostgreSQL. The `session` cookie is host-only, `HttpOnly`,
+`SameSite=Lax`, and `Secure` in production, with a 30-day maximum lifetime and
+a 24-hour idle timeout. Tokens are hashed in the database and renewed on sign-in.
+`GET /api/v1/me` returns the current user; `POST /api/v1/auth/logout` destroys the
+session and expires its cookie. Missing, expired and revoked sessions receive
+an RFC 9457 `401` problem document. Cross-origin state-changing API requests are
+rejected by the existing CSRF middleware.
+
+For local development, open `/auth/dev/login` when `APP_ENV=dev` and
+`DEV_LOGIN_EMAIL` is set to an allowed address. This creates a separate development
+identity; it does not impersonate an existing Google subject. The route is absent
+in production and when the variable is unset. There is no authentication UI yet.
+
+For later isolation tests, `internal/testutil` documents `NewUser` and `Request`.
+Create a migrated database with `dbtest.New(t)`, build `auth.New` with a dev login
+email, and call `testutil.NewUser(t, users)` to provision it. Build sessions with
+`auth.NewSessions`, register its returned cleanup with `t.Cleanup`, and pass those
+same services to `httpapi.New`. Use
+`testutil.Request(t, sessions, user.ID, method, target, body)` for each user to send
+a real persisted session through the production middleware. Provision a second
+user with another allowed dev email for resource-isolation assertions. The helper
+is for tests only and never enables a runtime authentication bypass.

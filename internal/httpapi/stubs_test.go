@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"mime/multipart"
 	"net/http"
@@ -14,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/enesoglu/receipt-tracker/internal/httpapi"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/google/go-cmp/cmp"
@@ -108,7 +111,7 @@ func exampleText(t *testing.T, parameter *openapi3.Parameter) string {
 	}
 }
 
-func TestAPI_EveryOperationAnswersNotImplemented(t *testing.T) {
+func TestAPI_EveryRemainingOperationAnswersNotImplemented(t *testing.T) {
 	doc := loadContract(t)
 	server := newTestServer(t)
 	problemSchema := doc.Components.Schemas["Problem"].Value
@@ -116,6 +119,9 @@ func TestAPI_EveryOperationAnswersNotImplemented(t *testing.T) {
 	var visited []string
 	for _, op := range operations(doc) {
 		visited = append(visited, op.spec.OperationID)
+		if op.spec.OperationID == "getMe" || op.spec.OperationID == "logout" {
+			continue
+		}
 		t.Run(op.spec.OperationID, func(t *testing.T) {
 			requests := exampleRequests(t, op)
 			for _, name := range slices.Sorted(maps.Keys(requests)) {
@@ -243,6 +249,22 @@ func TestAPI_AnswersBadRequestsWithProblems(t *testing.T) {
 				if strings.Contains(strings.ToLower(raw), internal) {
 					t.Errorf("the response leaks %q: %s", internal, raw)
 				}
+			}
+		})
+	}
+}
+
+func TestAuth_AllOperationsRequireASession(t *testing.T) {
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), nil, nil)
+	for _, op := range operations(loadContract(t)) {
+		t.Run(op.spec.OperationID, func(t *testing.T) {
+			for _, request := range exampleRequests(t, op) {
+				response := httptest.NewRecorder()
+				server.Handler().ServeHTTP(response, request)
+				if response.Code != http.StatusUnauthorized {
+					t.Fatalf("status = %d, want 401; body: %s", response.Code, response.Body.String())
+				}
+				decodeProblem(t, response)
 			}
 		})
 	}
