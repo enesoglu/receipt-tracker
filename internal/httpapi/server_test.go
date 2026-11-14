@@ -27,7 +27,7 @@ func TestHandler_ServesHealthAndSPA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa, nil, nil)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa, nil, nil, nil)
 	tests := []struct {
 		path, accept, body string
 		status             int
@@ -77,7 +77,7 @@ func newTestServer(t *testing.T) authenticatedServer {
 	t.Cleanup(stop)
 	user := testutil.NewUser(t, users)
 	request := testutil.Request(t, sessions, user.ID, http.MethodGet, "/", nil)
-	return authenticatedServer{server: httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions), cookie: request.Cookies()[0]}
+	return authenticatedServer{server: httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil), cookie: request.Cookies()[0]}
 }
 
 // decodeProblem reads a problem document strictly: an unknown member means
@@ -173,7 +173,7 @@ func TestServe_StopsOnCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), nil, nil)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), nil, nil, nil)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(ctx, listener) }()
 	cancel()

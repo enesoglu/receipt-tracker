@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/enesoglu/receipt-tracker/internal/auth"
+	"github.com/enesoglu/receipt-tracker/internal/storage/drive"
 )
 
 // Server owns the listener and shuts it down when its context is canceled.
@@ -25,7 +26,7 @@ type Server struct {
 // New builds the router: health checks, the REST API under /api/v1, the
 // prefixes reserved for sign-in, OAuth and MCP, and the single-page app for
 // everything else.
-func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager) *Server {
+func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager, storage *drive.Service) *Server {
 	problems := problemWriter{logger: logger}
 	authentication := authHandlers{users: users, sessions: sessions}
 	if sessions != nil {
@@ -43,7 +44,29 @@ func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Serv
 			logger.Error("write health response", "error", err)
 		}
 	}
-	router.Get("/healthz", health)
+	router.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if storage == nil {
+			health(w, r)
+			return
+		}
+		state, err := storage.Health(r.Context())
+		database, status := "ok", http.StatusOK
+		if err != nil {
+			database, status = "unavailable", http.StatusServiceUnavailable
+		}
+		if state != "ok" && state != "not_required" {
+			status = http.StatusServiceUnavailable
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		overall := "ok"
+		if status != http.StatusOK {
+			overall = "unavailable"
+		}
+		if _, err := fmt.Fprintf(w, "{\"status\":%q,\"database\":%q,\"drive\":%q}\n", overall, database, state); err != nil {
+			logger.Error("write health response", "error", err)
+		}
+	})
 	router.Get("/livez", health)
 	// The API answers in problem documents, also for paths it does not have.
 	router.Route("/api", func(api chi.Router) {
@@ -54,8 +77,8 @@ func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Serv
 			if sessions != nil {
 				v1.Use(sessions.LoadAndSave)
 			}
-			v1.Use(RequireUser(users, sessions, problems.write))
-			mountAPI(v1, problems, authentication)
+			v1.Use(RequireUser(users, sessions, problems.write), validateDriveQuery(problems))
+			mountAPI(v1, problems, authentication, storageHandlers{storage: storage})
 		})
 	})
 	authentication.mount(router, problems)

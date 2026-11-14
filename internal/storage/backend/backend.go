@@ -20,7 +20,7 @@ type Backend struct {
 
 // New selects the configured adapter. Drive remains unavailable until an owner
 // connects it; selecting Drive never silently falls back to local storage.
-func New(ctx context.Context, settings config.Storage) (*Backend, error) {
+func New(ctx context.Context, settings config.Storage, driveStore storage.Store) (*Backend, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("select image storage: %w", err)
 	}
@@ -32,6 +32,9 @@ func New(ctx context.Context, settings config.Storage) (*Backend, error) {
 		}
 		return &Backend{Store: store, closer: store}, nil
 	case config.StorageDrive:
+		if driveStore != nil {
+			return &Backend{Store: driveStore}, nil
+		}
 		return &Backend{Store: disconnected{}}, nil
 	default:
 		return nil, apperr.New(apperr.Invalid, "unsupported image storage backend")

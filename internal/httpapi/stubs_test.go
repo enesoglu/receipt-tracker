@@ -160,8 +160,8 @@ func TestAPI_EveryRemainingOperationAnswersNotImplemented(t *testing.T) {
 	if diff := cmp.Diff(planned, visited); diff != "" {
 		t.Errorf("operations exercised mismatch (-want +got):\n%s", diff)
 	}
-	if len(visited) != 33 {
-		t.Errorf("exercised %d operations, want all 33", len(visited))
+	if len(visited) != 35 {
+		t.Errorf("exercised %d operations, want all 35", len(visited))
 	}
 }
 
@@ -255,7 +255,7 @@ func TestAPI_AnswersBadRequestsWithProblems(t *testing.T) {
 }
 
 func TestAuth_AllOperationsRequireASession(t *testing.T) {
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), nil, nil)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), nil, nil, nil)
 	for _, op := range operations(loadContract(t)) {
 		t.Run(op.spec.OperationID, func(t *testing.T) {
 			for _, request := range exampleRequests(t, op) {

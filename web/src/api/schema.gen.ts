@@ -697,6 +697,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/storage/drive/connect': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Authorize Google Drive storage
+     * @description Admin only. Requests drive.file with offline access, consent and PKCE. Other users get 404.
+     */
+    get: operations['connectDrive'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/storage/drive/callback': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Complete Google Drive authorization
+     * @description Admin only. Consumes a single-use state bound to the signed-in admin, replaces the encrypted token without revoking and reuses an existing root folder.
+     */
+    get: operations['completeDrive'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2808,6 +2848,67 @@ export interface operations {
         };
         content?: never;
       };
+      401: components['responses']['Unauthorized'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  connectDrive: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to Google consent. */
+      302: {
+        headers: {
+          Location: string;
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: components['responses']['Unauthorized'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  completeDrive: {
+    parameters: {
+      query?: {
+        /**
+         * @description Single-use state from the connect redirect.
+         * @example synthetic-state
+         */
+        state?: string;
+        /**
+         * @description Authorization code from Google.
+         * @example synthetic-code
+         */
+        code?: string;
+        /**
+         * @description Consent refusal reported by Google.
+         * @example access_denied
+         */
+        error?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to settings after connecting. */
+      303: {
+        headers: {
+          Location: string;
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components['responses']['BadRequest'];
       401: components['responses']['Unauthorized'];
       404: components['responses']['NotFound'];
       default: components['responses']['Error'];

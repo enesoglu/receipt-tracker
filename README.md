@@ -267,3 +267,5 @@ same services to `httpapi.New`. Use
 a real persisted session through the production middleware. Provision a second
 user with another allowed dev email for resource-isolation assertions. The helper
 is for tests only and never enables a runtime authentication bypass.
+
+Google Drive setup and connection recovery are documented in [Storage operations](docs/OPERATIONS.md).

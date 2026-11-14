@@ -15,8 +15,10 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/auth"
 	"github.com/enesoglu/receipt-tracker/internal/config"
 	"github.com/enesoglu/receipt-tracker/internal/db"
+	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
 	"github.com/enesoglu/receipt-tracker/internal/httpapi"
 	"github.com/enesoglu/receipt-tracker/internal/storage/backend"
+	"github.com/enesoglu/receipt-tracker/internal/storage/drive"
 	"github.com/enesoglu/receipt-tracker/internal/web"
 )
 
@@ -35,15 +37,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("load configuration: %w", err)
 	}
-	images, err := backend.New(ctx, cfg.Storage)
-	if err != nil {
-		return fmt.Errorf("open image storage: %w", err)
-	}
-	defer func() {
-		if err := images.Close(); err != nil {
-			logger.Error("close image storage", "error", err)
-		}
-	}()
 	pool, err := db.Open(ctx, cfg.DatabaseURL.Reveal())
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -67,5 +60,23 @@ func run(logger *slog.Logger) error {
 	users := auth.New(pool, cfg, provider, time.Now)
 	sessions, stopSessions := auth.NewSessions(pool, cfg.Environment == config.EnvProd)
 	defer stopSessions()
-	return httpapi.New(cfg.ListenAddr, logger, spa, users, sessions).Run(ctx)
+	driveStorage, err := drive.New(sqlc.New(pool), users, drive.Options{Config: cfg, OAuth: oauth2.Config{
+		ClientID: cfg.Google.ClientID, ClientSecret: cfg.Google.ClientSecret.Reveal(), RedirectURL: cfg.BaseURL + "/api/v1/storage/drive/callback",
+		//nolint:gosec // Google OAuth endpoint URLs are public configuration.
+		Endpoint: oauth2.Endpoint{AuthURL: "https://accounts.google.com/o/oauth2/v2/auth", TokenURL: "https://oauth2.googleapis.com/token"},
+	}}, time.Now)
+	if err != nil {
+		return fmt.Errorf("initialize Drive storage: %w", err)
+	}
+	images, err := backend.New(ctx, cfg.Storage, driveStorage)
+	if err != nil {
+		return fmt.Errorf("open image storage: %w", err)
+	}
+	defer func() {
+		if err := images.Close(); err != nil {
+			logger.Error("close image storage", "error", err)
+		}
+	}()
+	go driveStorage.Run(ctx)
+	return httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage).Run(ctx)
 }

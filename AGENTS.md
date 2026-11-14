@@ -42,6 +42,12 @@ All commands run through `task` and behave the same in PowerShell and bash.
   owned. If you need a change elsewhere, ask.
 - Add a dependency only if the stack table in `docs/ARCHITECTURE.md` names
   it. Anything else needs the owner's approval first.
+- Shared files may be edited for your own lines only: `go.mod`, `go.sum`,
+  `cmd/server/main.go`, `api/openapi.yaml`, the generated files that follow
+  from your sources, the wiring in `internal/httpapi` that registers your
+  handlers, `web/package.json` with its lock file, tests beside files you
+  own, and `.env.example`, `README.md` and `docs/` where your change alters
+  documented behaviour. Resolve conflicts by rebasing and regenerating.
 - Log out-of-scope ideas in your progress file instead of building them.
 
 ## Go
