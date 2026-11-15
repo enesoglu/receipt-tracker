@@ -45,4 +45,14 @@
 // Numbers are read from their JSON text into decimals, never through
 // float64, so amounts stay exact. A field that is absent, or whose value
 // property is missing or malformed, is reported as not found.
+//
+// # Repairs (observed on real Turkish receipts, November 2026)
+//
+// Parse corrects what the service is known to get wrong, using only text
+// the service itself returned, so a reprocess of a stored result applies
+// the same corrections:
+//
+//   - A discount printed with a minus ("*- 54.90") can come back with a
+//     positive TotalPrice amount. The total is negated when a minus stands
+//     right before the printed amount in the item's content.
 package azure

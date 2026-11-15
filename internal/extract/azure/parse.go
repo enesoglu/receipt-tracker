@@ -109,12 +109,49 @@ func parse(raw json.RawMessage) (extract.Result, error) {
 			Quantity:    number(values["Quantity"]),
 			Unit:        text(values["QuantityUnit"], false),
 			UnitPrice:   money(values["Price"]),
-			Total:       money(values["TotalPrice"]),
+			Total:       lineTotal(item, values["TotalPrice"]),
 			ProductCode: text(values["ProductCode"], false),
 			Confidence:  confidence(item),
 		})
 	}
 	return result, nil
+}
+
+// lineTotal reads an item's TotalPrice and keeps the minus sign that the
+// receipt prints in front of a discount. The service has been seen to
+// return a positive amount for a discount printed as "*- 54.90": the minus
+// is in the item's content, but neither in the amount nor in the
+// TotalPrice field's own content. A minus after an amount ("79,90-B", a
+// VAT class) does not count.
+func lineTotal(item, totalPrice field) extract.Field[decimal.Decimal] {
+	total := money(totalPrice)
+	if total.Found && total.Value.IsPositive() && printedNegative(item, totalPrice) {
+		total.Value = total.Value.Neg()
+	}
+	return total
+}
+
+// printedNegative reports whether a minus sign stands right before the
+// printed line total, with only spaces and the "*" amount marker between.
+func printedNegative(item, totalPrice field) bool {
+	if totalPrice.Content == nil {
+		return false
+	}
+	printed := strings.TrimSpace(*totalPrice.Content)
+	if printed == "" {
+		return false
+	}
+	if strings.HasPrefix(strings.TrimLeft(printed, " *"), "-") {
+		return true
+	}
+	if item.Content == nil {
+		return false
+	}
+	at := strings.LastIndex(*item.Content, printed)
+	if at < 0 {
+		return false
+	}
+	return strings.HasSuffix(strings.TrimRight((*item.Content)[:at], " *"), "-")
 }
 
 func confidence(f field) float64 {
