@@ -38,7 +38,7 @@ func TestGetUsage_ReportsTheInstanceAllowance(t *testing.T) {
 	bob := testutil.NewUser(t, auth.New(pool, cfg, nil, time.Now))
 	sessions, stop := auth.NewSessions(pool, false)
 	t.Cleanup(stop)
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{Usage: usage}, nil, nil, nil)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{Usage: usage}, nil, nil, nil, nil)
 
 	schema := loadContract(t).Components.Schemas["Usage"].Value
 	// The allowance belongs to the instance: every user sees the same.

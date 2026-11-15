@@ -86,7 +86,7 @@ func TestHealth_CachedStatesMatchGoldenAndLivenessIsIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	server := httpapi.New(":0", logger, http.NotFoundHandler(), nil, nil, service, httpapi.Ingestion{}, nil, nil, nil)
+	server := httpapi.New(":0", logger, http.NotFoundHandler(), nil, nil, service, httpapi.Ingestion{}, nil, nil, nil, nil)
 	check := func(key string, status int) {
 		t.Helper()
 		calls := attempts
@@ -163,6 +163,6 @@ func TestHealth_CachedStatesMatchGoldenAndLivenessIsIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server = httpapi.New(":0", logger, http.NotFoundHandler(), nil, nil, without, httpapi.Ingestion{}, nil, nil, nil)
+	server = httpapi.New(":0", logger, http.NotFoundHandler(), nil, nil, without, httpapi.Ingestion{}, nil, nil, nil, nil)
 	check("not_required", 200)
 }

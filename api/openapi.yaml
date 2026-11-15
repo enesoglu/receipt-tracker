@@ -38,6 +38,8 @@ info:
 # OAuth uses its own root-level protocol contract and RFC 6749 error format.
 x-oauth-contract:
   $ref: ../internal/oauthserver/openapi.yaml
+x-mcp-contract:
+  $ref: ../internal/mcpserver/openapi.yaml
 servers:
   - url: /api/v1
 security:

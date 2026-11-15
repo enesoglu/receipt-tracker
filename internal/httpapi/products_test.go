@@ -42,7 +42,7 @@ func newProductServer(t *testing.T) *productServer {
 	sessions, stop := auth.NewSessions(pool, false)
 	t.Cleanup(stop)
 	now := func() time.Time { return time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC) }
-	server := httpapi.New(":0", slog.New(slog.NewTextHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, nil, products.New(pool, now), nil)
+	server := httpapi.New(":0", slog.New(slog.NewTextHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, nil, products.New(pool, now), nil, nil)
 	s := &productServer{t: t, http: server, sessions: sessions, alice: alice, bob: bob}
 	s.id = func(sql string, args ...any) uuid.UUID {
 		t.Helper()

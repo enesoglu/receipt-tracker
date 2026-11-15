@@ -436,3 +436,93 @@ Protocol sources checked:
 [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591),
 [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), and
 [OAuth 2.1 draft](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-13).
+
+
+### Claude
+
+1. Start the deployed application with its public HTTPS `APP_BASE_URL` and
+   Google sign-in configured. Use that exact origin plus `/mcp` as the URL.
+2. Open Claude's **Customize > Connectors**, choose **Add custom connector**,
+   and enter a name and the MCP URL. An organization Owner adds connectors
+   for Team or Enterprise accounts.
+3. Connect, sign in with an allow-listed Google account, and review the client
+   name and callback hostname before approving read access. Claude's hosted
+   callback is `https://claude.ai/api/mcp/auth_callback`. Claude Code uses a
+   loopback callback; the consent page warns about local interception.
+4. Confirm the connector shows Connected and all seven tools appear in Tool
+   permissions. Enable it in a chat and ask for spending in a named month or
+   the price history of a product. Tool results keep currencies separate.
+5. If the connection is revoked or the 30-day grant expires, connect again.
+   A dropped network stream or application restart alone does not require
+   another Google sign-in: an unknown MCP session gets HTTP 404, and the
+   client initializes a new session with its existing access token.
+
+### Gemini Apps
+
+1. In the Gemini web app, open **Settings > Connected Apps** (on some accounts,
+   **Personal Intelligence > Connected Apps**), then **Add a custom app**.
+2. Enter the same public HTTPS MCP URL and continue. Dynamic registration is
+   supported, so no manually created client secret is needed.
+3. Complete Google sign-in and approve the receipt-tracker consent page.
+4. In a chat, type `@` and select the custom app to request receipts, spending
+   or prices. Check a known synthetic or non-sensitive example first.
+
+Google currently documents custom apps as available only in the US, age 18+,
+in English, with a personal Google account and Keep Activity enabled. A work
+or school account is not eligible. If Add a custom app is absent, verify those
+requirements before debugging the server. See
+[Gemini custom apps](https://support.google.com/gemini/answer/17209137?hl=en).
+
+### MCP Inspector
+
+1. Run the development application with `task db:up` and `task dev`. Its
+   `APP_BASE_URL` must agree with the server URL, normally
+   `http://localhost:8080`. Google sign-in and its callback must use that
+   origin. Development login, when configured, also supplies the normal app
+   session; no app session cookie is accepted as MCP authorization.
+2. Run `npx @modelcontextprotocol/inspector`, open its local UI, choose
+   **Streamable HTTP**, and enter `http://localhost:8080/mcp`.
+3. Use the OAuth authentication flow. Confirm discovery, public registration,
+   the S256 request, consent naming the return host, and token exchange. Keep
+   the generated credentials private.
+4. Connect and call each tool: `list_receipts`, `get_receipt`,
+   `search_products`, `get_price_history`, `get_spending_summary`,
+   `list_categories`, `list_stores`. Use an owned receipt/product id and a
+   YYYY-MM month range. Follow `next_cursor` for additional pages;
+   price history also has `next_store_cursor` for store summaries.
+5. Drop the stream or restart the app and reconnect. With a valid token the
+   client can initialize again without a new sign-in. Sign out of the app
+   and confirm subsequent MCP calls return the discovery-bearing 401.
+
+The Inspector CLI is also supported for scripted local checks: use
+`npx @modelcontextprotocol/inspector --cli URL --transport http --method tools/list`.
+For reproducible automation, pin its version and use a private session config
+for authorization rather than printing credentials. CLI documentation:
+[MCP Inspector](https://github.com/modelcontextprotocol/inspector/tree/main/clients/cli).
+
+All tool responses are capped below 64 KiB of serialized result JSON. Large
+results ask for a smaller limit or narrower date range. The default page is
+20 items and the maximum is 50. Receipt lines, monthly totals, price points,
+and store summaries have explicit pagination; no stored image reference or
+raw extraction is exposed. Pagination reflects current data, so changes made
+in the app between pages can alter the results. Read-only is enforced by
+registering only read tools and by interfaces without mutation methods;
+`receipts:read` alone is not a future write-permission system.
+
+The transport uses official Go SDK v1.8.0 session handling and ordinary JSON
+POST responses. Idle standalone GET streams receive an SSE comment every
+25 seconds (configurable in code with an injected ticker for tests). This
+supplements the SDK's initial GET comment; its RPC ping option does not send
+periodic SSE bytes. Stream writes clear the normal 30-second HTTP write
+deadline and disable proxy buffering. Each new HTTP request verifies the
+bearer token again, and SDK sessions are bound to that user. Origin checks
+accept the app origin and official Claude/Gemini web origins; the Inspector's
+local proxy and CLI do not require cross-origin browser access to `/mcp`.
+
+
+The initial 401 challenge advertises the metadata URL without narrowing its
+scopes. MCP clients choose challenge scopes ahead of metadata scopes; discovery
+therefore offers both `receipts:read` and `offline_access` so connectors can
+request refresh tokens. The bearer verifier still requires `receipts:read` on
+every request. A client explicitly requesting only `receipts:read` receives
+short-lived access without a refresh token.

@@ -31,7 +31,7 @@ type Server struct {
 // New builds the router: health checks, the REST API under /api/v1, the
 // prefixes reserved for sign-in, OAuth and MCP, and the single-page app for
 // everything else.
-func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager, storage *drive.Service, ingestion Ingestion, reportService *reports.Service, productService *products.Service, oauth *oauthserver.Handler, receiptServices ...*receipts.Service) *Server {
+func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager, storage *drive.Service, ingestion Ingestion, reportService *reports.Service, productService *products.Service, oauth *oauthserver.Handler, mcp http.Handler, receiptServices ...*receipts.Service) *Server {
 	var receiptService *receipts.Service
 	if len(receiptServices) > 0 {
 		receiptService = receiptServices[0]
@@ -113,6 +113,9 @@ func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Serv
 	if oauth != nil {
 		router.Handle("/oauth/*", oauth)
 		router.Handle("/.well-known/*", oauth)
+	}
+	if mcp != nil {
+		router.Handle("/mcp", mcp)
 	}
 	router.Handle("/*", spa)
 	return &Server{http: &http.Server{Addr: address, Handler: router, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}, logger: logger}
