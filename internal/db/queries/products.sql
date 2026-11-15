@@ -119,6 +119,102 @@ WHERE l.user_id = @user_id
   AND (sqlc.narg(store_id)::uuid IS NULL OR r.store_id = sqlc.narg(store_id)::uuid)
 ORDER BY r.purchased_on, r.purchased_time NULLS FIRST, r.created_at, r.id, l.position;
 
+-- name: ListProductRejections :many
+SELECT * FROM match_rejections
+WHERE user_id = @user_id AND product_id = @product_id
+ORDER BY normalized_name, id;
+
+-- name: CombineMergedAliases :exec
+-- CombineMergedAliases adds the counts of the source's aliases to the
+-- target's alias with the same name and store. MoveMergedAliases then
+-- deletes those source aliases and moves the rest.
+UPDATE product_aliases t
+SET seen_count = t.seen_count + s.seen_count, last_seen_at = GREATEST(t.last_seen_at, s.last_seen_at)
+FROM product_aliases s
+WHERE t.user_id = @user_id AND s.user_id = @user_id
+  AND t.product_id = @target_id AND s.product_id = @source_id
+  AND t.normalized_name = s.normalized_name AND t.store_id IS NOT DISTINCT FROM s.store_id;
+
+-- name: DeleteCombinedAliases :exec
+DELETE FROM product_aliases s
+WHERE s.user_id = @user_id AND s.product_id = @source_id
+  AND EXISTS (
+      SELECT 1 FROM product_aliases t
+      WHERE t.user_id = @user_id AND t.product_id = @target_id
+        AND t.normalized_name = s.normalized_name AND t.store_id IS NOT DISTINCT FROM s.store_id
+  );
+
+-- name: MoveAliases :exec
+-- MoveAliases moves the source's aliases to the target; with alias_ids
+-- empty it moves all of them, otherwise only those.
+UPDATE product_aliases SET product_id = @target_id
+WHERE user_id = @user_id AND product_id = @source_id
+  AND (cardinality(@alias_ids::uuid[]) = 0 OR id = ANY(@alias_ids::uuid[]));
+
+-- name: CombineMergedCodes :exec
+UPDATE product_codes t
+SET seen_count = t.seen_count + s.seen_count
+FROM product_codes s
+WHERE t.user_id = @user_id AND s.user_id = @user_id
+  AND t.product_id = @target_id AND s.product_id = @source_id
+  AND t.code = s.code AND t.kind = s.kind AND t.store_id IS NOT DISTINCT FROM s.store_id;
+
+-- name: DeleteCombinedCodes :exec
+DELETE FROM product_codes s
+WHERE s.user_id = @user_id AND s.product_id = @source_id
+  AND EXISTS (
+      SELECT 1 FROM product_codes t
+      WHERE t.user_id = @user_id AND t.product_id = @target_id
+        AND t.code = s.code AND t.kind = s.kind AND t.store_id IS NOT DISTINCT FROM s.store_id
+  );
+
+-- name: MoveCodes :exec
+-- MoveCodes moves the source's codes to the target; with code_ids empty it
+-- moves all of them, otherwise only those.
+UPDATE product_codes SET product_id = @target_id
+WHERE user_id = @user_id AND product_id = @source_id
+  AND (cardinality(@code_ids::uuid[]) = 0 OR id = ANY(@code_ids::uuid[]));
+
+-- name: DeleteDuplicateRejections :exec
+-- DeleteDuplicateRejections deletes the source's rejections that the target
+-- already has, so the rest can move without breaking uniqueness.
+DELETE FROM match_rejections s
+WHERE s.user_id = @user_id AND s.product_id = @source_id
+  AND EXISTS (
+      SELECT 1 FROM match_rejections t
+      WHERE t.user_id = @user_id AND t.product_id = @target_id
+        AND t.normalized_name = s.normalized_name AND t.store_id IS NOT DISTINCT FROM s.store_id
+  );
+
+-- name: MoveRejections :exec
+UPDATE match_rejections SET product_id = @target_id
+WHERE user_id = @user_id AND product_id = @source_id;
+
+-- name: DeleteSelfRejections :many
+-- DeleteSelfRejections deletes the rejections of a product's own names: a
+-- merge makes them contradict the product, whatever the store.
+DELETE FROM match_rejections r
+WHERE r.user_id = @user_id AND r.product_id = @product_id
+  AND r.normalized_name IN (
+      SELECT a.normalized_name FROM product_aliases a
+      WHERE a.user_id = @user_id AND a.product_id = @product_id
+  )
+RETURNING *;
+
+-- name: MoveProductLines :many
+-- MoveProductLines links the source's lines to the target; with line_ids
+-- empty it moves all of them, otherwise only those.
+UPDATE line_items SET product_id = @target_id::uuid, updated_at = @now
+WHERE user_id = @user_id AND product_id = @source_id::uuid
+  AND (cardinality(@line_ids::uuid[]) = 0 OR id = ANY(@line_ids::uuid[]))
+RETURNING id;
+
+-- name: TouchProduct :exec
+UPDATE products SET updated_at = @now WHERE user_id = @user_id AND id = @product_id;
+
+-- name: DeleteProduct :exec
+DELETE FROM products WHERE user_id = @user_id AND id = @product_id;
+
 -- The product catalogue: list and search, detail with aliases and codes,
 -- edits, merge, split and price history.
 --

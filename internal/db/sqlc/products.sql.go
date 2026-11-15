@@ -13,6 +13,172 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const combineMergedAliases = `-- name: CombineMergedAliases :exec
+UPDATE product_aliases t
+SET seen_count = t.seen_count + s.seen_count, last_seen_at = GREATEST(t.last_seen_at, s.last_seen_at)
+FROM product_aliases s
+WHERE t.user_id = $1 AND s.user_id = $1
+  AND t.product_id = $2 AND s.product_id = $3
+  AND t.normalized_name = s.normalized_name AND t.store_id IS NOT DISTINCT FROM s.store_id
+`
+
+type CombineMergedAliasesParams struct {
+	UserID   uuid.UUID
+	TargetID uuid.UUID
+	SourceID uuid.UUID
+}
+
+// CombineMergedAliases adds the counts of the source's aliases to the
+// target's alias with the same name and store. MoveMergedAliases then
+// deletes those source aliases and moves the rest.
+func (q *Queries) CombineMergedAliases(ctx context.Context, arg CombineMergedAliasesParams) error {
+	_, err := q.db.Exec(ctx, combineMergedAliases, arg.UserID, arg.TargetID, arg.SourceID)
+	return err
+}
+
+const combineMergedCodes = `-- name: CombineMergedCodes :exec
+UPDATE product_codes t
+SET seen_count = t.seen_count + s.seen_count
+FROM product_codes s
+WHERE t.user_id = $1 AND s.user_id = $1
+  AND t.product_id = $2 AND s.product_id = $3
+  AND t.code = s.code AND t.kind = s.kind AND t.store_id IS NOT DISTINCT FROM s.store_id
+`
+
+type CombineMergedCodesParams struct {
+	UserID   uuid.UUID
+	TargetID uuid.UUID
+	SourceID uuid.UUID
+}
+
+func (q *Queries) CombineMergedCodes(ctx context.Context, arg CombineMergedCodesParams) error {
+	_, err := q.db.Exec(ctx, combineMergedCodes, arg.UserID, arg.TargetID, arg.SourceID)
+	return err
+}
+
+const deleteCombinedAliases = `-- name: DeleteCombinedAliases :exec
+DELETE FROM product_aliases s
+WHERE s.user_id = $1 AND s.product_id = $2
+  AND EXISTS (
+      SELECT 1 FROM product_aliases t
+      WHERE t.user_id = $1 AND t.product_id = $3
+        AND t.normalized_name = s.normalized_name AND t.store_id IS NOT DISTINCT FROM s.store_id
+  )
+`
+
+type DeleteCombinedAliasesParams struct {
+	UserID   uuid.UUID
+	SourceID uuid.UUID
+	TargetID uuid.UUID
+}
+
+func (q *Queries) DeleteCombinedAliases(ctx context.Context, arg DeleteCombinedAliasesParams) error {
+	_, err := q.db.Exec(ctx, deleteCombinedAliases, arg.UserID, arg.SourceID, arg.TargetID)
+	return err
+}
+
+const deleteCombinedCodes = `-- name: DeleteCombinedCodes :exec
+DELETE FROM product_codes s
+WHERE s.user_id = $1 AND s.product_id = $2
+  AND EXISTS (
+      SELECT 1 FROM product_codes t
+      WHERE t.user_id = $1 AND t.product_id = $3
+        AND t.code = s.code AND t.kind = s.kind AND t.store_id IS NOT DISTINCT FROM s.store_id
+  )
+`
+
+type DeleteCombinedCodesParams struct {
+	UserID   uuid.UUID
+	SourceID uuid.UUID
+	TargetID uuid.UUID
+}
+
+func (q *Queries) DeleteCombinedCodes(ctx context.Context, arg DeleteCombinedCodesParams) error {
+	_, err := q.db.Exec(ctx, deleteCombinedCodes, arg.UserID, arg.SourceID, arg.TargetID)
+	return err
+}
+
+const deleteDuplicateRejections = `-- name: DeleteDuplicateRejections :exec
+DELETE FROM match_rejections s
+WHERE s.user_id = $1 AND s.product_id = $2
+  AND EXISTS (
+      SELECT 1 FROM match_rejections t
+      WHERE t.user_id = $1 AND t.product_id = $3
+        AND t.normalized_name = s.normalized_name AND t.store_id IS NOT DISTINCT FROM s.store_id
+  )
+`
+
+type DeleteDuplicateRejectionsParams struct {
+	UserID   uuid.UUID
+	SourceID uuid.UUID
+	TargetID uuid.UUID
+}
+
+// DeleteDuplicateRejections deletes the source's rejections that the target
+// already has, so the rest can move without breaking uniqueness.
+func (q *Queries) DeleteDuplicateRejections(ctx context.Context, arg DeleteDuplicateRejectionsParams) error {
+	_, err := q.db.Exec(ctx, deleteDuplicateRejections, arg.UserID, arg.SourceID, arg.TargetID)
+	return err
+}
+
+const deleteProduct = `-- name: DeleteProduct :exec
+DELETE FROM products WHERE user_id = $1 AND id = $2
+`
+
+type DeleteProductParams struct {
+	UserID    uuid.UUID
+	ProductID uuid.UUID
+}
+
+func (q *Queries) DeleteProduct(ctx context.Context, arg DeleteProductParams) error {
+	_, err := q.db.Exec(ctx, deleteProduct, arg.UserID, arg.ProductID)
+	return err
+}
+
+const deleteSelfRejections = `-- name: DeleteSelfRejections :many
+DELETE FROM match_rejections r
+WHERE r.user_id = $1 AND r.product_id = $2
+  AND r.normalized_name IN (
+      SELECT a.normalized_name FROM product_aliases a
+      WHERE a.user_id = $1 AND a.product_id = $2
+  )
+RETURNING id, user_id, product_id, normalized_name, store_id, created_at
+`
+
+type DeleteSelfRejectionsParams struct {
+	UserID    uuid.UUID
+	ProductID uuid.UUID
+}
+
+// DeleteSelfRejections deletes the rejections of a product's own names: a
+// merge makes them contradict the product, whatever the store.
+func (q *Queries) DeleteSelfRejections(ctx context.Context, arg DeleteSelfRejectionsParams) ([]MatchRejection, error) {
+	rows, err := q.db.Query(ctx, deleteSelfRejections, arg.UserID, arg.ProductID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MatchRejection{}
+	for rows.Next() {
+		var i MatchRejection
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ProductID,
+			&i.NormalizedName,
+			&i.StoreID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getProduct = `-- name: GetProduct :one
 SELECT p.id, p.user_id, p.canonical_name, p.category_id, p.size_value, p.size_unit, p.created_at, p.updated_at, c.name AS category_name
 FROM products p
@@ -301,6 +467,44 @@ func (q *Queries) ListProductPurchaseStats(ctx context.Context, arg ListProductP
 	return items, nil
 }
 
+const listProductRejections = `-- name: ListProductRejections :many
+SELECT id, user_id, product_id, normalized_name, store_id, created_at FROM match_rejections
+WHERE user_id = $1 AND product_id = $2
+ORDER BY normalized_name, id
+`
+
+type ListProductRejectionsParams struct {
+	UserID    uuid.UUID
+	ProductID uuid.UUID
+}
+
+func (q *Queries) ListProductRejections(ctx context.Context, arg ListProductRejectionsParams) ([]MatchRejection, error) {
+	rows, err := q.db.Query(ctx, listProductRejections, arg.UserID, arg.ProductID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MatchRejection{}
+	for rows.Next() {
+		var i MatchRejection
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ProductID,
+			&i.NormalizedName,
+			&i.StoreID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockProduct = `-- name: LockProduct :one
 SELECT id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at FROM products WHERE user_id = $1 AND id = $2 FOR UPDATE
 `
@@ -326,6 +530,115 @@ func (q *Queries) LockProduct(ctx context.Context, arg LockProductParams) (Produ
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const moveAliases = `-- name: MoveAliases :exec
+UPDATE product_aliases SET product_id = $1
+WHERE user_id = $2 AND product_id = $3
+  AND (cardinality($4::uuid[]) = 0 OR id = ANY($4::uuid[]))
+`
+
+type MoveAliasesParams struct {
+	TargetID uuid.UUID
+	UserID   uuid.UUID
+	SourceID uuid.UUID
+	AliasIds []uuid.UUID
+}
+
+// MoveAliases moves the source's aliases to the target; with alias_ids
+// empty it moves all of them, otherwise only those.
+func (q *Queries) MoveAliases(ctx context.Context, arg MoveAliasesParams) error {
+	_, err := q.db.Exec(ctx, moveAliases,
+		arg.TargetID,
+		arg.UserID,
+		arg.SourceID,
+		arg.AliasIds,
+	)
+	return err
+}
+
+const moveCodes = `-- name: MoveCodes :exec
+UPDATE product_codes SET product_id = $1
+WHERE user_id = $2 AND product_id = $3
+  AND (cardinality($4::uuid[]) = 0 OR id = ANY($4::uuid[]))
+`
+
+type MoveCodesParams struct {
+	TargetID uuid.UUID
+	UserID   uuid.UUID
+	SourceID uuid.UUID
+	CodeIds  []uuid.UUID
+}
+
+// MoveCodes moves the source's codes to the target; with code_ids empty it
+// moves all of them, otherwise only those.
+func (q *Queries) MoveCodes(ctx context.Context, arg MoveCodesParams) error {
+	_, err := q.db.Exec(ctx, moveCodes,
+		arg.TargetID,
+		arg.UserID,
+		arg.SourceID,
+		arg.CodeIds,
+	)
+	return err
+}
+
+const moveProductLines = `-- name: MoveProductLines :many
+UPDATE line_items SET product_id = $1::uuid, updated_at = $2
+WHERE user_id = $3 AND product_id = $4::uuid
+  AND (cardinality($5::uuid[]) = 0 OR id = ANY($5::uuid[]))
+RETURNING id
+`
+
+type MoveProductLinesParams struct {
+	TargetID uuid.UUID
+	Now      time.Time
+	UserID   uuid.UUID
+	SourceID uuid.UUID
+	LineIds  []uuid.UUID
+}
+
+// MoveProductLines links the source's lines to the target; with line_ids
+// empty it moves all of them, otherwise only those.
+func (q *Queries) MoveProductLines(ctx context.Context, arg MoveProductLinesParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, moveProductLines,
+		arg.TargetID,
+		arg.Now,
+		arg.UserID,
+		arg.SourceID,
+		arg.LineIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const moveRejections = `-- name: MoveRejections :exec
+UPDATE match_rejections SET product_id = $1
+WHERE user_id = $2 AND product_id = $3
+`
+
+type MoveRejectionsParams struct {
+	TargetID uuid.UUID
+	UserID   uuid.UUID
+	SourceID uuid.UUID
+}
+
+func (q *Queries) MoveRejections(ctx context.Context, arg MoveRejectionsParams) error {
+	_, err := q.db.Exec(ctx, moveRejections, arg.TargetID, arg.UserID, arg.SourceID)
+	return err
 }
 
 const pageProducts = `-- name: PageProducts :many
@@ -423,6 +736,21 @@ func (q *Queries) ProductCategoryExists(ctx context.Context, arg ProductCategory
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const touchProduct = `-- name: TouchProduct :exec
+UPDATE products SET updated_at = $1 WHERE user_id = $2 AND id = $3
+`
+
+type TouchProductParams struct {
+	Now       time.Time
+	UserID    uuid.UUID
+	ProductID uuid.UUID
+}
+
+func (q *Queries) TouchProduct(ctx context.Context, arg TouchProductParams) error {
+	_, err := q.db.Exec(ctx, touchProduct, arg.Now, arg.UserID, arg.ProductID)
+	return err
 }
 
 const updateProduct = `-- name: UpdateProduct :exec

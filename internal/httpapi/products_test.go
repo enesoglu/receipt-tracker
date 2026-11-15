@@ -257,3 +257,48 @@ func TestProducts_IsolatesPriceHistory(t *testing.T) {
 	}
 	decodeProblem(t, response)
 }
+
+func TestProducts_MergeFollowsTheContract(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	duplicate := s.id(`INSERT INTO products (user_id, canonical_name) VALUES ($1, 'Sut Litre') RETURNING id`, s.alice)
+	s.exec(`INSERT INTO product_aliases (user_id, product_id, raw_name, normalized_name) VALUES ($1, $2, 'SUT LITRE', 'sut litre')`, s.alice, duplicate)
+
+	product := decodeAs[httpapi.Product](t, s.call(s.alice, http.MethodPost, "/products/"+milk.String()+"/merge", `{"sourceProductId":"`+duplicate.String()+`"}`), http.StatusOK, "Product")
+	if product.Id != milk || len(product.Aliases) != 2 {
+		t.Errorf("product = %+v", product)
+	}
+	if response := s.get(s.alice, "/products/"+duplicate.String()); response.Code != http.StatusNotFound {
+		t.Errorf("source still answers %d", response.Code)
+	}
+
+	response := s.call(s.alice, http.MethodPost, "/products/"+milk.String()+"/merge", `{"sourceProductId":"`+milk.String()+`"}`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("merge into itself: status = %d: %s", response.Code, response.Body.String())
+	}
+	decodeProblem(t, response)
+}
+
+func TestProducts_IsolatesMerge(t *testing.T) {
+	s := newProductServer(t)
+	alices := s.seedMilk(s.alice)
+	bobs := s.seedMilk(s.bob)
+	for name, tc := range map[string]struct{ target, source uuid.UUID }{
+		"alice's as target": {alices, bobs},
+		"alice's as source": {bobs, alices},
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := s.call(s.bob, http.MethodPost, "/products/"+tc.target.String()+"/merge", `{"sourceProductId":"`+tc.source.String()+`"}`)
+			if response.Code != http.StatusNotFound {
+				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+			}
+			decodeProblem(t, response)
+		})
+	}
+	for _, user := range []uuid.UUID{s.alice, s.bob} {
+		page := decodeAs[httpapi.ProductPage](t, s.get(user, "/products"), http.StatusOK, "ProductPage")
+		if len(page.Items) != 1 {
+			t.Errorf("user %s has %d products", user, len(page.Items))
+		}
+	}
+}
