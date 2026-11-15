@@ -390,7 +390,8 @@ Environment variables only; `.env.example` lists them. `APP_ENV` (`dev`,
 `prod`), `APP_LISTEN_ADDR` (default `:8080`; `:8087` in production),
 `APP_BASE_URL`, `DATABASE_URL`, `APP_ENCRYPTION_KEY`, `ALLOWED_EMAILS`,
 `ADMIN_EMAIL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `STORAGE_BACKEND`
-(`local`, `drive`), `STORAGE_LOCAL_DIR`, `DRIVE_ROOT_FOLDER` (default `receipt-tracker`), `EXTRACTOR` (`azure`, `fake`),
+(`local`, `drive`), `STORAGE_LOCAL_DIR`, `DRIVE_ROOT_FOLDER` (default `receipt-tracker`),
+`DRIVE_ROOT_FOLDER_ID` (optional; §5.5), `EXTRACTOR` (`azure`, `fake`),
 `AZURE_DI_ENDPOINT`, `AZURE_DI_KEY`, `AZURE_DI_MONTHLY_PAGES` (default 500),
 `BACKUP_DESTINATION` (`drive`, `local`, `none`), `BACKUP_LOCAL_DIR`,
 `BACKUP_SCHEDULE`, `BACKUP_HEARTBEAT_URL` (optional), `DEV_LOGIN_EMAIL` (accepted only

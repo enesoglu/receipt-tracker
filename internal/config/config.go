@@ -92,8 +92,13 @@ type Storage struct {
 	Backend StorageBackend
 	// LocalDir is the image directory. It is set when Backend is StorageLocal.
 	LocalDir string
-	// DriveRootFolder is the name of the application's folder in Drive.
+	// DriveRootFolder is the name of the application's folder in Drive. It
+	// is used only when DriveRootFolderID is empty.
 	DriveRootFolder string
+	// DriveRootFolderID names the application's folder by its Drive id, so
+	// the owner may rename it or move it inside another folder. Empty means
+	// the folder is found or created by name in My Drive.
+	DriveRootFolderID string
 }
 
 // Extraction holds the receipt extraction settings.
@@ -180,8 +185,9 @@ func New(ctx context.Context) (Config, error) {
 	cfg.AdminEmail = l.adminEmail("ADMIN_EMAIL", cfg.AllowedEmails)
 
 	cfg.Storage = Storage{
-		Backend:         StorageBackend(l.oneOf("STORAGE_BACKEND", string(StorageLocal), string(StorageDrive))),
-		DriveRootFolder: l.folderName("DRIVE_ROOT_FOLDER", defaultDriveRootFolder),
+		Backend:           StorageBackend(l.oneOf("STORAGE_BACKEND", string(StorageLocal), string(StorageDrive))),
+		DriveRootFolder:   l.folderName("DRIVE_ROOT_FOLDER", defaultDriveRootFolder),
+		DriveRootFolderID: l.driveID("DRIVE_ROOT_FOLDER_ID"),
 	}
 	cfg.Storage.LocalDir = l.requiredWhen("STORAGE_LOCAL_DIR", cfg.Storage.Backend == StorageLocal, "STORAGE_BACKEND=local")
 
@@ -226,7 +232,7 @@ func variables() []string {
 		"APP_ENV", "APP_LISTEN_ADDR", "APP_BASE_URL", "DATABASE_URL",
 		"APP_ENCRYPTION_KEY", "ALLOWED_EMAILS", "ADMIN_EMAIL",
 		"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "STORAGE_BACKEND",
-		"STORAGE_LOCAL_DIR", "DRIVE_ROOT_FOLDER", "EXTRACTOR",
+		"STORAGE_LOCAL_DIR", "DRIVE_ROOT_FOLDER", "DRIVE_ROOT_FOLDER_ID", "EXTRACTOR",
 		"AZURE_DI_ENDPOINT", "AZURE_DI_KEY", "AZURE_DI_MONTHLY_PAGES",
 		"BACKUP_DESTINATION", "BACKUP_LOCAL_DIR", "BACKUP_SCHEDULE",
 		"BACKUP_HEARTBEAT_URL", "DEV_LOGIN_EMAIL",
@@ -469,6 +475,32 @@ func (l *loader) folderName(name, fallback string) string {
 		return ""
 	}
 	return value
+}
+
+func (l *loader) driveID(name string) string {
+	value := l.value(name)
+	if value == "" {
+		return ""
+	}
+	if !validDriveID(value) {
+		l.fail(name, "must be a Google Drive folder id (the part after /folders/ in the folder's address), not a name or a link")
+		return ""
+	}
+	return value
+}
+
+// validDriveID accepts the URL-safe characters of a Drive file id. Real ids
+// are longer than ten characters; the bound rejects a pasted name or typo.
+func validDriveID(value string) bool {
+	if len(value) < 10 {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func (l *loader) positiveInt(name string, fallback int) int {

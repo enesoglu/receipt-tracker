@@ -26,6 +26,7 @@ type Repository interface {
 	GetDriveConnection(context.Context) (sqlc.StorageConnection, error)
 	SaveDriveConnection(context.Context, sqlc.SaveDriveConnectionParams) error
 	MarkDriveReconnect(context.Context, sqlc.MarkDriveReconnectParams) error
+	SetDriveRoot(context.Context, sqlc.SetDriveRootParams) error
 	DeleteDriveConnection(context.Context) error
 }
 
@@ -119,7 +120,7 @@ func (s *Service) Begin(ctx context.Context, userID uuid.UUID) (string, error) {
 	return s.options.OAuth.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent"), oauth2.S256ChallengeOption(verifier)), nil
 }
 
-// Complete consumes state once, reuses the visible root and atomically replaces the token.
+// Complete consumes state once, resolves the root and atomically replaces the token.
 func (s *Service) Complete(ctx context.Context, userID uuid.UUID, state, code, providerError string) error {
 	if err := s.admin(ctx, userID); err != nil {
 		return err
@@ -140,7 +141,7 @@ func (s *Service) Complete(ctx context.Context, userID uuid.UUID, state, code, p
 	if err != nil {
 		return err
 	}
-	root, err := findFolder(ctx, api, "root", s.options.Config.Storage.DriveRootFolder)
+	root, err := s.root(ctx, api)
 	if err != nil {
 		return err
 	}
@@ -261,10 +262,32 @@ func (s *Service) active(ctx context.Context) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	root := connection.RootFolderRef
+	if s.options.Config.Storage.DriveRootFolderID != "" {
+		// The configured folder wins over the stored one and is verified on every
+		// activation, so a trashed or unreachable root stops writes within one check.
+		if root, err = configuredRoot(ctx, api, s.options.Config.Storage.DriveRootFolderID); err != nil {
+			return nil, err
+		}
+		if root != connection.RootFolderRef {
+			if err := s.repo.SetDriveRoot(ctx, sqlc.SetDriveRootParams{RootFolderRef: root, UpdatedAt: s.now().UTC(), EncryptedRefreshToken: connection.EncryptedRefreshToken}); err != nil {
+				return nil, fmt.Errorf("save Drive root: %w", err)
+			}
+		}
+	}
 	s.encrypted = connection.EncryptedRefreshToken
-	s.store = newStore(api, connection.RootFolderRef)
+	s.store = newStore(api, root)
 	s.store.folders = &s.folders
 	return s.store, nil
+}
+
+// root finds the application's folder for a new grant: by id when configured,
+// otherwise by name in My Drive, creating it on first use.
+func (s *Service) root(ctx context.Context, api *gdrive.Service) (string, error) {
+	if id := s.options.Config.Storage.DriveRootFolderID; id != "" {
+		return configuredRoot(ctx, api, id)
+	}
+	return findFolder(ctx, api, "root", s.options.Config.Storage.DriveRootFolder)
 }
 
 func (s *Service) oauthContext(ctx context.Context) context.Context {

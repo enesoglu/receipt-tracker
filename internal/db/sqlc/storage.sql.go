@@ -83,3 +83,19 @@ func (q *Queries) SaveDriveConnection(ctx context.Context, arg SaveDriveConnecti
 	)
 	return err
 }
+
+const setDriveRoot = `-- name: SetDriveRoot :exec
+UPDATE storage_connections SET root_folder_ref = $1, updated_at = $2
+WHERE backend = 'drive' AND encrypted_refresh_token = $3
+`
+
+type SetDriveRootParams struct {
+	RootFolderRef         string
+	UpdatedAt             time.Time
+	EncryptedRefreshToken string
+}
+
+func (q *Queries) SetDriveRoot(ctx context.Context, arg SetDriveRootParams) error {
+	_, err := q.db.Exec(ctx, setDriveRoot, arg.RootFolderRef, arg.UpdatedAt, arg.EncryptedRefreshToken)
+	return err
+}
