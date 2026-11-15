@@ -900,6 +900,67 @@
       ],
       "line": {"name": "TAVUK BUT", "code": "2001234000505", "store": "migros"},
       "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["kiyma"]}
+    },
+    {
+      "name": "new pack size of a kilogram product links by name",
+      "products": [
+        {"id": "tavuk", "basis": "kg", "aliases": [{"name": "PINAR TAVUK GOGUS 500 G"}]}
+      ],
+      "line": {"name": "PINAR TAVUK GÖĞÜS 1 KG"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "tavuk", "candidates": ["tavuk"]}
+    },
+    {
+      "name": "the same new pack size of an item product is a size conflict",
+      "covers": [2],
+      "products": [
+        {"id": "tavuk", "aliases": [{"name": "PINAR TAVUK GOGUS 500 G"}]}
+      ],
+      "line": {"name": "PINAR TAVUK GÖĞÜS 1 KG"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "size_conflict", "candidates": ["tavuk"]}
+    },
+    {
+      "name": "a litre never links to a kilogram product",
+      "covers": [2],
+      "products": [
+        {"id": "yogurt", "basis": "kg", "aliases": [{"name": "SUZME YOGURT 1 KG"}]}
+      ],
+      "line": {"name": "SÜZME YOĞURT 1 LT"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "size_conflict", "candidates": ["yogurt"]}
+    },
+    {
+      "name": "a pack count is another dimension for a kilogram product",
+      "covers": [2],
+      "products": [
+        {"id": "yumurta", "basis": "kg", "aliases": [{"name": "KOY YUMURTASI 1 KG"}]}
+      ],
+      "line": {"name": "KÖY YUMURTASI 10'LU"},
+      "want": {"outcome": "ask", "rule": 9, "reason": "size_conflict", "candidates": ["yumurta"]}
+    },
+    {
+      "name": "new bottle size of a litre product links by name",
+      "products": [
+        {"id": "zeytinyagi", "basis": "l", "aliases": [{"name": "SIZMA ZEYTINYAGI 1 LT"}]}
+      ],
+      "line": {"name": "SIZMA ZEYTİNYAĞI 500 ML"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "zeytinyagi", "candidates": ["zeytinyagi"]}
+    },
+    {
+      "name": "a generic product wins over a pack size it shares a name with",
+      "covers": [2],
+      "products": [
+        {"id": "peynir_1kg", "aliases": [{"name": "BEYAZ PEYNIR 1 KG"}]},
+        {"id": "peynir_generic", "basis": "kg", "aliases": [{"name": "BEYAZ PEYNIR 500 G"}]}
+      ],
+      "line": {"name": "BEYAZ PEYNİR 750 GR"},
+      "want": {"outcome": "auto_link", "rule": 8, "reason": "name_match", "product": "peynir_generic", "candidates": ["peynir_generic", "peynir_1kg"]}
+    },
+    {
+      "name": "a generic product still links a line without a size by its alias",
+      "products": [
+        {"id": "kiyma", "basis": "kg", "aliases": [{"name": "DANA KIYMA", "store": "bim"}]}
+      ],
+      "line": {"name": "DANA KIYMA", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 3, "reason": "exact_alias", "product": "kiyma", "candidates": ["kiyma"]}
     }
   ]
 }

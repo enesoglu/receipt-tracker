@@ -223,7 +223,7 @@ decides:
 | # | Condition | Decision |
 | --- | --- | --- |
 | 1 | A `match_rejections` row exists for (name, product) | Skip that candidate |
-| 2 | Sizes present on both sides and different (amount or dimension) | The candidate is blocked: never auto-linked, but it can be offered in a question |
+| 2 | Sizes present on both sides and different (amount or dimension); for a product with price basis `kg` or `l`, a line size of another dimension (any amount of its own dimension fits) | The candidate is blocked: never auto-linked, but it can be offered in a question |
 | 3 | Exact normalised alias, same store, alias maps to one product | Auto-link |
 | 4 | More than one product owns the line's code | Ask: ambiguous code, showing the owners |
 | 5 | One product A owns the code, and a product B that does not own it and is not blocked scores ≥ 0.90 and at least 0.08 above A | Ask: code conflict (A by code, B by name) |
@@ -242,7 +242,10 @@ user. When code and name both fit, the code breaks a tie between similar
 names (rule 6). The other sizes of
 a product are blocked by rule 2 and do not compete with the size that fits;
 a blocked product that fits the name better than every other candidate
-suggests a new size, so the line is asked. Thresholds live in one file.
+suggests a new size, so the line is asked. A generic product (price basis `kg` or
+`l`, §4) stands for every pack size of a thing, so a new size of its own
+dimension is not blocked and links when the name fits (rule 8); a size of
+another dimension, or a pack count, still blocks it. Thresholds live in one file.
 
 **Learning.** "Same product" adds the alias (and code) to the product. "Different"
 writes a `match_rejections` row and creates a new product. **Merge** moves

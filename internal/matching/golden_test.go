@@ -40,7 +40,8 @@ type goldenProduct struct {
 	ID      string        `json:"id"`
 	Aliases []goldenAlias `json:"aliases"`
 	Codes   []goldenCode  `json:"codes"`
-	Size    string        `json:"size"` // recorded on the product: "1 l"
+	Size    string        `json:"size"`  // recorded on the product: "1 l"
+	Basis   Basis         `json:"basis"` // price basis; empty is item
 }
 
 type goldenAlias struct {
@@ -218,7 +219,7 @@ func goldenInput(t *testing.T, gc goldenCase, ids map[string]uuid.UUID) (Line, [
 	line := Line{Name: gc.Line.Name, Code: gc.Line.Code, StoreID: storeID(gc.Line.Store)}
 	candidates := make([]Candidate, 0, len(gc.Products))
 	for _, p := range gc.Products {
-		c := Candidate{ProductID: ids[p.ID]}
+		c := Candidate{ProductID: ids[p.ID], Basis: p.Basis}
 		for _, a := range p.Aliases {
 			c.Aliases = append(c.Aliases, Alias{Name: Normalize(a.Name).Key, StoreID: storeID(a.Store)})
 		}

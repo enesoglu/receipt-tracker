@@ -30,6 +30,34 @@ type Candidate struct {
 	Codes []Code
 	// Size is the size recorded on the product, or nil.
 	Size *Size
+	// Basis is how the product's prices are compared. A generic product
+	// (BasisKilogram, BasisLitre) stands for every amount of its dimension,
+	// which changes rule 2. The zero value is BasisItem.
+	Basis Basis
+}
+
+// Basis is how a product's prices are compared (products.price_basis).
+type Basis string
+
+const (
+	// BasisItem compares packs: a different size is another product.
+	BasisItem Basis = "item"
+	// BasisKilogram compares the price of one kilogram: any mass fits.
+	BasisKilogram Basis = "kg"
+	// BasisLitre compares the price of one litre: any volume fits.
+	BasisLitre Basis = "l"
+)
+
+// baseUnit is the base unit of the dimension a generic basis accepts, and
+// "" for BasisItem and the zero value.
+func (b Basis) baseUnit() string {
+	switch b {
+	case BasisKilogram:
+		return "g"
+	case BasisLitre:
+		return "ml"
+	}
+	return ""
 }
 
 // Alias is a name a product was seen under.
@@ -282,13 +310,16 @@ func merge(candidates []Candidate) []Candidate {
 		i, seen := index[c.ProductID]
 		if !seen {
 			index[c.ProductID] = len(merged)
-			merged = append(merged, Candidate{ProductID: c.ProductID, Size: c.Size})
+			merged = append(merged, Candidate{ProductID: c.ProductID, Size: c.Size, Basis: c.Basis})
 			i = len(merged) - 1
 		}
 		m := &merged[i]
 		m.Aliases = append(m.Aliases, c.Aliases...)
 		m.Codes = append(m.Codes, c.Codes...)
 		m.Size = firstSize(m.Size, c.Size)
+		if m.Basis == "" {
+			m.Basis = c.Basis
+		}
 	}
 	return merged
 }
@@ -331,9 +362,26 @@ func evaluate(line Line, name Name, candidate Candidate) product {
 	if best != nil && best.Size != nil {
 		size = best.Size
 	}
-	p.Blocked = name.Size != nil && size != nil && !name.Size.SameAmount(*size) // rule 2
+	p.Blocked = blockedBySize(name.Size, size, candidate.Basis) // rule 2
 	p.OwnsCode = ownsCode(candidate.Codes, line)
 	return p
+}
+
+// blockedBySize applies rule 2 to the line's size and the product's. A
+// product that compares packs is blocked by a different amount or
+// dimension. A generic product (kg or l) accepts any amount of its own
+// dimension, so a new pack size links when the name fits, but it is still
+// blocked by a size of another dimension: a 1 L line is never a kg product.
+// A line without a size is never blocked.
+func blockedBySize(line, product *Size, basis Basis) bool {
+	if line == nil {
+		return false
+	}
+	if accepted := basis.baseUnit(); accepted != "" {
+		unit, _ := line.inBaseUnit()
+		return unit != accepted
+	}
+	return product != nil && !line.SameAmount(*product)
 }
 
 // ownsCode reports whether one of codes is the line's code where the line
