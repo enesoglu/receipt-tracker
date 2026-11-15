@@ -9,8 +9,6 @@ import {
   mockCategory,
   mockCategoryPage,
   mockImageBytes,
-  mockMonthBreakdown,
-  mockMonthlySpending,
   mockProblemForbidden,
   mockProblemNotFound,
   mockProblemUnauthorized,
@@ -22,6 +20,8 @@ import {
   mockUploadResponse,
   mockUsage,
   mockUser,
+  queryMockMonthBreakdown,
+  queryMockMonthlySpending,
   queryMockProducts,
   queryMockReceipts,
   queryMockReviewFlags,
@@ -385,25 +385,18 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
 
-  http.get('/api/v1/reports/monthly-spending', () => {
+  http.get('/api/v1/reports/monthly-spending', ({ request }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json(mockMonthlySpending);
+    const url = new URL(request.url);
+    return HttpResponse.json(queryMockMonthlySpending(url.searchParams));
   }),
 
   http.get('/api/v1/reports/month-breakdown', ({ request }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
     const url = new URL(request.url);
-    const month = url.searchParams.get('month') ?? mockMonthBreakdown.month;
-    const groupBy =
-      (url.searchParams.get('groupBy') as 'category' | 'store' | null) ??
-      mockMonthBreakdown.groupBy;
-    return HttpResponse.json({
-      ...mockMonthBreakdown,
-      month,
-      groupBy,
-    });
+    return HttpResponse.json(queryMockMonthBreakdown(url.searchParams));
   }),
 
   http.get('/api/v1/settings', () => {

@@ -19,6 +19,7 @@ import { ProductsListPage } from '../features/products/ProductsListPage';
 import { ReceiptDetailPage } from '../features/receipts/ReceiptDetailPage';
 import { ReceiptsListPage } from '../features/receipts/ReceiptsListPage';
 import { ReviewQueuePage } from '../features/review/ReviewQueuePage';
+import { SpendingPage } from '../features/spending/SpendingPage';
 import { UploadPage } from '../features/upload/UploadPage';
 import { AuthGate } from './AuthGate';
 
@@ -77,18 +78,7 @@ export function AppRouterContent({ queryClient }: AppRouterContentProps) {
           <Route path="/review" element={<ReviewQueuePage />} />
           <Route path="/products" element={<ProductsListPage />} />
           <Route path="/products/:productId" element={<ProductDetailPage />} />
-          <Route
-            path="/spending"
-            element={
-              <PlaceholderPage
-                eyebrow="Reports"
-                title="Spending"
-                description="Track monthly grocery totals and breakdowns across categories and stores."
-                emptyTitle="Spending reports coming next"
-                emptyDescription="Monthly spending trends and category breakdowns will appear here."
-              />
-            }
-          />
+          <Route path="/spending" element={<SpendingPage />} />
           <Route
             path="/categories"
             element={

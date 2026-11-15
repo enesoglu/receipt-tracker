@@ -68,6 +68,28 @@ function mockAuthenticatedApi() {
         response: new Response(null, { status: 200 }),
       }) as never;
     }
+    if (path === '/reports/monthly-spending') {
+      return Promise.resolve({
+        data: {
+          from: '2025-12',
+          to: '2026-11',
+          months: [],
+          excludedReceipts: 0,
+        },
+        response: new Response(null, { status: 200 }),
+      }) as never;
+    }
+    if (path === '/reports/month-breakdown') {
+      return Promise.resolve({
+        data: {
+          month: '2026-11',
+          groupBy: 'category',
+          currencies: [],
+          excludedReceipts: 0,
+        },
+        response: new Response(null, { status: 200 }),
+      }) as never;
+    }
     return Promise.reject(makeProblem(404, 'Not found')) as never;
   });
 }
