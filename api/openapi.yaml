@@ -2373,7 +2373,7 @@ components:
     ProductSummary:
       type: object
       description: A product as shown in lists.
-      required: [id, canonicalName, category, sizeValue, sizeUnit, purchaseCount, lastPurchase]
+      required: [id, canonicalName, category, sizeValue, sizeUnit, priceBasis, purchaseCount, lastPurchase]
       properties:
         id:
           type: string
@@ -2394,6 +2394,8 @@ components:
           type: string
           nullable: true
           description: Unit of the package size, such as `l` or `g`.
+        priceBasis:
+          $ref: "#/components/schemas/PriceBasis"
         purchaseCount:
           type: integer
           description: Number of purchases that count for the price history.
@@ -2449,6 +2451,17 @@ components:
         lastSeenAt:
           type: string
           format: date-time
+    PriceBasis:
+      type: string
+      description: |
+        How the prices of a product are compared.
+
+        - `item`: one pack is one unit and its size matters; matching keeps
+          other sizes apart.
+        - `kg`, `l`: a generic product such as "chicken fillet" across brands
+          and pack sizes, compared per kilogram or litre. It has no package
+          size, and matching accepts any amount of its dimension.
+      enum: [item, kg, l]
     ProductCodeKind:
       type: string
       description: |
@@ -2498,6 +2511,12 @@ components:
           nullable: true
           minLength: 1
           maxLength: 20
+        priceBasis:
+          description: |
+            How prices are compared; `item` when left out. With `kg` or `l`
+            the package size is cleared, whatever was sent.
+          allOf:
+            - $ref: "#/components/schemas/PriceBasis"
     MergeProductsRequest:
       type: object
       required: [sourceProductId]
@@ -3166,6 +3185,7 @@ components:
               name: Dairy
             sizeValue: "1"
             sizeUnit: l
+            priceBasis: item
             purchaseCount: 6
             lastPurchase:
               purchasedOn: "2026-11-02"
@@ -3179,6 +3199,7 @@ components:
             category: null
             sizeValue: "350"
             sizeUnit: g
+            priceBasis: item
             purchaseCount: 0
             lastPurchase: null
         nextCursor: null
@@ -3192,6 +3213,7 @@ components:
           name: Dairy
         sizeValue: "1"
         sizeUnit: l
+        priceBasis: item
         purchaseCount: 6
         lastPurchase:
           purchasedOn: "2026-11-02"
@@ -3234,6 +3256,7 @@ components:
         categoryId: 0193a1b2-0000-7000-8000-000000000020
         sizeValue: "1"
         sizeUnit: l
+        priceBasis: item
     MergeProductsRequest:
       summary: Merge a duplicate into the product in the path
       value:

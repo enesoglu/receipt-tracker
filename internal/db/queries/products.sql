@@ -89,7 +89,7 @@ SELECT EXISTS (SELECT 1 FROM categories WHERE user_id = @user_id AND id = @categ
 
 -- name: UpdateProduct :exec
 UPDATE products
-SET canonical_name = @canonical_name, category_id = sqlc.narg(category_id),
+SET canonical_name = @canonical_name, category_id = sqlc.narg(category_id), price_basis = @price_basis,
     size_value = sqlc.narg(size_value), size_unit = sqlc.narg(size_unit), updated_at = @now
 WHERE user_id = @user_id AND id = @product_id;
 
@@ -219,8 +219,8 @@ WHERE l.user_id = @user_id AND r.user_id = @user_id AND l.product_id = @product_
 ORDER BY l.id;
 
 -- name: CreateSplitProduct :one
-INSERT INTO products (user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at)
-VALUES (@user_id, @canonical_name, sqlc.narg(category_id), sqlc.narg(size_value), sqlc.narg(size_unit), @now, @now)
+INSERT INTO products (user_id, canonical_name, category_id, price_basis, size_value, size_unit, created_at, updated_at)
+VALUES (@user_id, @canonical_name, sqlc.narg(category_id), @price_basis, sqlc.narg(size_value), sqlc.narg(size_unit), @now, @now)
 RETURNING *;
 
 -- name: RejectName :exec

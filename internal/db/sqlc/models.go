@@ -127,6 +127,7 @@ type Product struct {
 	SizeUnit      *string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	PriceBasis    string
 }
 
 type ProductAlias struct {

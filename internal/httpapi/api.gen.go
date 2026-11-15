@@ -373,6 +373,27 @@ func (e PossibleDuplicateFlagKind) Valid() bool {
 	}
 }
 
+// Defines values for PriceBasis.
+const (
+	PriceBasisItem PriceBasis = "item"
+	PriceBasisKg   PriceBasis = "kg"
+	PriceBasisL    PriceBasis = "l"
+)
+
+// Valid indicates whether the value is a known member of the PriceBasis enum.
+func (e PriceBasis) Valid() bool {
+	switch e {
+	case PriceBasisItem:
+		return true
+	case PriceBasisKg:
+		return true
+	case PriceBasisL:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProductCodeKind.
 const (
 	ProductCodeKindGtin  ProductCodeKind = "gtin"
@@ -1160,6 +1181,15 @@ type PossibleDuplicateFlag struct {
 // PossibleDuplicateFlagKind defines model for PossibleDuplicateFlag.Kind.
 type PossibleDuplicateFlagKind string
 
+// PriceBasis How the prices of a product are compared.
+//
+//   - `item`: one pack is one unit and its size matters; matching keeps
+//     other sizes apart.
+//   - `kg`, `l`: a generic product such as "chicken fillet" across brands
+//     and pack sizes, compared per kilogram or litre. It has no package
+//     size, and matching accepts any amount of its dimension.
+type PriceBasis string
+
 // PriceHistory defines model for PriceHistory.
 type PriceHistory struct {
 	// Points One point per purchase, oldest first.
@@ -1244,6 +1274,15 @@ type Product struct {
 	// LastPurchase The most recent of those purchases, or `null` when there is none.
 	LastPurchase *LastPurchase `json:"lastPurchase"`
 
+	// PriceBasis How the prices of a product are compared.
+	//
+	// - `item`: one pack is one unit and its size matters; matching keeps
+	//   other sizes apart.
+	// - `kg`, `l`: a generic product such as "chicken fillet" across brands
+	//   and pack sizes, compared per kilogram or litre. It has no package
+	//   size, and matching accepts any amount of its dimension.
+	PriceBasis PriceBasis `json:"priceBasis"`
+
 	// PurchaseCount Number of purchases that count for the price history.
 	PurchaseCount int `json:"purchaseCount"`
 
@@ -1314,6 +1353,15 @@ type ProductSummary struct {
 	// LastPurchase The most recent of those purchases, or `null` when there is none.
 	LastPurchase *LastPurchase `json:"lastPurchase"`
 
+	// PriceBasis How the prices of a product are compared.
+	//
+	// - `item`: one pack is one unit and its size matters; matching keeps
+	//   other sizes apart.
+	// - `kg`, `l`: a generic product such as "chicken fillet" across brands
+	//   and pack sizes, compared per kilogram or litre. It has no package
+	//   size, and matching accepts any amount of its dimension.
+	PriceBasis PriceBasis `json:"priceBasis"`
+
 	// PurchaseCount Number of purchases that count for the price history.
 	PurchaseCount int `json:"purchaseCount"`
 
@@ -1330,7 +1378,11 @@ type ProductUpdate struct {
 
 	// CategoryId A category of the user, or `null` for none.
 	CategoryId *openapi_types.UUID `json:"categoryId,omitempty"`
-	SizeUnit   *string             `json:"sizeUnit,omitempty"`
+
+	// PriceBasis How prices are compared; `item` when left out. With `kg` or `l`
+	// the package size is cleared, whatever was sent.
+	PriceBasis *PriceBasis `json:"priceBasis,omitempty"`
+	SizeUnit   *string     `json:"sizeUnit,omitempty"`
 
 	// SizeValue Package size. Send it together with `sizeUnit`, or neither.
 	SizeValue *Quantity `json:"sizeValue,omitempty"`

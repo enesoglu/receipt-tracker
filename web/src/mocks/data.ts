@@ -299,6 +299,7 @@ export const mockProductPage: components['schemas']['ProductPage'] = {
       },
       sizeValue: '1',
       sizeUnit: 'l',
+      priceBasis: 'item',
       purchaseCount: 6,
       lastPurchase: {
         purchasedOn: '2026-11-02',
@@ -316,6 +317,7 @@ export const mockProductPage: components['schemas']['ProductPage'] = {
       category: null,
       sizeValue: '350',
       sizeUnit: 'g',
+      priceBasis: 'item',
       purchaseCount: 0,
       lastPurchase: null,
     },
@@ -332,6 +334,7 @@ export const mockProduct: components['schemas']['Product'] = {
   },
   sizeValue: '1',
   sizeUnit: 'l',
+  priceBasis: 'item',
   purchaseCount: 6,
   lastPurchase: {
     purchasedOn: '2026-11-02',
@@ -388,6 +391,7 @@ export const mockSecondProduct: components['schemas']['Product'] = {
   category: null,
   sizeValue: '350',
   sizeUnit: 'g',
+  priceBasis: 'item',
   purchaseCount: 0,
   lastPurchase: null,
   aliases: [
@@ -1033,6 +1037,7 @@ function toProductSummary(
     category: product.category,
     sizeValue: product.sizeValue,
     sizeUnit: product.sizeUnit,
+    priceBasis: product.priceBasis,
     purchaseCount: product.purchaseCount,
     lastPurchase: product.lastPurchase,
   };
@@ -1247,6 +1252,7 @@ export function splitMockProduct(
     category: source.category,
     sizeValue: null,
     sizeUnit: null,
+    priceBasis: source.priceBasis,
     purchaseCount: movedAliases.reduce((sum, item) => sum + item.seenCount, 0),
     lastPurchase: null,
     aliases: movedAliases,

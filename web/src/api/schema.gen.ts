@@ -1394,6 +1394,7 @@ export interface components {
       sizeValue: components['schemas']['Quantity'] | null;
       /** @description Unit of the package size, such as `l` or `g`. */
       sizeUnit: string | null;
+      priceBasis: components['schemas']['PriceBasis'];
       /** @description Number of purchases that count for the price history. */
       purchaseCount: number;
       /** @description The most recent of those purchases, or `null` when there is none. */
@@ -1423,6 +1424,17 @@ export interface components {
       lastSeenAt: string;
     };
     /**
+     * @description How the prices of a product are compared.
+     *
+     *     - `item`: one pack is one unit and its size matters; matching keeps
+     *       other sizes apart.
+     *     - `kg`, `l`: a generic product such as "chicken fillet" across brands
+     *       and pack sizes, compared per kilogram or litre. It has no package
+     *       size, and matching accepts any amount of its dimension.
+     * @enum {string}
+     */
+    PriceBasis: 'item' | 'kg' | 'l';
+    /**
      * @description - `gtin`: a barcode number (8, 12 or 13 digits), valid at every store.
      *     - `store`: a code of one store, valid only there.
      * @enum {string}
@@ -1448,6 +1460,11 @@ export interface components {
       /** @description Package size. Send it together with `sizeUnit`, or neither. */
       sizeValue?: components['schemas']['Quantity'] | null;
       sizeUnit?: string | null;
+      /**
+       * @description How prices are compared; `item` when left out. With `kg` or `l`
+       *     the package size is cleared, whatever was sent.
+       */
+      priceBasis?: components['schemas']['PriceBasis'];
     };
     MergeProductsRequest: {
       /**

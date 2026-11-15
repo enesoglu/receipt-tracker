@@ -108,7 +108,7 @@ All ids are `uuid` (`uuidv7()`), all timestamps `timestamptz` in UTC, all money
 | `receipt_images` | `receipt_id`, `position`, `sha256` of the uploaded bytes (unique per user), `content_type`, `size_bytes`, `storage_backend`, `storage_ref` (the image the pipeline and UI use); `original_ref`, `original_content_type`, `original_size_bytes` (set only when the upload was converted) |
 | `extractions` | `receipt_id`, `provider`, `model`, `raw` (jsonb), `created_at`; lets matching be re-run without spending quota |
 | `line_items` | `receipt_id`, `position`, `raw_name`, `name`, `quantity`, `quantity_unit`, `unit_price`, `line_total`, `product_code`, `confidence`, `product_id`, `match_status`, `match_score`, `match_method` |
-| `products` | `canonical_name`, `category_id`, `size_value`, `size_unit` |
+| `products` | `canonical_name`, `category_id`, `size_value`, `size_unit`, `price_basis` (`item`: packs are compared and sizes matter; `kg` or `l`: a generic product across brands and pack sizes, compared per kilogram or litre, with no size of its own) |
 | `product_aliases` | `product_id`, `raw_name`, `normalized_name`, `store_id` (nullable), `seen_count`, `last_seen_at`; trigram index on `normalized_name`, and a GiST trigram index on (`user_id`, `normalized_name`) for the nearest-name lookup of matching |
 | `product_codes` | `product_id`, `code`, `kind` (`gtin`, `store`), `store_id` (set for `store` codes), `seen_count` |
 | `match_rejections` | `product_id`, `normalized_name`, `store_id`: "the user said these are different" |

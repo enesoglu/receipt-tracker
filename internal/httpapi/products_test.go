@@ -342,3 +342,17 @@ func TestProducts_IsolatesSplit(t *testing.T) {
 		t.Errorf("aliases = %d, want 2", len(product.Aliases))
 	}
 }
+
+func TestProducts_UpdateSetsThePriceBasis(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	product := decodeAs[httpapi.Product](t, s.call(s.alice, http.MethodPut, "/products/"+milk.String(), `{"canonicalName":"Süt","priceBasis":"l","sizeValue":"1","sizeUnit":"l"}`), http.StatusOK, "Product")
+	if product.PriceBasis != httpapi.PriceBasis("l") || product.SizeValue != nil || product.SizeUnit != nil {
+		t.Errorf("product = %+v", product)
+	}
+	response := s.call(s.alice, http.MethodPut, "/products/"+milk.String(), `{"canonicalName":"Süt","priceBasis":"box"}`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	decodeProblem(t, response)
+}

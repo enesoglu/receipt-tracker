@@ -34,8 +34,8 @@ type nameAt struct {
 //
 // Rejections are recorded both ways, for the names only one side has, so
 // that matching does not join the two again, and an audit event on each
-// product records the split. The new product gets the category of the
-// original and the size printed in its name. At least one alias must stay.
+// product records the split. The new product gets the category and price
+// basis of the original, and an item product the size printed in its name. At least one alias must stay.
 func (s *Service) Split(ctx context.Context, userID, productID uuid.UUID, aliasIDs []uuid.UUID, newName string) (Detail, error) {
 	newName = strings.TrimSpace(newName)
 	if newName == "" || utf8.RuneCountInString(newName) > maxNameLength {
@@ -69,8 +69,8 @@ func (s *Service) Split(ctx context.Context, userID, productID uuid.UUID, aliasI
 		movedCodes := codesToMove(before.Codes, lines, movedLines)
 
 		now := s.now().UTC()
-		p := sqlc.CreateSplitProductParams{UserID: userID, CanonicalName: newName, CategoryID: original.CategoryID, Now: now}
-		if size := matching.Normalize(newName).Size; size != nil && size.Value.Abs().LessThan(maxSize()) && size.Value.Equal(size.Value.Round(3)) {
+		p := sqlc.CreateSplitProductParams{UserID: userID, CanonicalName: newName, CategoryID: original.CategoryID, PriceBasis: original.PriceBasis, Now: now}
+		if size := matching.Normalize(newName).Size; original.PriceBasis == BasisItem && size != nil && size.Value.Abs().LessThan(maxSize()) && size.Value.Equal(size.Value.Round(3)) {
 			p.SizeValue = decimal.NewNullDecimal(size.Value)
 			p.SizeUnit = &size.Unit
 		}
