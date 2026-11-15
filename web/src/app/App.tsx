@@ -14,6 +14,7 @@ import { Spinner } from '../components/ui/Spinner';
 import { SignInPage } from '../features/auth/SignInPage';
 import { UiPreviewPage } from '../features/dev/UiPreviewPage';
 import { PlaceholderPage } from '../features/placeholders/PlaceholderPage';
+import { ProductDetailPage } from '../features/products/ProductDetailPage';
 import { ProductsListPage } from '../features/products/ProductsListPage';
 import { ReceiptDetailPage } from '../features/receipts/ReceiptDetailPage';
 import { ReceiptsListPage } from '../features/receipts/ReceiptsListPage';
@@ -75,6 +76,7 @@ export function AppRouterContent({ queryClient }: AppRouterContentProps) {
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/review" element={<ReviewQueuePage />} />
           <Route path="/products" element={<ProductsListPage />} />
+          <Route path="/products/:productId" element={<ProductDetailPage />} />
           <Route
             path="/spending"
             element={
