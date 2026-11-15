@@ -892,6 +892,14 @@
       ],
       "line": {"name": "DANA BONFİLE KG", "code": "2345678", "store": "bim"},
       "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "bonfile", "candidates": ["bonfile"]}
+    },
+    {
+      "name": "restricted circulation barcode recorded as a GTIN counts nowhere",
+      "products": [
+        {"id": "kiyma", "aliases": [{"name": "DANA KIYMA"}], "codes": [{"code": "2001234000505", "kind": "gtin"}]}
+      ],
+      "line": {"name": "TAVUK BUT", "code": "2001234000505", "store": "migros"},
+      "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["kiyma"]}
     }
   ]
 }

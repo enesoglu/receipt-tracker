@@ -234,9 +234,12 @@ decides:
 | 10 | Otherwise | Create a new product with the cleaned name |
 
 Codes are a strong signal, never proof: a store code only counts inside its
-store, a GTIN (8/12/13 digits with a valid check digit) counts everywhere, and
-rules 4, 5 and 7 route disagreements to the user. When code and name both
-fit, the code breaks a tie between similar names (rule 6). The other sizes of
+store, a GTIN (8/12/13 digits with a valid check digit) counts everywhere
+unless it is a GS1 restricted circulation number (prefixes 02, 04 and 20–29;
+GS1-8 prefixes 0 and 2), which stores use for weighed goods and which is
+therefore a store code, and rules 4, 5 and 7 route disagreements to the
+user. When code and name both fit, the code breaks a tie between similar
+names (rule 6). The other sizes of
 a product are blocked by rule 2 and do not compete with the size that fits;
 a blocked product that fits the name better than every other candidate
 suggests a new size, so the line is asked. Thresholds live in one file.
