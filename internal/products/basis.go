@@ -1,6 +1,7 @@
 package products
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -114,4 +115,59 @@ func basisPrice(basis string, l pricedLine) decimal.NullDecimal {
 		return decimal.NullDecimal{}
 	}
 	return decimal.NewNullDecimal(total.DivRound(amount, 2))
+}
+
+// MixedSizes reports different sizes of one dimension among a product's
+// names: the product may be better compared per kilogram or litre.
+type MixedSizes struct {
+	// Basis is BasisKilogram or BasisLitre.
+	Basis string
+	// Sizes are the distinct sizes as printed, smallest first.
+	Sizes []string
+}
+
+// mixedSizes looks at the sizes printed in the raw names of aliases. When
+// one dimension has two or more different amounts it reports them, the
+// dimension with more amounts first and mass on a tie; otherwise nil.
+func mixedSizes(aliases []Alias) *MixedSizes {
+	type size struct {
+		amount  decimal.Decimal
+		printed string
+	}
+	found := map[dimension][]size{}
+	for _, a := range aliases {
+		s := matching.Normalize(a.RawName).Size
+		if s == nil {
+			continue
+		}
+		dim, amount, ok := inBasisUnits(s.Value, s.Unit)
+		if !ok {
+			continue
+		}
+		known := false
+		for _, other := range found[dim] {
+			known = known || other.amount.Equal(amount)
+		}
+		if !known {
+			found[dim] = append(found[dim], size{amount, s.String()})
+		}
+	}
+	best, basis := found[mass], BasisKilogram
+	if len(found[volume]) > len(best) {
+		best, basis = found[volume], BasisLitre
+	}
+	if len(best) < 2 {
+		return nil
+	}
+	slices.SortFunc(best, func(a, b size) int {
+		if c := a.amount.Cmp(b.amount); c != 0 {
+			return c
+		}
+		return strings.Compare(a.printed, b.printed)
+	})
+	m := &MixedSizes{Basis: basis}
+	for _, s := range best {
+		m.Sizes = append(m.Sizes, s.printed)
+	}
+	return m
 }

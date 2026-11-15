@@ -714,10 +714,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Product"
+                $ref: "#/components/schemas/MergedProduct"
               examples:
                 product:
-                  $ref: "#/components/examples/Product"
+                  $ref: "#/components/examples/MergedProduct"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -2429,6 +2429,38 @@ components:
             updatedAt:
               type: string
               format: date-time
+    MergedProduct:
+      description: |
+        The product after a merge, with what the merge noticed. A product with
+        price basis `item` keeps sizes apart, so when its names now print
+        different sizes of one dimension, `mixedSizes` lists them: the user
+        may want price basis `kg` or `l` instead. The merge keeps the
+        target's price basis either way.
+      allOf:
+        - $ref: "#/components/schemas/Product"
+        - type: object
+          required: [mixedSizes]
+          properties:
+            mixedSizes:
+              nullable: true
+              allOf:
+                - $ref: "#/components/schemas/MixedSizes"
+    MixedSizes:
+      type: object
+      description: Different sizes of one dimension among the names of a product.
+      required: [basis, sizes]
+      properties:
+        basis:
+          description: The price basis that would compare these sizes, `kg` or `l`.
+          allOf:
+            - $ref: "#/components/schemas/PriceBasis"
+        sizes:
+          type: array
+          description: The distinct sizes, as printed, smallest first.
+          minItems: 2
+          items:
+            type: string
+            example: 500 g
     ProductAlias:
       type: object
       required: [id, rawName, normalizedName, store, seenCount, lastSeenAt]
@@ -3270,6 +3302,40 @@ components:
             seenCount: 5
         createdAt: "2026-09-06T11:40:00Z"
         updatedAt: "2026-11-02T16:05:31Z"
+    MergedProduct:
+      summary: A merge that brought two pack sizes under one item product
+      value:
+        id: 0193a1b2-0000-7000-8000-000000000401
+        canonicalName: Ayran
+        category: null
+        sizeValue: null
+        sizeUnit: null
+        priceBasis: item
+        purchaseCount: 2
+        lastPurchase:
+          purchasedOn: "2026-11-02"
+          unitPrice: "42.25"
+          currency: TRY
+          store: null
+        aliases:
+          - id: 0193a1b2-0000-7000-8000-000000000501
+            rawName: AYRAN 1LT
+            normalizedName: ayran 1000 ml
+            store: null
+            seenCount: 1
+            lastSeenAt: "2026-11-02T16:05:31Z"
+          - id: 0193a1b2-0000-7000-8000-000000000503
+            rawName: AYRAN 2 LT
+            normalizedName: ayran 2000 ml
+            store: null
+            seenCount: 1
+            lastSeenAt: "2026-10-18T10:22:05Z"
+        codes: []
+        createdAt: "2026-09-06T11:40:00Z"
+        updatedAt: "2026-11-15T12:00:00Z"
+        mixedSizes:
+          basis: l
+          sizes: ["1 l", "2 l"]
     ProductUpdate:
       summary: Rename a product and set its category and size
       value:

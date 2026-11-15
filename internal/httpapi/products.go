@@ -116,11 +116,20 @@ func (h productsHandlers) MergeProducts(ctx context.Context, request MergeProduc
 	if request.Body == nil {
 		return nil, apperr.New(apperr.Invalid, "merge body is required")
 	}
-	d, err := h.products.Merge(ctx, userID, request.ProductId, request.Body.SourceProductId)
+	merged, err := h.products.Merge(ctx, userID, request.ProductId, request.Body.SourceProductId)
 	if err != nil {
 		return nil, err
 	}
-	return MergeProducts200JSONResponse(productResponse(d)), nil
+	p := productResponse(merged.Detail)
+	response := MergeProducts200JSONResponse{
+		Id: p.Id, CanonicalName: p.CanonicalName, Category: p.Category, SizeValue: p.SizeValue, SizeUnit: p.SizeUnit,
+		PriceBasis: p.PriceBasis, PurchaseCount: p.PurchaseCount, LastPurchase: p.LastPurchase,
+		Aliases: p.Aliases, Codes: p.Codes, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+	}
+	if m := merged.MixedSizes; m != nil {
+		response.MixedSizes = &MixedSizes{Basis: PriceBasis(m.Basis), Sizes: m.Sizes}
+	}
+	return response, nil
 }
 
 // SplitProduct moves chosen names of a product to a new product.

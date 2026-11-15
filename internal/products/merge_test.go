@@ -305,3 +305,42 @@ func TestMerge_FailureMidwayLeavesTheDatabaseUnchanged(t *testing.T) {
 		t.Errorf("audits = %d, %v", audits, err)
 	}
 }
+
+func TestMerge_ReportsMixedSizesUnderAnItemTargetAndKeepsItsBasis(t *testing.T) {
+	f := newFixture(t)
+	product := func(name, basis string, raws ...string) uuid.UUID {
+		id := f.product(f.alice, name)
+		f.exec(`UPDATE products SET price_basis = $1 WHERE id = $2`, basis, id)
+		for _, raw := range raws {
+			f.alias(f.alice, id, raw, uuid.Nil, 1)
+		}
+		return id
+	}
+	for name, tc := range map[string]struct {
+		targetBasis, sourceBasis string
+		target, source           []string
+		want                     *products.MixedSizes
+	}{
+		"two volumes":          {"item", "item", []string{"AYRAN 1LT"}, []string{"AYRAN 2 LT", "AYRAN 100CL"}, &products.MixedSizes{Basis: "l", Sizes: []string{"1 l", "2 l"}}},
+		"three masses":         {"item", "kg", []string{"PEYNIR 500 GR", "PEYNIR 1 KG"}, []string{"PEYNIR 250G"}, &products.MixedSizes{Basis: "kg", Sizes: []string{"250 g", "500 g", "1 kg"}}},
+		"one size":             {"item", "item", []string{"AYRAN 1LT"}, []string{"AYRN 1 L"}, nil},
+		"different dimensions": {"item", "item", []string{"SUT 1 L"}, []string{"SUT 1 KG"}, nil},
+		"kg target":            {"kg", "item", []string{"TAVUK 500 G"}, []string{"TAVUK 1 KG"}, nil},
+		"pack counts only":     {"item", "item", []string{"YUMURTA 10LU"}, []string{"YUMURTA 30LU"}, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			target := product("Target "+name, tc.targetBasis, tc.target...)
+			source := product("Source "+name, tc.sourceBasis, tc.source...)
+			merged, err := f.service.Merge(t.Context(), f.alice, target, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(tc.want, merged.MixedSizes); diff != "" {
+				t.Errorf("mixed sizes (-want +got):\n%s", diff)
+			}
+			if merged.Product.PriceBasis != tc.targetBasis {
+				t.Errorf("basis = %q, want the target's %q", merged.Product.PriceBasis, tc.targetBasis)
+			}
+		})
+	}
+}

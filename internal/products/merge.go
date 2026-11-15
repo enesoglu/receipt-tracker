@@ -11,6 +11,14 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
 )
 
+// Merged is the result of [Service.Merge].
+type Merged struct {
+	Detail
+	// MixedSizes is set when the target compares packs (BasisItem) and its
+	// names now print different sizes of one dimension.
+	MixedSizes *MixedSizes
+}
+
 // Merge folds the source product into the target, which the user said are
 // the same product, in one transaction: the source's aliases, codes and
 // line items move to the target (an alias or code the target already has
@@ -18,11 +26,13 @@ import (
 // that said one of the two is not the other are dropped, and the source is
 // deleted. An audit event on each product records enough to explain the
 // merge later, since the source no longer exists. A merge cannot be undone.
-func (s *Service) Merge(ctx context.Context, userID, targetID, sourceID uuid.UUID) (Detail, error) {
+// The target keeps its price basis; for an item target, the result reports
+// when its names now print different sizes of one dimension.
+func (s *Service) Merge(ctx context.Context, userID, targetID, sourceID uuid.UUID) (Merged, error) {
 	if targetID == sourceID {
-		return Detail{}, apperr.New(apperr.Invalid, "a product cannot be merged into itself").WithField("sourceProductId", "must be another product")
+		return Merged{}, apperr.New(apperr.Invalid, "a product cannot be merged into itself").WithField("sourceProductId", "must be another product")
 	}
-	var after Detail
+	var after Merged
 	err := s.transaction(ctx, func(q *sqlc.Queries) error {
 		target, source, err := lockPair(ctx, q, userID, targetID, sourceID)
 		if err != nil {
@@ -92,7 +102,10 @@ func (s *Service) Merge(ctx context.Context, userID, targetID, sourceID uuid.UUI
 		if err := audit(ctx, q, userID, sourceID, "merged_into", now, detail); err != nil {
 			return err
 		}
-		after, err = loadDetail(ctx, q, userID, targetID)
+		after.Detail, err = loadDetail(ctx, q, userID, targetID)
+		if err == nil && after.Product.PriceBasis == BasisItem {
+			after.MixedSizes = mixedSizes(after.Aliases)
+		}
 		return err
 	})
 	return after, err

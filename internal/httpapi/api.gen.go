@@ -1060,6 +1060,46 @@ type MergeProductsRequest struct {
 	SourceProductId openapi_types.UUID `json:"sourceProductId"`
 }
 
+// MergedProduct The product after a merge, with what the merge noticed. A product with
+// price basis `item` keeps sizes apart, so when its names now print
+// different sizes of one dimension, `mixedSizes` lists them: the user
+// may want price basis `kg` or `l` instead. The merge keeps the
+// target's price basis either way.
+type MergedProduct struct {
+	// Aliases Names the product was seen under, most often seen first.
+	Aliases       []ProductAlias `json:"aliases"`
+	CanonicalName string         `json:"canonicalName"`
+
+	// Category The category, or `null` for an uncategorised product.
+	Category  *CategoryRef       `json:"category"`
+	Codes     []ProductCode      `json:"codes"`
+	CreatedAt time.Time          `json:"createdAt"`
+	Id        openapi_types.UUID `json:"id"`
+
+	// LastPurchase The most recent of those purchases, or `null` when there is none.
+	LastPurchase *LastPurchase `json:"lastPurchase"`
+	MixedSizes   *MixedSizes   `json:"mixedSizes"`
+
+	// PriceBasis How the prices of a product are compared.
+	//
+	// - `item`: one pack is one unit and its size matters; matching keeps
+	//   other sizes apart.
+	// - `kg`, `l`: a generic product such as "chicken fillet" across brands
+	//   and pack sizes, compared per kilogram or litre. It has no package
+	//   size, and matching accepts any amount of its dimension.
+	PriceBasis PriceBasis `json:"priceBasis"`
+
+	// PurchaseCount Number of purchases that count for the price history.
+	PurchaseCount int `json:"purchaseCount"`
+
+	// SizeUnit Unit of the package size, such as `l` or `g`.
+	SizeUnit *string `json:"sizeUnit"`
+
+	// SizeValue Package size, with `sizeUnit`; both are `null` when unknown.
+	SizeValue *Quantity `json:"sizeValue"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // MissingFieldDetail defines model for MissingFieldDetail.
 type MissingFieldDetail struct {
 	// Field The missing field.
@@ -1089,6 +1129,15 @@ type MissingFieldFlag struct {
 
 // MissingFieldFlagKind defines model for MissingFieldFlag.Kind.
 type MissingFieldFlagKind string
+
+// MixedSizes Different sizes of one dimension among the names of a product.
+type MixedSizes struct {
+	// Basis The price basis that would compare these sizes, `kg` or `l`.
+	Basis PriceBasis `json:"basis"`
+
+	// Sizes The distinct sizes, as printed, smallest first.
+	Sizes []string `json:"sizes"`
+}
 
 // Money An amount of money as a decimal string with exactly two places, in the
 // currency of its receipt. Negative amounts are discounts or refunds.
@@ -5017,7 +5066,7 @@ type MergeProductsResponseObject interface {
 	VisitMergeProductsResponse(w http.ResponseWriter) error
 }
 
-type MergeProducts200JSONResponse Product
+type MergeProducts200JSONResponse MergedProduct
 
 func (response MergeProducts200JSONResponse) VisitMergeProductsResponse(w http.ResponseWriter) error {
 
