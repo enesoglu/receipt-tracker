@@ -264,7 +264,7 @@ func TestProducts_MergeFollowsTheContract(t *testing.T) {
 	duplicate := s.id(`INSERT INTO products (user_id, canonical_name) VALUES ($1, 'Sut Litre') RETURNING id`, s.alice)
 	s.exec(`INSERT INTO product_aliases (user_id, product_id, raw_name, normalized_name) VALUES ($1, $2, 'SUT LITRE', 'sut litre')`, s.alice, duplicate)
 
-	product := decodeAs[httpapi.Product](t, s.call(s.alice, http.MethodPost, "/products/"+milk.String()+"/merge", `{"sourceProductId":"`+duplicate.String()+`"}`), http.StatusOK, "Product")
+	product := decodeAs[httpapi.MergedProduct](t, s.call(s.alice, http.MethodPost, "/products/"+milk.String()+"/merge", `{"sourceProductId":"`+duplicate.String()+`"}`), http.StatusOK, "MergedProduct")
 	if product.Id != milk || len(product.Aliases) != 2 {
 		t.Errorf("product = %+v", product)
 	}
@@ -355,4 +355,15 @@ func TestProducts_UpdateSetsThePriceBasis(t *testing.T) {
 		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
 	}
 	decodeProblem(t, response)
+}
+
+func TestProducts_MergeReportsMixedSizes(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	bigger := s.id(`INSERT INTO products (user_id, canonical_name) VALUES ($1, 'Süt 2 L') RETURNING id`, s.alice)
+	s.exec(`INSERT INTO product_aliases (user_id, product_id, raw_name, normalized_name) VALUES ($1, $2, 'SUT 2 LT', 'sut 2000 ml')`, s.alice, bigger)
+	merged := decodeAs[httpapi.MergedProduct](t, s.call(s.alice, http.MethodPost, "/products/"+milk.String()+"/merge", `{"sourceProductId":"`+bigger.String()+`"}`), http.StatusOK, "MergedProduct")
+	if merged.MixedSizes == nil || merged.MixedSizes.Basis != httpapi.PriceBasis("l") || strings.Join(merged.MixedSizes.Sizes, ",") != "1 l,2 l" {
+		t.Errorf("mixed sizes = %+v", merged.MixedSizes)
+	}
 }

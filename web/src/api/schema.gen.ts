@@ -1413,6 +1413,23 @@ export interface components {
       /** Format: date-time */
       updatedAt: string;
     };
+    /**
+     * @description The product after a merge, with what the merge noticed. A product with
+     *     price basis `item` keeps sizes apart, so when its names now print
+     *     different sizes of one dimension, `mixedSizes` lists them: the user
+     *     may want price basis `kg` or `l` instead. The merge keeps the
+     *     target's price basis either way.
+     */
+    MergedProduct: components['schemas']['Product'] & {
+      mixedSizes: components['schemas']['MixedSizes'] | null;
+    };
+    /** @description Different sizes of one dimension among the names of a product. */
+    MixedSizes: {
+      /** @description The price basis that would compare these sizes, `kg` or `l`. */
+      basis: components['schemas']['PriceBasis'];
+      /** @description The distinct sizes, as printed, smallest first. */
+      sizes: string[];
+    };
     ProductAlias: {
       /** Format: uuid */
       id: string;
@@ -2434,7 +2451,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['Product'];
+          'application/json': components['schemas']['MergedProduct'];
         };
       };
       400: components['responses']['BadRequest'];
