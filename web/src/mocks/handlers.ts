@@ -3,18 +3,19 @@ import type { components } from '../api/schema.gen';
 import {
   createMockCategory,
   deleteMockCategory,
+  disconnectMockStorage,
   getMockAuthMode,
   getMockProductById,
   getMockProductPriceHistory,
   getMockReceiptById,
+  getMockSettings,
+  getMockStorageStatus,
   mergeMockProducts,
   mockImageBytes,
   mockProblemForbidden,
   mockProblemNotFound,
   mockProblemUnauthorized,
   mockReceipt,
-  mockSettings,
-  mockStorageStatus,
   mockStore,
   mockStorePage,
   mockUploadResponse,
@@ -32,6 +33,7 @@ import {
   splitMockProduct,
   updateMockCategory,
   updateMockProduct,
+  updateMockSettings,
 } from './data';
 import { readUploadedFiles } from './multipart';
 
@@ -455,14 +457,25 @@ export const handlers = [
   http.get('/api/v1/settings', () => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json(mockSettings);
+    return HttpResponse.json(getMockSettings());
   }),
 
   http.put('/api/v1/settings', async ({ request }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
     const body = (await request.json()) as components['schemas']['Settings'];
-    return HttpResponse.json(body);
+    const result = updateMockSettings(body);
+    if (!result.ok) {
+      return problemJson(400, {
+        type: 'about:blank',
+        title: 'Bad Request',
+        status: 400,
+        detail: 'settings are invalid',
+        requestId: mockProblemNotFound.requestId,
+        errors: [{ field: result.field, message: result.message }],
+      });
+    }
+    return HttpResponse.json(result.settings);
   }),
 
   http.get('/api/v1/usage', () => {
@@ -474,12 +487,18 @@ export const handlers = [
   http.get('/api/v1/storage', () => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json(mockStorageStatus);
+    return HttpResponse.json(getMockStorageStatus());
   }),
 
   http.delete('/api/v1/storage/connection', () => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
+    if (!disconnectMockStorage()) {
+      return problemJson(404, {
+        ...mockProblemNotFound,
+        detail: 'storage connection not found',
+      });
+    }
     return new HttpResponse(null, { status: 204 });
   }),
 ];
