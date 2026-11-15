@@ -105,8 +105,19 @@ func (h productsHandlers) UpdateProduct(ctx context.Context, request UpdateProdu
 }
 
 // MergeProducts merges another product into the one in the path.
-func (productsHandlers) MergeProducts(_ context.Context, _ MergeProductsRequestObject) (MergeProductsResponseObject, error) {
-	return nil, notImplemented()
+func (h productsHandlers) MergeProducts(ctx context.Context, request MergeProductsRequestObject) (MergeProductsResponseObject, error) {
+	userID, err := h.identity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if request.Body == nil {
+		return nil, apperr.New(apperr.Invalid, "merge body is required")
+	}
+	d, err := h.products.Merge(ctx, userID, request.ProductId, request.Body.SourceProductId)
+	if err != nil {
+		return nil, err
+	}
+	return MergeProducts200JSONResponse(productResponse(d)), nil
 }
 
 // SplitProduct moves chosen names of a product to a new product.
