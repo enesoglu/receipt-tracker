@@ -122,3 +122,66 @@ func TestParse_RefusesResponsesWithoutResult(t *testing.T) {
 		}
 	}
 }
+
+// item builds a one-item receipt response from an item's JSON.
+func item(object string) string {
+	return `{"status":"succeeded","analyzeResult":{"documents":[{"docType":"receipt","fields":{"Items":{"type":"array","valueArray":[` + object + `]}}}]}}`
+}
+
+func TestParse_DiscountKeepsPrintedMinus(t *testing.T) {
+	tests := []struct {
+		name string
+		item string
+		want string
+	}{
+		{
+			name: "minus only in the item content",
+			item: `{"type":"object","content":"INDIRIM\n%1\n*- 12.40","valueObject":{"TotalPrice":{"type":"currency","valueCurrency":{"amount":12.4},"content":"12.40"}}}`,
+			want: "-12.4",
+		},
+		{
+			name: "minus in the field content",
+			item: `{"type":"object","content":"INDIRIM *-12,40","valueObject":{"TotalPrice":{"type":"currency","valueCurrency":{"amount":12.4},"content":"*-12,40"}}}`,
+			want: "-12.4",
+		},
+		{
+			name: "already negative amount stays negative",
+			item: `{"type":"object","content":"INDIRIM -12,40","valueObject":{"TotalPrice":{"type":"currency","valueCurrency":{"amount":-12.4},"content":"-12,40"}}}`,
+			want: "-12.4",
+		},
+		{
+			name: "minus after a unit price is a VAT class, not a sign",
+			item: `{"type":"object","content":"1234567 1 AD x 12,40-B\nPEYNIR\n*12,40","valueObject":{"TotalPrice":{"type":"currency","valueCurrency":{"amount":12.4},"content":"*12,40"}}}`,
+			want: "12.4",
+		},
+		{
+			name: "hyphen in a name on another row",
+			item: `{"type":"object","content":"COCA-COLA\n*12,40","valueObject":{"TotalPrice":{"type":"currency","valueCurrency":{"amount":12.4},"content":"*12,40"}}}`,
+			want: "12.4",
+		},
+		{
+			name: "no item content",
+			item: `{"type":"object","valueObject":{"TotalPrice":{"type":"currency","valueCurrency":{"amount":12.4},"content":"12,40"}}}`,
+			want: "12.4",
+		},
+		{
+			name: "printed amount not found in the item content",
+			item: `{"type":"object","content":"INDIRIM *- 12.40","valueObject":{"TotalPrice":{"type":"currency","valueCurrency":{"amount":12.4},"content":"12,40"}}}`,
+			want: "12.4",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parse([]byte(item(tt.item)))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if len(got.Lines) != 1 || !got.Lines[0].Total.Found {
+				t.Fatalf("lines = %+v, want one line with a total", got.Lines)
+			}
+			if want := decimal.RequireFromString(tt.want); !got.Lines[0].Total.Value.Equal(want) {
+				t.Errorf("total = %s, want %s", got.Lines[0].Total.Value, want)
+			}
+		})
+	}
+}
