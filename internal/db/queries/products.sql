@@ -97,6 +97,28 @@ WHERE user_id = @user_id AND id = @product_id;
 INSERT INTO audit_events (user_id, entity, entity_id, action, detail, created_at)
 VALUES (@user_id, 'product', @product_id, @action, @detail, @now);
 
+-- name: ListProductPricePoints :many
+-- ListProductPricePoints returns one row per purchase of a product, oldest
+-- first, by the rules of ListProductPurchaseStats, optionally within a date
+-- range and at one store.
+SELECT l.id AS line_item_id, r.id AS receipt_id, r.purchased_on::date AS purchased_on,
+       r.store_id, s.name AS store_name, r.currency, l.quantity, l.quantity_unit,
+       COALESCE(l.unit_price, round(l.line_total / NULLIF(l.quantity, 0), 2), l.line_total)::numeric AS unit_price
+FROM line_items l
+JOIN receipts r ON r.user_id = l.user_id AND r.id = l.receipt_id
+LEFT JOIN stores s ON s.user_id = @user_id AND s.id = r.store_id
+WHERE l.user_id = @user_id
+  AND r.user_id = @user_id
+  AND l.product_id = @product_id::uuid
+  AND r.status IN ('ready', 'needs_review')
+  AND r.purchased_on IS NOT NULL
+  AND (l.line_total IS NULL OR l.line_total >= 0)
+  AND COALESCE(l.unit_price, round(l.line_total / NULLIF(l.quantity, 0), 2), l.line_total) >= 0
+  AND (sqlc.narg(from_date)::date IS NULL OR r.purchased_on >= sqlc.narg(from_date)::date)
+  AND (sqlc.narg(to_date)::date IS NULL OR r.purchased_on <= sqlc.narg(to_date)::date)
+  AND (sqlc.narg(store_id)::uuid IS NULL OR r.store_id = sqlc.narg(store_id)::uuid)
+ORDER BY r.purchased_on, r.purchased_time NULLS FIRST, r.created_at, r.id, l.position;
+
 -- The product catalogue: list and search, detail with aliases and codes,
 -- edits, merge, split and price history.
 --

@@ -146,6 +146,85 @@ func (q *Queries) ListProductCodes(ctx context.Context, arg ListProductCodesPara
 	return items, nil
 }
 
+const listProductPricePoints = `-- name: ListProductPricePoints :many
+SELECT l.id AS line_item_id, r.id AS receipt_id, r.purchased_on::date AS purchased_on,
+       r.store_id, s.name AS store_name, r.currency, l.quantity, l.quantity_unit,
+       COALESCE(l.unit_price, round(l.line_total / NULLIF(l.quantity, 0), 2), l.line_total)::numeric AS unit_price
+FROM line_items l
+JOIN receipts r ON r.user_id = l.user_id AND r.id = l.receipt_id
+LEFT JOIN stores s ON s.user_id = $1 AND s.id = r.store_id
+WHERE l.user_id = $1
+  AND r.user_id = $1
+  AND l.product_id = $2::uuid
+  AND r.status IN ('ready', 'needs_review')
+  AND r.purchased_on IS NOT NULL
+  AND (l.line_total IS NULL OR l.line_total >= 0)
+  AND COALESCE(l.unit_price, round(l.line_total / NULLIF(l.quantity, 0), 2), l.line_total) >= 0
+  AND ($3::date IS NULL OR r.purchased_on >= $3::date)
+  AND ($4::date IS NULL OR r.purchased_on <= $4::date)
+  AND ($5::uuid IS NULL OR r.store_id = $5::uuid)
+ORDER BY r.purchased_on, r.purchased_time NULLS FIRST, r.created_at, r.id, l.position
+`
+
+type ListProductPricePointsParams struct {
+	UserID    uuid.UUID
+	ProductID uuid.UUID
+	FromDate  *time.Time
+	ToDate    *time.Time
+	StoreID   uuid.NullUUID
+}
+
+type ListProductPricePointsRow struct {
+	LineItemID   uuid.UUID
+	ReceiptID    uuid.UUID
+	PurchasedOn  time.Time
+	StoreID      uuid.NullUUID
+	StoreName    *string
+	Currency     string
+	Quantity     decimal.NullDecimal
+	QuantityUnit *string
+	UnitPrice    decimal.Decimal
+}
+
+// ListProductPricePoints returns one row per purchase of a product, oldest
+// first, by the rules of ListProductPurchaseStats, optionally within a date
+// range and at one store.
+func (q *Queries) ListProductPricePoints(ctx context.Context, arg ListProductPricePointsParams) ([]ListProductPricePointsRow, error) {
+	rows, err := q.db.Query(ctx, listProductPricePoints,
+		arg.UserID,
+		arg.ProductID,
+		arg.FromDate,
+		arg.ToDate,
+		arg.StoreID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProductPricePointsRow{}
+	for rows.Next() {
+		var i ListProductPricePointsRow
+		if err := rows.Scan(
+			&i.LineItemID,
+			&i.ReceiptID,
+			&i.PurchasedOn,
+			&i.StoreID,
+			&i.StoreName,
+			&i.Currency,
+			&i.Quantity,
+			&i.QuantityUnit,
+			&i.UnitPrice,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProductPurchaseStats = `-- name: ListProductPurchaseStats :many
 WITH purchases AS (
     SELECT l.product_id, r.purchased_on, r.purchased_time, r.created_at, r.id AS receipt_id, l.position,

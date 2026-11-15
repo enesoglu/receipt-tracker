@@ -114,7 +114,7 @@ type line struct {
 	product                                uuid.UUID
 }
 
-func (f *fixture) line(user, receiptID uuid.UUID, position int, l line) {
+func (f *fixture) line(user, receiptID uuid.UUID, position int, l line) uuid.UUID {
 	f.t.Helper()
 	status := "unmatched"
 	if l.product != uuid.Nil {
@@ -123,8 +123,8 @@ func (f *fixture) line(user, receiptID uuid.UUID, position int, l line) {
 	if l.name == "" {
 		l.name = "ITEM"
 	}
-	f.exec(`INSERT INTO line_items (user_id, receipt_id, position, raw_name, name, quantity, quantity_unit, unit_price, line_total, product_code, product_id, match_status)
-		VALUES ($1, $2, $3, $4, $4, NULLIF($5, '')::numeric, NULLIF($6, ''), NULLIF($7, '')::numeric, NULLIF($8, '')::numeric, NULLIF($9, ''), $10, $11)`,
+	return f.id(`INSERT INTO line_items (user_id, receipt_id, position, raw_name, name, quantity, quantity_unit, unit_price, line_total, product_code, product_id, match_status)
+		VALUES ($1, $2, $3, $4, $4, NULLIF($5, '')::numeric, NULLIF($6, ''), NULLIF($7, '')::numeric, NULLIF($8, '')::numeric, NULLIF($9, ''), $10, $11) RETURNING id`,
 		user, receiptID, position, l.name, l.quantity, l.unit, l.unitPrice, l.total, l.code, nullID(l.product), status)
 }
 

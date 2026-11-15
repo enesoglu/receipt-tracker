@@ -215,3 +215,45 @@ func TestProducts_IsolatesUpdate(t *testing.T) {
 		t.Errorf("name = %q", product.CanonicalName)
 	}
 }
+
+func TestProducts_PriceHistoryFollowsTheContract(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	history := decodeAs[httpapi.PriceHistory](t, s.get(s.alice, "/products/"+milk.String()+"/price-history?from=2026-01-01&to=2026-12-31"), http.StatusOK, "PriceHistory")
+	if history.ProductId != milk || len(history.Points) != 1 || len(history.Stores) != 1 {
+		t.Fatalf("history = %+v", history)
+	}
+	point, store := history.Points[0], history.Stores[0]
+	got := []string{point.UnitPrice, *point.Quantity, *point.QuantityUnit, point.Currency, point.PurchasedOn.String(), store.Min, store.Max, store.Latest, store.LatestOn.String()}
+	want := []string{"42.25", "1.000", "AD", "TRY", "2026-11-02", "42.25", "42.25", "42.25", "2026-11-02"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("history (-want +got):\n%s", diff)
+	}
+
+	for name, query := range map[string]string{
+		"inverted range": "?from=2026-02-01&to=2026-01-01",
+		"bad date":       "?from=yesterday",
+		"bad store":      "?storeId=nope",
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := s.get(s.alice, "/products/"+milk.String()+"/price-history"+query)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+			}
+			decodeProblem(t, response)
+		})
+	}
+}
+
+func TestProducts_IsolatesPriceHistory(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	response := s.get(s.bob, "/products/"+milk.String()+"/price-history")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "42.25") {
+		t.Errorf("problem leaks data: %s", response.Body.String())
+	}
+	decodeProblem(t, response)
+}

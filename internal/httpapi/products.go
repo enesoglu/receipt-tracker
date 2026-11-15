@@ -115,8 +115,47 @@ func (productsHandlers) SplitProduct(_ context.Context, _ SplitProductRequestObj
 }
 
 // GetProductPriceHistory returns the purchases of a product and a summary per store.
-func (productsHandlers) GetProductPriceHistory(_ context.Context, _ GetProductPriceHistoryRequestObject) (GetProductPriceHistoryResponseObject, error) {
-	return nil, notImplemented()
+func (h productsHandlers) GetProductPriceHistory(ctx context.Context, request GetProductPriceHistoryRequestObject) (GetProductPriceHistoryResponseObject, error) {
+	userID, err := h.identity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p := request.Params
+	f := products.HistoryFilter{}
+	if p.From != nil {
+		f.From = &p.From.Time
+	}
+	if p.To != nil {
+		f.To = &p.To.Time
+	}
+	if p.StoreId != nil {
+		f.StoreID = uuid.NullUUID{UUID: *p.StoreId, Valid: true}
+	}
+	history, err := h.products.PriceHistory(ctx, userID, request.ProductId, f)
+	if err != nil {
+		return nil, err
+	}
+	response := GetProductPriceHistory200JSONResponse{
+		ProductId: history.ProductID,
+		Points:    make([]PricePoint, 0, len(history.Points)),
+		Stores:    make([]StorePriceSummary, 0, len(history.Stores)),
+	}
+	for _, point := range history.Points {
+		response.Points = append(response.Points, PricePoint{
+			ReceiptId: point.ReceiptID, LineItemId: point.LineItemID,
+			PurchasedOn: openapi_types.Date{Time: point.PurchasedOn}, Store: refResponse(point.Store),
+			UnitPrice: point.UnitPrice.StringFixed(2), Quantity: quantityResponse(point.Quantity),
+			QuantityUnit: point.QuantityUnit, Currency: point.Currency,
+		})
+	}
+	for _, summary := range history.Stores {
+		response.Stores = append(response.Stores, StorePriceSummary{
+			Store: refResponse(summary.Store), Currency: summary.Currency,
+			Min: summary.Min.StringFixed(2), Max: summary.Max.StringFixed(2), Latest: summary.Latest.StringFixed(2),
+			LatestOn: openapi_types.Date{Time: summary.LatestOn}, PurchaseCount: summary.PurchaseCount,
+		})
+	}
+	return response, nil
 }
 
 func refResponse(r *products.Ref) *StoreRef {
