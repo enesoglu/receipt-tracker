@@ -235,3 +235,19 @@ func TestParse_MissingUnitReadFromUnitPrice(t *testing.T) {
 		})
 	}
 }
+
+func TestParse_MissingTotalFilledWhenFiguresAgree(t *testing.T) {
+	raw := `{"status":"succeeded","analyzeResult":{"documents":[{"docType":"receipt","fields":{
+		"Subtotal":{"type":"currency","valueCurrency":{"amount":45.45},"confidence":0.9},
+		"TotalTax":{"type":"currency","valueCurrency":{"amount":4.55},"confidence":0.85},
+		"Items":{"type":"array","valueArray":[
+			{"type":"object","valueObject":{"TotalPrice":{"type":"currency","valueCurrency":{"amount":30}}}},
+			{"type":"object","valueObject":{"TotalPrice":{"type":"currency","valueCurrency":{"amount":20}}}}]}}}]}}`
+	got, err := parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if diff := cmp.Diff(wantAmount("50", 0.85), got.Total, equalDecimals()); diff != "" {
+		t.Errorf("total mismatch (-want +got):\n%s", diff)
+	}
+}
