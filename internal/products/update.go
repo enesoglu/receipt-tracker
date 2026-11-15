@@ -24,7 +24,20 @@ type Update struct {
 	// SizeValue and SizeUnit are the package size, both set or neither.
 	SizeValue decimal.NullDecimal
 	SizeUnit  *string
+	// PriceBasis is how prices are compared: [BasisItem] when empty. With
+	// [BasisKilogram] or [BasisLitre] the size is cleared.
+	PriceBasis string
 }
+
+// The price bases of a product.
+const (
+	// BasisItem compares packs: one pack is one unit and its size matters.
+	BasisItem = "item"
+	// BasisKilogram compares the price of one kilogram, across pack sizes.
+	BasisKilogram = "kg"
+	// BasisLitre compares the price of one litre, across pack sizes.
+	BasisLitre = "l"
+)
 
 const (
 	maxNameLength = 200
@@ -59,7 +72,8 @@ func (s *Service) Update(ctx context.Context, userID, productID uuid.UUID, u Upd
 		now := s.now().UTC()
 		if err := q.UpdateProduct(ctx, sqlc.UpdateProductParams{
 			UserID: userID, ProductID: productID, CanonicalName: u.CanonicalName, CategoryID: u.CategoryID,
-			SizeValue: u.SizeValue, SizeUnit: u.SizeUnit, Now: now,
+			PriceBasis: u.PriceBasis,
+			SizeValue:  u.SizeValue, SizeUnit: u.SizeUnit, Now: now,
 		}); err != nil {
 			return fmt.Errorf("update product: %w", err)
 		}
@@ -75,6 +89,16 @@ func (s *Service) Update(ctx context.Context, userID, productID uuid.UUID, u Upd
 }
 
 func validUpdate(u Update) (Update, error) {
+	switch u.PriceBasis {
+	case "":
+		u.PriceBasis = BasisItem
+	case BasisItem:
+	case BasisKilogram, BasisLitre:
+		// A generic product stands for every pack size: it has none.
+		u.SizeValue, u.SizeUnit = decimal.NullDecimal{}, nil
+	default:
+		return u, apperr.New(apperr.Invalid, "invalid price basis").WithField("priceBasis", "must be item, kg or l")
+	}
 	u.CanonicalName = strings.TrimSpace(u.CanonicalName)
 	if u.CanonicalName == "" || utf8.RuneCountInString(u.CanonicalName) > maxNameLength {
 		return u, apperr.New(apperr.Invalid, "invalid product name").WithField("canonicalName", "must be 1 to 200 characters")
@@ -108,7 +132,7 @@ func editable(p sqlc.Product) map[string]any {
 	}
 	return map[string]any{
 		"canonicalName": p.CanonicalName, "categoryId": p.CategoryID,
-		"sizeValue": size, "sizeUnit": p.SizeUnit,
+		"sizeValue": size, "sizeUnit": p.SizeUnit, "priceBasis": p.PriceBasis,
 	}
 }
 

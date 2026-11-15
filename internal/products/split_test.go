@@ -240,3 +240,19 @@ func TestSplit_ReprocessingKeepsLinesOnTheSplitProduct(t *testing.T) {
 		t.Errorf("after reprocessing (-want +got):\n%s", diff)
 	}
 }
+
+func TestSplit_CopiesThePriceBasis(t *testing.T) {
+	f := newFixture(t)
+	chicken := f.product(f.alice, "Tavuk")
+	f.exec(`UPDATE products SET price_basis = 'kg' WHERE id = $1`, chicken)
+	f.alias(f.alice, chicken, "TAVUK BUT 1KG", uuid.Nil, 1)
+	wings := f.alias(f.alice, chicken, "TAVUK KANAT 500G", uuid.Nil, 1)
+
+	d, err := f.service.Split(t.Context(), f.alice, chicken, []uuid.UUID{wings}, "Tavuk Kanat 500 G")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Product.PriceBasis != "kg" || d.Product.SizeValue.Valid {
+		t.Errorf("new product = %+v", d.Product)
+	}
+}

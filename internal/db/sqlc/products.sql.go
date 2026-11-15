@@ -57,15 +57,16 @@ func (q *Queries) CombineMergedCodes(ctx context.Context, arg CombineMergedCodes
 }
 
 const createSplitProduct = `-- name: CreateSplitProduct :one
-INSERT INTO products (user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $6)
-RETURNING id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at
+INSERT INTO products (user_id, canonical_name, category_id, price_basis, size_value, size_unit, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+RETURNING id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at, price_basis
 `
 
 type CreateSplitProductParams struct {
 	UserID        uuid.UUID
 	CanonicalName string
 	CategoryID    uuid.NullUUID
+	PriceBasis    string
 	SizeValue     decimal.NullDecimal
 	SizeUnit      *string
 	Now           time.Time
@@ -76,6 +77,7 @@ func (q *Queries) CreateSplitProduct(ctx context.Context, arg CreateSplitProduct
 		arg.UserID,
 		arg.CanonicalName,
 		arg.CategoryID,
+		arg.PriceBasis,
 		arg.SizeValue,
 		arg.SizeUnit,
 		arg.Now,
@@ -90,6 +92,7 @@ func (q *Queries) CreateSplitProduct(ctx context.Context, arg CreateSplitProduct
 		&i.SizeUnit,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PriceBasis,
 	)
 	return i, err
 }
@@ -218,7 +221,7 @@ func (q *Queries) DeleteSelfRejections(ctx context.Context, arg DeleteSelfReject
 }
 
 const getProduct = `-- name: GetProduct :one
-SELECT p.id, p.user_id, p.canonical_name, p.category_id, p.size_value, p.size_unit, p.created_at, p.updated_at, c.name AS category_name
+SELECT p.id, p.user_id, p.canonical_name, p.category_id, p.size_value, p.size_unit, p.created_at, p.updated_at, p.price_basis, c.name AS category_name
 FROM products p
 LEFT JOIN categories c ON c.user_id = $1 AND c.id = p.category_id
 WHERE p.user_id = $1 AND p.id = $2
@@ -246,6 +249,7 @@ func (q *Queries) GetProduct(ctx context.Context, arg GetProductParams) (GetProd
 		&i.Product.SizeUnit,
 		&i.Product.CreatedAt,
 		&i.Product.UpdatedAt,
+		&i.Product.PriceBasis,
 		&i.CategoryName,
 	)
 	return i, err
@@ -591,7 +595,7 @@ func (q *Queries) ListProductRejections(ctx context.Context, arg ListProductReje
 }
 
 const lockProduct = `-- name: LockProduct :one
-SELECT id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at FROM products WHERE user_id = $1 AND id = $2 FOR UPDATE
+SELECT id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at, price_basis FROM products WHERE user_id = $1 AND id = $2 FOR UPDATE
 `
 
 type LockProductParams struct {
@@ -613,6 +617,7 @@ func (q *Queries) LockProduct(ctx context.Context, arg LockProductParams) (Produ
 		&i.SizeUnit,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PriceBasis,
 	)
 	return i, err
 }
@@ -727,7 +732,7 @@ func (q *Queries) MoveRejections(ctx context.Context, arg MoveRejectionsParams) 
 }
 
 const pageProducts = `-- name: PageProducts :many
-SELECT p.id, p.user_id, p.canonical_name, p.category_id, p.size_value, p.size_unit, p.created_at, p.updated_at, c.name AS category_name
+SELECT p.id, p.user_id, p.canonical_name, p.category_id, p.size_value, p.size_unit, p.created_at, p.updated_at, p.price_basis, c.name AS category_name
 FROM products p
 LEFT JOIN categories c ON c.user_id = $1 AND c.id = p.category_id
 WHERE p.user_id = $1
@@ -795,6 +800,7 @@ func (q *Queries) PageProducts(ctx context.Context, arg PageProductsParams) ([]P
 			&i.Product.SizeUnit,
 			&i.Product.CreatedAt,
 			&i.Product.UpdatedAt,
+			&i.Product.PriceBasis,
 			&i.CategoryName,
 		); err != nil {
 			return nil, err
@@ -864,14 +870,15 @@ func (q *Queries) TouchProduct(ctx context.Context, arg TouchProductParams) erro
 
 const updateProduct = `-- name: UpdateProduct :exec
 UPDATE products
-SET canonical_name = $1, category_id = $2,
-    size_value = $3, size_unit = $4, updated_at = $5
-WHERE user_id = $6 AND id = $7
+SET canonical_name = $1, category_id = $2, price_basis = $3,
+    size_value = $4, size_unit = $5, updated_at = $6
+WHERE user_id = $7 AND id = $8
 `
 
 type UpdateProductParams struct {
 	CanonicalName string
 	CategoryID    uuid.NullUUID
+	PriceBasis    string
 	SizeValue     decimal.NullDecimal
 	SizeUnit      *string
 	Now           time.Time
@@ -883,6 +890,7 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) er
 	_, err := q.db.Exec(ctx, updateProduct,
 		arg.CanonicalName,
 		arg.CategoryID,
+		arg.PriceBasis,
 		arg.SizeValue,
 		arg.SizeUnit,
 		arg.Now,

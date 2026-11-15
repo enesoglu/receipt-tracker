@@ -16,7 +16,7 @@ import (
 
 const createReviewProduct = `-- name: CreateReviewProduct :one
 INSERT INTO products (user_id, canonical_name, size_value, size_unit, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $5) RETURNING id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at
+VALUES ($1, $2, $3, $4, $5, $5) RETURNING id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at, price_basis
 `
 
 type CreateReviewProductParams struct {
@@ -45,6 +45,7 @@ func (q *Queries) CreateReviewProduct(ctx context.Context, arg CreateReviewProdu
 		&i.SizeUnit,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PriceBasis,
 	)
 	return i, err
 }
@@ -202,7 +203,7 @@ func (q *Queries) GetReceiptStore(ctx context.Context, arg GetReceiptStoreParams
 }
 
 const getReviewProduct = `-- name: GetReviewProduct :one
-SELECT id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at FROM products WHERE user_id = $1 AND id = $2
+SELECT id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at, price_basis FROM products WHERE user_id = $1 AND id = $2
 `
 
 type GetReviewProductParams struct {
@@ -222,6 +223,7 @@ func (q *Queries) GetReviewProduct(ctx context.Context, arg GetReviewProductPara
 		&i.SizeUnit,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PriceBasis,
 	)
 	return i, err
 }

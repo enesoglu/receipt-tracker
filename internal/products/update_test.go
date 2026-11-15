@@ -61,8 +61,8 @@ func TestUpdate_ReplacesEveryFieldAndAuditsTheChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]map[string]any{
-		"before": {"canonicalName": "SUT 1LT", "categoryId": nil, "sizeValue": "1", "sizeUnit": "l"},
-		"after":  {"canonicalName": "Süt 2 L", "categoryId": dairy.String(), "sizeValue": "2", "sizeUnit": "l"},
+		"before": {"canonicalName": "SUT 1LT", "categoryId": nil, "sizeValue": "1", "sizeUnit": "l", "priceBasis": "item"},
+		"after":  {"canonicalName": "Süt 2 L", "categoryId": dairy.String(), "sizeValue": "2", "sizeUnit": "l", "priceBasis": "item"},
 	}
 	if diff := cmp.Diff(want, first); diff != "" {
 		t.Errorf("audit detail (-want +got):\n%s", diff)
@@ -112,5 +112,36 @@ func TestUpdate_OtherUsersProductIsNotFoundAndUnchanged(t *testing.T) {
 	}
 	if name != "Süt" || audits != 0 {
 		t.Errorf("name = %q, audits = %d", name, audits)
+	}
+}
+
+func TestUpdate_GenericPriceBasisClearsTheSize(t *testing.T) {
+	f := newFixture(t)
+	chicken := f.product(f.alice, "Tavuk Göğüs 500 G")
+	f.exec(`UPDATE products SET size_value = 500, size_unit = 'g' WHERE id = $1`, chicken)
+
+	d, err := f.service.Update(t.Context(), f.alice, chicken, products.Update{
+		CanonicalName: "Tavuk Göğüs", PriceBasis: products.BasisKilogram,
+		SizeValue: decimal.NewNullDecimal(dec("500")), SizeUnit: ptr("g"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Product.PriceBasis != "kg" || d.Product.SizeValue.Valid || d.Product.SizeUnit != nil {
+		t.Errorf("product = %+v", d.Product)
+	}
+
+	// Left out, the basis is item again: every field is replaced.
+	d, err = f.service.Update(t.Context(), f.alice, chicken, products.Update{CanonicalName: "Tavuk Göğüs 1 KG", SizeValue: decimal.NewNullDecimal(dec("1")), SizeUnit: ptr("kg")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Product.PriceBasis != "item" || !d.Product.SizeValue.Valid {
+		t.Errorf("product = %+v", d.Product)
+	}
+
+	_, err = f.service.Update(t.Context(), f.alice, chicken, products.Update{CanonicalName: "Tavuk", PriceBasis: "box"})
+	if !errors.Is(err, apperr.Invalid) {
+		t.Errorf("err = %v, want Invalid", err)
 	}
 }

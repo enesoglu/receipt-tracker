@@ -94,6 +94,9 @@ func (h productsHandlers) UpdateProduct(ctx context.Context, request UpdateProdu
 		return nil, apperr.New(apperr.Invalid, "invalid size").WithField("sizeValue", "must be a decimal with at most three places")
 	}
 	u := products.Update{CanonicalName: body.CanonicalName, SizeValue: size, SizeUnit: body.SizeUnit}
+	if body.PriceBasis != nil {
+		u.PriceBasis = string(*body.PriceBasis)
+	}
 	if body.CategoryId != nil {
 		u.CategoryID = uuid.NullUUID{UUID: *body.CategoryId, Valid: true}
 	}
@@ -191,7 +194,7 @@ func productSummaryResponse(s products.Summary) ProductSummary {
 	p := s.Product
 	response := ProductSummary{
 		Id: p.ID, CanonicalName: p.CanonicalName, SizeValue: quantityResponse(p.SizeValue), SizeUnit: p.SizeUnit,
-		PurchaseCount: s.PurchaseCount,
+		PurchaseCount: s.PurchaseCount, PriceBasis: PriceBasis(p.PriceBasis),
 	}
 	if s.Category != nil {
 		response.Category = &CategoryRef{Id: s.Category.ID, Name: s.Category.Name}
@@ -209,7 +212,7 @@ func productResponse(d products.Detail) Product {
 	summary := productSummaryResponse(d.Summary)
 	response := Product{
 		Id: summary.Id, CanonicalName: summary.CanonicalName, Category: summary.Category,
-		SizeValue: summary.SizeValue, SizeUnit: summary.SizeUnit, PurchaseCount: summary.PurchaseCount,
+		SizeValue: summary.SizeValue, SizeUnit: summary.SizeUnit, PurchaseCount: summary.PurchaseCount, PriceBasis: summary.PriceBasis,
 		LastPurchase: summary.LastPurchase, CreatedAt: d.Product.CreatedAt, UpdatedAt: d.Product.UpdatedAt,
 		Aliases: make([]ProductAlias, 0, len(d.Aliases)), Codes: make([]ProductCode, 0, len(d.Codes)),
 	}

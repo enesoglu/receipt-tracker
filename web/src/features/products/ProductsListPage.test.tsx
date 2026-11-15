@@ -217,6 +217,7 @@ describe('ProductsListPage', () => {
       },
       sizeValue: '1',
       sizeUnit: 'l',
+      priceBasis: 'item',
       purchaseCount: 6,
       lastPurchase: null,
     };
@@ -229,6 +230,7 @@ describe('ProductsListPage', () => {
       },
       sizeValue: '1',
       sizeUnit: 'l',
+      priceBasis: 'item',
       purchaseCount: 3,
       lastPurchase: null,
     };
