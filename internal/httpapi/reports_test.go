@@ -1,0 +1,133 @@
+package httpapi_test
+
+import (
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/alexedwards/scs/v2"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
+
+	"github.com/enesoglu/receipt-tracker/internal/auth"
+	"github.com/enesoglu/receipt-tracker/internal/config"
+	"github.com/enesoglu/receipt-tracker/internal/db/dbtest"
+	"github.com/enesoglu/receipt-tracker/internal/httpapi"
+	"github.com/enesoglu/receipt-tracker/internal/reports"
+	"github.com/enesoglu/receipt-tracker/internal/testutil"
+)
+
+type reportServer struct {
+	t          *testing.T
+	exec       func(sql string, args ...any)
+	http       *httpapi.Server
+	sessions   *scs.SessionManager
+	alice, bob uuid.UUID
+}
+
+func newReportServer(t *testing.T) *reportServer {
+	t.Helper()
+	pool := dbtest.New(t)
+	cfg := config.Config{Environment: config.EnvDev, AllowedEmails: []string{"alice@example.com", "bob@example.com"}, DevLoginEmail: "alice@example.com"}
+	users := auth.New(pool, cfg, nil, time.Now)
+	alice := testutil.NewUser(t, users).ID
+	cfg.DevLoginEmail = "bob@example.com"
+	bob := testutil.NewUser(t, auth.New(pool, cfg, nil, time.Now)).ID
+	sessions, stop := auth.NewSessions(pool, false)
+	t.Cleanup(stop)
+	server := httpapi.New(":0", slog.New(slog.NewTextHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, reports.New(pool))
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := pool.Exec(t.Context(), sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &reportServer{t: t, exec: exec, http: server, sessions: sessions, alice: alice, bob: bob}
+}
+
+func (s *reportServer) get(user uuid.UUID, path string) *httptest.ResponseRecorder {
+	s.t.Helper()
+	request := testutil.Request(s.t, s.sessions, user, http.MethodGet, "/api/v1"+path, strings.NewReader(""))
+	response := httptest.NewRecorder()
+	s.http.Handler().ServeHTTP(response, request)
+	return response
+}
+
+func (s *reportServer) receipt(user uuid.UUID, date, total, currency, status string) {
+	s.t.Helper()
+	s.exec(`INSERT INTO receipts (user_id, title, purchased_on, total, currency, status) VALUES ($1, 'Synthetic receipt', NULLIF($2, '')::date, NULLIF($3, '')::numeric, $4, $5)`,
+		user, date, total, currency, status)
+}
+
+func decodeReport[T any](t *testing.T, r *httptest.ResponseRecorder, schema string) T {
+	t.Helper()
+	if r.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200: %s", r.Code, r.Body.String())
+	}
+	var document interface{}
+	if err := json.Unmarshal(r.Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	if err := loadContract(t).Components.Schemas[schema].Value.VisitJSON(document); err != nil {
+		t.Fatalf("%s violates contract: %v", schema, err)
+	}
+	var report T
+	if err := json.Unmarshal(r.Body.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
+func TestGetMonthlySpending_ReturnsEveryMonthOfTheRange(t *testing.T) {
+	s := newReportServer(t)
+	s.receipt(s.alice, "2026-10-03", "10.50", "TRY", "ready")
+	s.receipt(s.alice, "2026-10-04", "5.25", "TRY", "ready")
+	s.receipt(s.alice, "2026-12-01", "23.80", "EUR", "needs_review")
+	s.receipt(s.alice, "", "99.00", "TRY", "ready")
+
+	got := decodeReport[httpapi.MonthlySpending](t, s.get(s.alice, "/reports/monthly-spending?from=2026-10&to=2026-12"), "MonthlySpending")
+
+	want := httpapi.MonthlySpending{
+		From: "2026-10", To: "2026-12", ExcludedReceipts: 1,
+		Months: []httpapi.MonthSpending{
+			{Month: "2026-10", Totals: []httpapi.CurrencyTotal{{Currency: "TRY", Amount: "15.75", ReceiptCount: 2}}},
+			{Month: "2026-11", Totals: []httpapi.CurrencyTotal{}},
+			{Month: "2026-12", Totals: []httpapi.CurrencyTotal{{Currency: "EUR", Amount: "23.80", ReceiptCount: 1}}},
+		},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("report mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestGetMonthlySpending_RejectsBadInput(t *testing.T) {
+	s := newReportServer(t)
+	for name, path := range map[string]string{
+		"from after to":   "/reports/monthly-spending?from=2026-12&to=2026-01",
+		"more than 60":    "/reports/monthly-spending?from=2020-01&to=2026-01",
+		"malformed month": "/reports/monthly-spending?from=2026-13&to=2026-14",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if r := s.get(s.alice, path); r.Code != http.StatusBadRequest {
+				t.Errorf("status=%d want 400: %s", r.Code, r.Body.String())
+			}
+		})
+	}
+}
+
+func TestGetMonthlySpending_IsolatesUsers(t *testing.T) {
+	s := newReportServer(t)
+	s.receipt(s.alice, "2026-10-03", "10.50", "TRY", "ready")
+	s.receipt(s.alice, "", "7.00", "TRY", "ready")
+
+	got := decodeReport[httpapi.MonthlySpending](t, s.get(s.bob, "/reports/monthly-spending?from=2026-10&to=2026-10"), "MonthlySpending")
+
+	if len(got.Months) != 1 || len(got.Months[0].Totals) != 0 || got.ExcludedReceipts != 0 {
+		t.Errorf("user B saw user A's data: %+v", got)
+	}
+}
