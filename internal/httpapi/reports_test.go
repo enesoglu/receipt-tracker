@@ -40,7 +40,7 @@ func newReportServer(t *testing.T) *reportServer {
 	bob := testutil.NewUser(t, auth.New(pool, cfg, nil, time.Now)).ID
 	sessions, stop := auth.NewSessions(pool, false)
 	t.Cleanup(stop)
-	server := httpapi.New(":0", slog.New(slog.NewTextHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, reports.New(pool))
+	server := httpapi.New(":0", slog.New(slog.NewTextHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, reports.New(pool), nil)
 	exec := func(sql string, args ...any) {
 		t.Helper()
 		if _, err := pool.Exec(t.Context(), sql, args...); err != nil {
