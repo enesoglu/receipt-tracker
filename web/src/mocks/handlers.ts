@@ -2,18 +2,18 @@ import { http, HttpResponse } from 'msw';
 import type { components } from '../api/schema.gen';
 import {
   getMockAuthMode,
+  getMockProductById,
+  getMockProductPriceHistory,
   getMockReceiptById,
+  mergeMockProducts,
   mockCategory,
   mockCategoryPage,
   mockImageBytes,
   mockMonthBreakdown,
   mockMonthlySpending,
-  mockPriceHistory,
   mockProblemForbidden,
   mockProblemNotFound,
   mockProblemUnauthorized,
-  mockProduct,
-  mockProductPage,
   mockReceipt,
   mockSettings,
   mockStorageStatus,
@@ -22,11 +22,14 @@ import {
   mockUploadResponse,
   mockUsage,
   mockUser,
+  queryMockProducts,
   queryMockReceipts,
   queryMockReviewFlags,
   registerMockUploads,
   resolveMockReviewFlag,
   setMockAuthMode,
+  splitMockProduct,
+  updateMockProduct,
 } from './data';
 import { readUploadedFiles } from './multipart';
 
@@ -233,19 +236,21 @@ export const handlers = [
     return HttpResponse.json(resolveMockReviewFlag(String(params.flagId)));
   }),
 
-  http.get('/api/v1/products', () => {
+  http.get('/api/v1/products', ({ request }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json(mockProductPage);
+    const url = new URL(request.url);
+    return HttpResponse.json(queryMockProducts(url.searchParams));
   }),
 
   http.get('/api/v1/products/:productId', ({ params }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json({
-      ...mockProduct,
-      id: String(params.productId),
-    });
+    const product = getMockProductById(String(params.productId));
+    if (!product) {
+      return problemJson(404, mockProblemNotFound);
+    }
+    return HttpResponse.json(product);
   }),
 
   http.put('/api/v1/products/:productId', async ({ request, params }) => {
@@ -253,47 +258,75 @@ export const handlers = [
     if (blocked) return blocked;
     const body =
       (await request.json()) as components['schemas']['ProductUpdate'];
-    return HttpResponse.json({
-      ...mockProduct,
-      id: String(params.productId),
-      canonicalName: body.canonicalName,
-      sizeValue: body.sizeValue ?? null,
-      sizeUnit: body.sizeUnit ?? null,
-    });
+    const updated = updateMockProduct(String(params.productId), body);
+    if (!updated) {
+      return problemJson(404, mockProblemNotFound);
+    }
+    return HttpResponse.json(updated);
   }),
 
-  http.post('/api/v1/products/:productId/merge', ({ params }) => {
-    const blocked = guardSignedIn();
-    if (blocked) return blocked;
-    return HttpResponse.json({
-      ...mockProduct,
-      id: String(params.productId),
-    });
-  }),
+  http.post(
+    '/api/v1/products/:productId/merge',
+    async ({ request, params }) => {
+      const blocked = guardSignedIn();
+      if (blocked) return blocked;
+      const body =
+        (await request.json()) as components['schemas']['MergeProductsRequest'];
+      const result = mergeMockProducts(String(params.productId), body);
+      if (!result.ok) {
+        if (result.reason === 'self_merge') {
+          return problemJson(400, {
+            type: 'about:blank',
+            title: 'Bad Request',
+            status: 400,
+            detail: 'Cannot merge a product into itself',
+          });
+        }
+        return problemJson(404, mockProblemNotFound);
+      }
+      return HttpResponse.json(result.product);
+    },
+  ),
 
-  http.post('/api/v1/products/:productId/split', async ({ request }) => {
-    const blocked = guardSignedIn();
-    if (blocked) return blocked;
-    const body =
-      (await request.json()) as components['schemas']['SplitProductRequest'];
-    return HttpResponse.json(
-      {
-        ...mockProduct,
-        id: '0193a1b2-0000-7000-8000-000000000499',
-        canonicalName: body.canonicalName,
-      },
-      { status: 201 },
-    );
-  }),
+  http.post(
+    '/api/v1/products/:productId/split',
+    async ({ request, params }) => {
+      const blocked = guardSignedIn();
+      if (blocked) return blocked;
+      const body =
+        (await request.json()) as components['schemas']['SplitProductRequest'];
+      const result = splitMockProduct(String(params.productId), body);
+      if (!result.ok) {
+        if (result.reason === 'invalid') {
+          return problemJson(400, {
+            type: 'about:blank',
+            title: 'Bad Request',
+            status: 400,
+            detail: 'Select at least one alias and provide a product name',
+          });
+        }
+        return problemJson(404, mockProblemNotFound);
+      }
+      return HttpResponse.json(result.product, { status: 201 });
+    },
+  ),
 
-  http.get('/api/v1/products/:productId/price-history', ({ params }) => {
-    const blocked = guardSignedIn();
-    if (blocked) return blocked;
-    return HttpResponse.json({
-      ...mockPriceHistory,
-      productId: String(params.productId),
-    });
-  }),
+  http.get(
+    '/api/v1/products/:productId/price-history',
+    ({ request, params }) => {
+      const blocked = guardSignedIn();
+      if (blocked) return blocked;
+      const url = new URL(request.url);
+      const history = getMockProductPriceHistory(
+        String(params.productId),
+        url.searchParams,
+      );
+      if (!history) {
+        return problemJson(404, mockProblemNotFound);
+      }
+      return HttpResponse.json(history);
+    },
+  ),
 
   http.get('/api/v1/stores', () => {
     const blocked = guardSignedIn();
