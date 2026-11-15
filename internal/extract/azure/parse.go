@@ -115,7 +115,7 @@ func parse(raw json.RawMessage) (extract.Result, error) {
 			Confidence:  confidence(item),
 		})
 	}
-	return result, nil
+	return extract.CompleteTotal(result), nil
 }
 
 // priceDenominator finds the unit at the end of a unit price such as

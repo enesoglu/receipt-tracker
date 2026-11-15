@@ -58,4 +58,6 @@
 //   - A weighed item can come back with a quantity and a unit price but no
 //     QuantityUnit, while the price reads "114,90 TL/kg". The unit after
 //     the slash stands in.
+//   - A receipt can come back with a pre-tax Subtotal and TotalTax but no
+//     Total. [extract.CompleteTotal] fills it when the line totals agree.
 package azure
