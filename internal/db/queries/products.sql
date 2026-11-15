@@ -103,6 +103,7 @@ VALUES (@user_id, 'product', @product_id, @action, @detail, @now);
 -- range and at one store.
 SELECT l.id AS line_item_id, r.id AS receipt_id, r.purchased_on::date AS purchased_on,
        r.store_id, s.name AS store_name, r.currency, l.quantity, l.quantity_unit,
+       l.name, l.line_total,
        COALESCE(l.unit_price, round(l.line_total / NULLIF(l.quantity, 0), 2), l.line_total)::numeric AS unit_price
 FROM line_items l
 JOIN receipts r ON r.user_id = l.user_id AND r.id = l.receipt_id

@@ -171,6 +171,7 @@ func (h productsHandlers) GetProductPriceHistory(ctx context.Context, request Ge
 			PurchasedOn: openapi_types.Date{Time: point.PurchasedOn}, Store: refResponse(point.Store),
 			UnitPrice: point.UnitPrice.StringFixed(2), Quantity: quantityResponse(point.Quantity),
 			QuantityUnit: point.QuantityUnit, Currency: point.Currency,
+			Basis: PriceBasis(point.Basis), BasisPrice: moneyResponse(point.BasisPrice),
 		})
 	}
 	for _, summary := range history.Stores {

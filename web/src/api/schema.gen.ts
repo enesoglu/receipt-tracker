@@ -1044,7 +1044,10 @@ export interface components {
       /** @description The cleaned, editable name. */
       name: string;
       quantity: components['schemas']['Quantity'] | null;
-      /** @description Unit of the quantity, such as `kg` or `ad`. */
+      /**
+       * @description Unit of the quantity as the receipt prints it, such as `KG`, `AD` or
+       *     `PK`. Compare units without regard to case.
+       */
       quantityUnit: string | null;
       unitPrice: components['schemas']['Money'] | null;
       /** @description The amount of the line. Negative for a discount. */
@@ -1502,8 +1505,22 @@ export interface components {
       store: components['schemas']['StoreRef'] | null;
       unitPrice: components['schemas']['Money'];
       quantity: components['schemas']['Quantity'] | null;
+      /**
+       * @description Unit of the quantity as the receipt prints it, such as `KG`, `AD` or
+       *     `PK`. Compare units without regard to case.
+       */
       quantityUnit: string | null;
       currency: components['schemas']['Currency'];
+      /** @description The price basis of the product when the history was read. */
+      basis: components['schemas']['PriceBasis'];
+      /**
+       * @description For a `kg` or `l` product, the price of one kilogram or litre in
+       *     this purchase: the line total divided by the weighed quantity, or
+       *     for a counted line by the quantity (1 when absent) times the size
+       *     printed in the line's name. `null` for an `item` product, for a
+       *     line without a usable size, and for a size of another dimension.
+       */
+      basisPrice: components['schemas']['Money'] | null;
     };
     StorePriceSummary: {
       /** @description The store, or `null` for purchases without one. */

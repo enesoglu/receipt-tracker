@@ -1903,7 +1903,9 @@ components:
         quantityUnit:
           type: string
           nullable: true
-          description: Unit of the quantity, such as `kg` or `ad`.
+          description: |
+            Unit of the quantity as the receipt prints it, such as `KG`, `AD` or
+            `PK`. Compare units without regard to case.
         unitPrice:
           nullable: true
           allOf:
@@ -2582,6 +2584,8 @@ components:
         - quantity
         - quantityUnit
         - currency
+        - basis
+        - basisPrice
       properties:
         receiptId:
           type: string
@@ -2605,8 +2609,25 @@ components:
         quantityUnit:
           type: string
           nullable: true
+          description: |
+            Unit of the quantity as the receipt prints it, such as `KG`, `AD` or
+            `PK`. Compare units without regard to case.
         currency:
           $ref: "#/components/schemas/Currency"
+        basis:
+          description: The price basis of the product when the history was read.
+          allOf:
+            - $ref: "#/components/schemas/PriceBasis"
+        basisPrice:
+          nullable: true
+          description: |
+            For a `kg` or `l` product, the price of one kilogram or litre in
+            this purchase: the line total divided by the weighed quantity, or
+            for a counted line by the quantity (1 when absent) times the size
+            printed in the line's name. `null` for an `item` product, for a
+            line without a usable size, and for a size of another dimension.
+          allOf:
+            - $ref: "#/components/schemas/Money"
     StorePriceSummary:
       type: object
       required: [store, currency, min, max, latest, latestOn, purchaseCount]
@@ -3280,8 +3301,10 @@ components:
               name: Example Market
             unitPrice: "39.90"
             quantity: "1"
-            quantityUnit: ad
+            quantityUnit: AD
             currency: TRY
+            basis: item
+            basisPrice: null
           - receiptId: 0193a1b2-0000-7000-8000-000000000099
             lineItemId: 0193a1b2-0000-7000-8000-000000000295
             purchasedOn: "2026-10-18"
@@ -3290,8 +3313,10 @@ components:
               name: Corner Shop
             unitPrice: "44.00"
             quantity: "1"
-            quantityUnit: ad
+            quantityUnit: AD
             currency: TRY
+            basis: item
+            basisPrice: null
           - receiptId: 0193a1b2-0000-7000-8000-000000000100
             lineItemId: 0193a1b2-0000-7000-8000-000000000201
             purchasedOn: "2026-11-02"
@@ -3300,8 +3325,10 @@ components:
               name: Example Market
             unitPrice: "42.25"
             quantity: "2"
-            quantityUnit: ad
+            quantityUnit: AD
             currency: TRY
+            basis: item
+            basisPrice: null
         stores:
           - store:
               id: 0193a1b2-0000-7000-8000-000000000010

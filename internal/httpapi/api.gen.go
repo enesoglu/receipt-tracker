@@ -928,7 +928,8 @@ type LineItem struct {
 	ProductCode *string   `json:"productCode"`
 	Quantity    *Quantity `json:"quantity"`
 
-	// QuantityUnit Unit of the quantity, such as `kg` or `ad`.
+	// QuantityUnit Unit of the quantity as the receipt prints it, such as `KG`, `AD` or
+	// `PK`. Compare units without regard to case.
 	QuantityUnit *string `json:"quantityUnit"`
 
 	// RawName The text as extracted. Equal to `name` for a line the user added.
@@ -1202,13 +1203,26 @@ type PriceHistory struct {
 
 // PricePoint defines model for PricePoint.
 type PricePoint struct {
+	// Basis The price basis of the product when the history was read.
+	Basis PriceBasis `json:"basis"`
+
+	// BasisPrice For a `kg` or `l` product, the price of one kilogram or litre in
+	// this purchase: the line total divided by the weighed quantity, or
+	// for a counted line by the quantity (1 when absent) times the size
+	// printed in the line's name. `null` for an `item` product, for a
+	// line without a usable size, and for a size of another dimension.
+	BasisPrice *Money `json:"basisPrice"`
+
 	// Currency ISO 4217 currency code.
 	//
 	// Example: TRY
-	Currency     Currency           `json:"currency"`
-	LineItemId   openapi_types.UUID `json:"lineItemId"`
-	PurchasedOn  openapi_types.Date `json:"purchasedOn"`
-	Quantity     *Quantity          `json:"quantity"`
+	Currency    Currency           `json:"currency"`
+	LineItemId  openapi_types.UUID `json:"lineItemId"`
+	PurchasedOn openapi_types.Date `json:"purchasedOn"`
+	Quantity    *Quantity          `json:"quantity"`
+
+	// QuantityUnit Unit of the quantity as the receipt prints it, such as `KG`, `AD` or
+	// `PK`. Compare units without regard to case.
 	QuantityUnit *string            `json:"quantityUnit"`
 	ReceiptId    openapi_types.UUID `json:"receiptId"`
 	Store        *StoreRef          `json:"store"`
