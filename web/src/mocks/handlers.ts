@@ -1,13 +1,13 @@
 import { http, HttpResponse } from 'msw';
 import type { components } from '../api/schema.gen';
 import {
+  createMockCategory,
+  deleteMockCategory,
   getMockAuthMode,
   getMockProductById,
   getMockProductPriceHistory,
   getMockReceiptById,
   mergeMockProducts,
-  mockCategory,
-  mockCategoryPage,
   mockImageBytes,
   mockProblemForbidden,
   mockProblemNotFound,
@@ -20,6 +20,7 @@ import {
   mockUploadResponse,
   mockUsage,
   mockUser,
+  queryMockCategories,
   queryMockMonthBreakdown,
   queryMockMonthlySpending,
   queryMockProducts,
@@ -29,6 +30,7 @@ import {
   resolveMockReviewFlag,
   setMockAuthMode,
   splitMockProduct,
+  updateMockCategory,
   updateMockProduct,
 } from './data';
 import { readUploadedFiles } from './multipart';
@@ -345,10 +347,11 @@ export const handlers = [
     });
   }),
 
-  http.get('/api/v1/categories', () => {
+  http.get('/api/v1/categories', ({ request }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json(mockCategoryPage);
+    const url = new URL(request.url);
+    return HttpResponse.json(queryMockCategories(url.searchParams));
   }),
 
   http.post('/api/v1/categories', async ({ request }) => {
@@ -356,15 +359,32 @@ export const handlers = [
     if (blocked) return blocked;
     const body =
       (await request.json()) as components['schemas']['CategoryInput'];
-    return HttpResponse.json(
-      {
-        ...mockCategory,
-        id: '0193a1b2-0000-7000-8000-000000000029',
-        name: body.name,
-        productCount: 0,
-      },
-      { status: 201 },
-    );
+    const result = createMockCategory(body);
+    if (!result.ok) {
+      if (result.reason === 'conflict') {
+        return problemJson(409, {
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          detail: 'a category with this name already exists',
+          requestId: mockProblemNotFound.requestId,
+        });
+      }
+      return problemJson(400, {
+        type: 'about:blank',
+        title: 'Bad Request',
+        status: 400,
+        detail: 'category name is invalid',
+        requestId: mockProblemNotFound.requestId,
+        errors: [
+          {
+            field: 'name',
+            message: 'must be between 1 and 100 characters',
+          },
+        ],
+      });
+    }
+    return HttpResponse.json(result.category, { status: 201 });
   }),
 
   http.put('/api/v1/categories/:categoryId', async ({ request, params }) => {
@@ -372,16 +392,49 @@ export const handlers = [
     if (blocked) return blocked;
     const body =
       (await request.json()) as components['schemas']['CategoryInput'];
-    return HttpResponse.json({
-      ...mockCategory,
-      id: String(params.categoryId),
-      name: body.name,
-    });
+    const result = updateMockCategory(String(params.categoryId), body);
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        return problemJson(404, {
+          ...mockProblemNotFound,
+          detail: 'category not found',
+        });
+      }
+      if (result.reason === 'conflict') {
+        return problemJson(409, {
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          detail: 'a category with this name already exists',
+          requestId: mockProblemNotFound.requestId,
+        });
+      }
+      return problemJson(400, {
+        type: 'about:blank',
+        title: 'Bad Request',
+        status: 400,
+        detail: 'category name is invalid',
+        requestId: mockProblemNotFound.requestId,
+        errors: [
+          {
+            field: 'name',
+            message: 'must be between 1 and 100 characters',
+          },
+        ],
+      });
+    }
+    return HttpResponse.json(result.category);
   }),
 
-  http.delete('/api/v1/categories/:categoryId', () => {
+  http.delete('/api/v1/categories/:categoryId', ({ params }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
+    if (!deleteMockCategory(String(params.categoryId))) {
+      return problemJson(404, {
+        ...mockProblemNotFound,
+        detail: 'category not found',
+      });
+    }
     return new HttpResponse(null, { status: 204 });
   }),
 
