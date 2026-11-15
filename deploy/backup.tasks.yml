@@ -10,8 +10,12 @@ tasks:
   format:
     dir: '{{.ROOT_DIR}}/..'
     cmds:
-      - bin/golangci-lint fmt internal/backup
+      - bin/golangci-lint fmt internal/backup internal/storage/drive cmd/server internal/httpapi/server.go internal/httpapi/server_test.go internal/httpapi/health_test.go
   lint:
     dir: '{{.ROOT_DIR}}/..'
     cmds:
-      - bin/golangci-lint run ./internal/backup/...
+      - bin/golangci-lint run ./internal/backup/... ./internal/storage/drive/... ./internal/httpapi/... ./cmd/server/...
+  health:
+    dir: '{{.ROOT_DIR}}/..'
+    cmds:
+      - go test -count=1 ./internal/storage/drive ./internal/httpapi

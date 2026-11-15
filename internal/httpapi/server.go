@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/alexedwards/scs/v2"
@@ -49,12 +50,23 @@ func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Serv
 			logger.Error("write health response", "error", err)
 		}
 	}
+	var healthMu sync.Mutex
+	cachedDrive := "not_required"
 	router.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		if storage == nil {
-			health(w, r)
-			return
+		state := "not_required"
+		var err error
+		if storage != nil {
+			healthCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+			defer cancel()
+			state, err = storage.Health(healthCtx)
 		}
-		state, err := storage.Health(r.Context())
+		healthMu.Lock()
+		if err == nil {
+			cachedDrive = state
+		} else {
+			state = cachedDrive
+		}
+		healthMu.Unlock()
 		database, status := "ok", http.StatusOK
 		if err != nil {
 			database, status = "unavailable", http.StatusServiceUnavailable
