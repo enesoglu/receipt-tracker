@@ -14,6 +14,7 @@ import { Spinner } from '../components/ui/Spinner';
 import { SignInPage } from '../features/auth/SignInPage';
 import { UiPreviewPage } from '../features/dev/UiPreviewPage';
 import { PlaceholderPage } from '../features/placeholders/PlaceholderPage';
+import { ProductsListPage } from '../features/products/ProductsListPage';
 import { ReceiptDetailPage } from '../features/receipts/ReceiptDetailPage';
 import { ReceiptsListPage } from '../features/receipts/ReceiptsListPage';
 import { ReviewQueuePage } from '../features/review/ReviewQueuePage';
@@ -73,18 +74,7 @@ export function AppRouterContent({ queryClient }: AppRouterContentProps) {
           <Route path="/receipts/:receiptId" element={<ReceiptDetailPage />} />
           <Route path="/upload" element={<UploadPage />} />
           <Route path="/review" element={<ReviewQueuePage />} />
-          <Route
-            path="/products"
-            element={
-              <PlaceholderPage
-                eyebrow="Catalog"
-                title="Products"
-                description="Manage canonical products, aliases, and cross-store unit price history."
-                emptyTitle="Product catalog coming next"
-                emptyDescription="Canonical products, merge/split tools, and price charts will appear here."
-              />
-            }
-          />
+          <Route path="/products" element={<ProductsListPage />} />
           <Route
             path="/spending"
             element={

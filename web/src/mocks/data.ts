@@ -382,6 +382,32 @@ export const mockProduct: components['schemas']['Product'] = {
   updatedAt: '2026-11-02T16:05:31Z',
 };
 
+export const mockSecondProduct: components['schemas']['Product'] = {
+  id: '0193a1b2-0000-7000-8000-000000000403',
+  canonicalName: 'Ekmek 350 g',
+  category: null,
+  sizeValue: '350',
+  sizeUnit: 'g',
+  purchaseCount: 0,
+  lastPurchase: null,
+  aliases: [
+    {
+      id: '0193a1b2-0000-7000-8000-000000000503',
+      rawName: 'EKMEK 350G',
+      normalizedName: 'ekmek 350 g',
+      store: {
+        id: '0193a1b2-0000-7000-8000-000000000010',
+        name: 'Example Market',
+      },
+      seenCount: 2,
+      lastSeenAt: '2026-11-01T14:20:00Z',
+    },
+  ],
+  codes: [],
+  createdAt: '2026-10-01T09:00:00Z',
+  updatedAt: '2026-11-01T14:20:00Z',
+};
+
 export const mockPriceHistory: components['schemas']['PriceHistory'] = {
   productId: '0193a1b2-0000-7000-8000-000000000401',
   points: [
@@ -625,12 +651,22 @@ const ALLOWED_UPLOAD_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.heic', '.heif'];
 let uploadedMockEntries: MockUploadedEntry[] = [];
 let nextMockUploadIndex = 700;
 let resolvedMockFlagIds = new Set<string>();
+let mockProductsState: components['schemas']['Product'][] = [
+  structuredClone(mockProduct),
+  structuredClone(mockSecondProduct),
+];
+let nextMockSplitIndex = 499;
 
 /** Clears runtime mock state created during uploads and reviews so tests stay isolated. */
 export function resetMockState(): void {
   uploadedMockEntries = [];
   nextMockUploadIndex = 700;
   resolvedMockFlagIds = new Set<string>();
+  mockProductsState = [
+    structuredClone(mockProduct),
+    structuredClone(mockSecondProduct),
+  ];
+  nextMockSplitIndex = 499;
 }
 
 function hasAllowedUploadType(file: { name: string; type: string }): boolean {
@@ -961,4 +997,330 @@ export function resolveMockReviewFlag(
 ): components['schemas']['Receipt'] {
   resolvedMockFlagIds.add(flagId);
   return getMockReceiptById(mockReceipt.id) ?? mockReceipt;
+}
+
+function normalizeSearchText(value: string): string {
+  return value
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ç/g, 'c')
+    .replace(/ğ/g, 'g')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ş/g, 's')
+    .replace(/ü/g, 'u')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function toProductSummary(
+  product: components['schemas']['Product'],
+): components['schemas']['ProductSummary'] {
+  return {
+    id: product.id,
+    canonicalName: product.canonicalName,
+    category: product.category,
+    sizeValue: product.sizeValue,
+    sizeUnit: product.sizeUnit,
+    purchaseCount: product.purchaseCount,
+    lastPurchase: product.lastPurchase,
+  };
+}
+
+/** Filters and cursor-paginates stateful mock products. */
+export function queryMockProducts(
+  searchParams: URLSearchParams,
+): components['schemas']['ProductPage'] {
+  const q = searchParams.get('q')?.trim() || null;
+  const normalizedQ = q ? normalizeSearchText(q) : null;
+  const categoryId = searchParams.get('categoryId')?.trim() || null;
+
+  const filtered = [...mockProductsState]
+    .sort((a, b) => a.canonicalName.localeCompare(b.canonicalName))
+    .filter((product) => {
+      if (categoryId && product.category?.id !== categoryId) return false;
+      if (normalizedQ) {
+        const nameMatch = normalizeSearchText(product.canonicalName).includes(
+          normalizedQ,
+        );
+        const aliasMatch = product.aliases.some(
+          (alias) =>
+            normalizeSearchText(alias.rawName).includes(normalizedQ) ||
+            normalizeSearchText(alias.normalizedName).includes(normalizedQ),
+        );
+        if (!nameMatch && !aliasMatch) return false;
+      }
+      return true;
+    })
+    .map(toProductSummary);
+
+  const rawLimit = Number.parseInt(searchParams.get('limit') ?? '50', 10);
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit >= 1 && rawLimit <= 100
+      ? rawLimit
+      : 50;
+  const rawOffset = Number.parseInt(searchParams.get('cursor') ?? '0', 10);
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+
+  const items = filtered.slice(offset, offset + limit);
+  const nextOffset = offset + items.length;
+  const nextCursor = nextOffset < filtered.length ? String(nextOffset) : null;
+
+  return { items, nextCursor };
+}
+
+/** Returns a stateful mock product by id, or null when missing. */
+export function getMockProductById(
+  productId: string,
+): components['schemas']['Product'] | null {
+  return mockProductsState.find((product) => product.id === productId) ?? null;
+}
+
+/** Updates a stateful mock product's editable metadata. */
+export function updateMockProduct(
+  productId: string,
+  body: components['schemas']['ProductUpdate'],
+): components['schemas']['Product'] | null {
+  const index = mockProductsState.findIndex(
+    (product) => product.id === productId,
+  );
+  if (index === -1) return null;
+
+  const existing = mockProductsState[index];
+  const resolvedCategory =
+    body.categoryId != null
+      ? (mockCategoryPage.items.find((cat) => cat.id === body.categoryId) ??
+        null)
+      : null;
+
+  const updated: components['schemas']['Product'] = {
+    ...existing,
+    canonicalName: body.canonicalName,
+    category:
+      body.categoryId === undefined ? existing.category : resolvedCategory,
+    sizeValue:
+      body.sizeValue === undefined ? existing.sizeValue : body.sizeValue,
+    sizeUnit: body.sizeUnit === undefined ? existing.sizeUnit : body.sizeUnit,
+    updatedAt: new Date().toISOString(),
+  };
+  mockProductsState[index] = updated;
+  return updated;
+}
+
+/** Merges a source mock product into the target mock product. */
+export function mergeMockProducts(
+  targetId: string,
+  body: components['schemas']['MergeProductsRequest'],
+):
+  | { ok: true; product: components['schemas']['Product'] }
+  | { ok: false; reason: 'self_merge' | 'not_found' } {
+  if (targetId === body.sourceProductId) {
+    return { ok: false, reason: 'self_merge' };
+  }
+  const targetIndex = mockProductsState.findIndex(
+    (product) => product.id === targetId,
+  );
+  if (targetIndex === -1) {
+    return { ok: false, reason: 'not_found' };
+  }
+  const sourceIndex = mockProductsState.findIndex(
+    (product) => product.id === body.sourceProductId,
+  );
+
+  let source: components['schemas']['Product'] | null =
+    sourceIndex !== -1 ? mockProductsState[sourceIndex] : null;
+  if (
+    !source &&
+    body.sourceProductId === '0193a1b2-0000-7000-8000-000000000405'
+  ) {
+    source = {
+      ...mockSecondProduct,
+      id: body.sourceProductId,
+      canonicalName: 'Ayran duplicate',
+      aliases: [],
+      codes: [],
+      purchaseCount: 0,
+    };
+  }
+  if (!source) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const target = mockProductsState[targetIndex];
+  const combinedAliases = [...target.aliases];
+  for (const alias of source.aliases) {
+    const existingAlias = combinedAliases.find(
+      (item) =>
+        item.normalizedName === alias.normalizedName &&
+        item.store?.id === alias.store?.id,
+    );
+    if (existingAlias) {
+      existingAlias.seenCount += alias.seenCount;
+      if (alias.lastSeenAt > existingAlias.lastSeenAt) {
+        existingAlias.lastSeenAt = alias.lastSeenAt;
+      }
+    } else {
+      combinedAliases.push({ ...alias });
+    }
+  }
+
+  const combinedCodes = [...target.codes];
+  for (const code of source.codes) {
+    const existingCode = combinedCodes.find(
+      (item) =>
+        item.code === code.code &&
+        item.kind === code.kind &&
+        item.store?.id === code.store?.id,
+    );
+    if (existingCode) {
+      existingCode.seenCount += code.seenCount;
+    } else {
+      combinedCodes.push({ ...code });
+    }
+  }
+
+  const updated: components['schemas']['Product'] = {
+    ...target,
+    aliases: combinedAliases.sort((a, b) => b.seenCount - a.seenCount),
+    codes: combinedCodes,
+    purchaseCount: target.purchaseCount + source.purchaseCount,
+    updatedAt: new Date().toISOString(),
+  };
+  mockProductsState[targetIndex] = updated;
+  if (sourceIndex !== -1) {
+    mockProductsState.splice(sourceIndex, 1);
+  }
+  return { ok: true, product: updated };
+}
+
+/** Splits selected aliases off a mock product into a newly created product. */
+export function splitMockProduct(
+  productId: string,
+  body: components['schemas']['SplitProductRequest'],
+):
+  | { ok: true; product: components['schemas']['Product'] }
+  | { ok: false; reason: 'invalid' | 'not_found' } {
+  const sourceIndex = mockProductsState.findIndex(
+    (product) => product.id === productId,
+  );
+  if (sourceIndex === -1) {
+    return { ok: false, reason: 'not_found' };
+  }
+  const trimmedName = body.canonicalName.trim();
+  if (body.aliasIds.length === 0 || !trimmedName) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  const source = mockProductsState[sourceIndex];
+  const aliasSet = new Set(body.aliasIds);
+  const movedAliases = source.aliases.filter((alias) => aliasSet.has(alias.id));
+  if (movedAliases.length === 0) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  const remainingAliases = source.aliases.filter(
+    (alias) => !aliasSet.has(alias.id),
+  );
+  const seq = nextMockSplitIndex++;
+  const newId = `0193a1b2-0000-7000-8000-${String(seq).padStart(12, '0')}`;
+  const nowIso = new Date().toISOString();
+
+  mockProductsState[sourceIndex] = {
+    ...source,
+    aliases: remainingAliases,
+    updatedAt: nowIso,
+  };
+
+  const created: components['schemas']['Product'] = {
+    id: newId,
+    canonicalName: trimmedName,
+    category: source.category,
+    sizeValue: null,
+    sizeUnit: null,
+    purchaseCount: movedAliases.reduce((sum, item) => sum + item.seenCount, 0),
+    lastPurchase: null,
+    aliases: movedAliases,
+    codes: [],
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+  mockProductsState.push(created);
+  return { ok: true, product: created };
+}
+
+/** Returns filtered price history points and store summaries for a mock product. */
+export function getMockProductPriceHistory(
+  productId: string,
+  searchParams: URLSearchParams,
+): components['schemas']['PriceHistory'] | null {
+  const product = getMockProductById(productId);
+  if (!product) return null;
+
+  const basePoints =
+    productId === mockProduct.id ? mockPriceHistory.points : [];
+  const from = searchParams.get('from')?.trim() || null;
+  const to = searchParams.get('to')?.trim() || null;
+  const storeId = searchParams.get('storeId')?.trim() || null;
+
+  const points = basePoints.filter((point) => {
+    if (from && point.purchasedOn < from) return false;
+    if (to && point.purchasedOn > to) return false;
+    if (storeId && point.store?.id !== storeId) return false;
+    return true;
+  });
+
+  const storeBuckets = new Map<
+    string,
+    {
+      store: components['schemas']['StoreRef'] | null;
+      currency: string;
+      points: components['schemas']['PricePoint'][];
+    }
+  >();
+
+  for (const point of points) {
+    const key = `${point.store?.id ?? 'none'}:${point.currency}`;
+    const existing = storeBuckets.get(key);
+    if (existing) {
+      existing.points.push(point);
+    } else {
+      storeBuckets.set(key, {
+        store: point.store,
+        currency: point.currency,
+        points: [point],
+      });
+    }
+  }
+
+  const stores: components['schemas']['StorePriceSummary'][] = [];
+  for (const bucket of storeBuckets.values()) {
+    let minPoint = bucket.points[0];
+    let maxPoint = bucket.points[0];
+    let latestPoint = bucket.points[0];
+    for (const point of bucket.points) {
+      if (Number(point.unitPrice) < Number(minPoint.unitPrice)) {
+        minPoint = point;
+      }
+      if (Number(point.unitPrice) > Number(maxPoint.unitPrice)) {
+        maxPoint = point;
+      }
+      if (point.purchasedOn >= latestPoint.purchasedOn) {
+        latestPoint = point;
+      }
+    }
+    stores.push({
+      store: bucket.store,
+      currency: bucket.currency,
+      min: minPoint.unitPrice,
+      max: maxPoint.unitPrice,
+      latest: latestPoint.unitPrice,
+      latestOn: latestPoint.purchasedOn,
+      purchaseCount: bucket.points.length,
+    });
+  }
+
+  return {
+    productId,
+    points,
+    stores,
+  };
 }
