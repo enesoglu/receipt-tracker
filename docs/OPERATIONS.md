@@ -374,3 +374,65 @@ The owner accepted this risk for personal use (ARCHITECTURE §8); revisit
 before public launch. The destination interface allows replacing Drive
 without changing retention or scheduling. Images are not copied by this
 backup service: Drive is their durable home.
+
+
+## Connecting MCP clients
+
+The connector URL is `APP_BASE_URL` followed by `/mcp` exactly. Discovery is
+public at `/.well-known/oauth-protected-resource` (also at
+`/.well-known/oauth-protected-resource/mcp`) and
+`/.well-known/oauth-authorization-server`. The root-level OAuth protocol
+contract is linked from `api/openapi.yaml` and lives in
+`internal/oauthserver/openapi.yaml`. It uses standard OAuth errors, separately
+from the session-only REST API and its problem documents.
+
+Clients register as public clients and request an authorization code with
+PKCE S256 and the exact MCP resource. The normal Google sign-in returns to a
+server-rendered consent page naming the client and redirect hostname. Keeping
+the request and approval token in the server session avoids another SPA round
+trip carrying authorization state. Approval requires the app's exact Origin.
+Loopback clients show a warning about local interception. Registration accepts
+HTTPS callbacks and HTTP loopback callbacks. Only the port is ignored for
+`localhost` and `127.0.0.1` registration matching; the issued code binds the
+actual callback URI, including its port.
+
+Codes are single use and expire in 60 seconds. Access tokens last at most one
+hour. `offline_access` enables refresh tokens with a 30-day absolute grant
+lifetime. Each refresh replaces the refresh token; reuse revokes the entire
+grant, including all of its access tokens. Only SHA-256 hashes are stored.
+Tokens contain an untrusted user-routing hint followed by 256 random bits.
+The complete hash and bindings must match before the hint is trusted; clients
+treat the whole value as opaque. Signing out revokes all MCP connections and
+outstanding codes for that user. Removing an email from `ALLOWED_EMAILS` and
+restarting rejects that user's tokens on every request, just like sessions.
+
+Registration is limited to ten attempts per hour per IP, with a bounded
+in-memory limiter and a database-wide cap of 1,000 clients. Never-used clients
+expire in 24 hours and are removed at the next registration. Behind Caddy,
+only loopback proxy peers may supply the final `X-Forwarded-For` address.
+Keep the app port private as described in Deployment. Used registrations stay
+available so existing connections continue to work.
+
+To list or revoke connections, run the local CLI with the application's
+environment and database. Obtain the user UUID from `/api/v1/me` while signed
+in. The output contains client ids, names and callback addresses, never tokens:
+
+```text
+task server -- oauth list --user USER_UUID
+task server -- oauth revoke --user USER_UUID --client CLIENT_UUID
+```
+
+Revocation affects only that user's grants and outstanding codes for that
+client. Reconnect to grant access again. The command requires the server's
+database credentials; it is not a public administrative endpoint.
+
+Protocol sources checked:
+[Claude authentication](https://claude.com/docs/connectors/building/authentication.md),
+[Claude testing](https://claude.com/docs/connectors/building/testing),
+[MCP June authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization),
+[MCP November authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),
+[RFC 9728](https://www.rfc-editor.org/rfc/rfc9728),
+[RFC 8414](https://www.rfc-editor.org/rfc/rfc8414),
+[RFC 7591](https://www.rfc-editor.org/rfc/rfc7591),
+[RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), and
+[OAuth 2.1 draft](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-13).

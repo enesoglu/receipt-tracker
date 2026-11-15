@@ -35,6 +35,9 @@ info:
       and `nextCursor`, which is `null` on the last page.
     - **Updates** are `PUT` and replace every editable field. A nullable field
       that is left out is stored as `null`.
+# OAuth uses its own root-level protocol contract and RFC 6749 error format.
+x-oauth-contract:
+  $ref: ../internal/oauthserver/openapi.yaml
 servers:
   - url: /api/v1
 security:
@@ -110,7 +113,7 @@ paths:
       operationId: logout
       tags: [auth]
       summary: Sign out
-      description: Destroys the session. The cookie stops working immediately.
+      description: Destroys the session and revokes all MCP connections and outstanding authorization codes for this user. The cookie stops working immediately.
       responses:
         "204":
           description: The session is gone.

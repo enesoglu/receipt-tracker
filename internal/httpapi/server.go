@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/enesoglu/receipt-tracker/internal/auth"
+	"github.com/enesoglu/receipt-tracker/internal/oauthserver"
 	"github.com/enesoglu/receipt-tracker/internal/products"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
 	"github.com/enesoglu/receipt-tracker/internal/reports"
@@ -30,13 +31,16 @@ type Server struct {
 // New builds the router: health checks, the REST API under /api/v1, the
 // prefixes reserved for sign-in, OAuth and MCP, and the single-page app for
 // everything else.
-func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager, storage *drive.Service, ingestion Ingestion, reportService *reports.Service, productService *products.Service, receiptServices ...*receipts.Service) *Server {
+func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager, storage *drive.Service, ingestion Ingestion, reportService *reports.Service, productService *products.Service, oauth *oauthserver.Handler, receiptServices ...*receipts.Service) *Server {
 	var receiptService *receipts.Service
 	if len(receiptServices) > 0 {
 		receiptService = receiptServices[0]
 	}
 	problems := problemWriter{logger: logger}
 	authentication := authHandlers{users: users, sessions: sessions}
+	if oauth != nil {
+		authentication.oauth = oauth
+	}
 	if sessions != nil {
 		sessions.ErrorFunc = func(w http.ResponseWriter, r *http.Request, _ error) {
 			problems.write(w, r, errors.New("session storage failed"))
@@ -105,6 +109,10 @@ func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Serv
 	for _, prefix := range []string{"/auth", "/oauth", "/mcp", "/.well-known"} {
 		router.Handle(prefix, http.NotFoundHandler())
 		router.Handle(prefix+"/*", http.NotFoundHandler())
+	}
+	if oauth != nil {
+		router.Handle("/oauth/*", oauth)
+		router.Handle("/.well-known/*", oauth)
 	}
 	router.Handle("/*", spa)
 	return &Server{http: &http.Server{Addr: address, Handler: router, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}, logger: logger}

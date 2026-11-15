@@ -1,0 +1,103 @@
+openapi: 3.0.3
+info:
+  title: MCP OAuth authorization protocol
+  version: 1.0.0
+servers: [{url: /}]
+security: []
+paths:
+  /.well-known/oauth-protected-resource:
+    get:
+      operationId: getProtectedResourceMetadata
+      responses:
+        '200': {description: 'RFC 9728 metadata for APP_BASE_URL/mcp'}
+  /.well-known/oauth-protected-resource/mcp:
+    get:
+      operationId: getMcpProtectedResourceMetadata
+      responses:
+        '200': {description: 'Same RFC 9728 metadata'}
+  /.well-known/oauth-authorization-server:
+    get:
+      operationId: getAuthorizationServerMetadata
+      responses:
+        '200': {description: 'RFC 8414 metadata, DCR, public clients and S256'}
+  /oauth/register:
+    post:
+      operationId: registerOAuthClient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [redirect_uris]
+              properties:
+                client_name: {type: string, maxLength: 200}
+                redirect_uris: {type: array, minItems: 1, maxItems: 10, items: {type: string, format: uri}}
+                token_endpoint_auth_method: {type: string, enum: [none]}
+                grant_types: {type: array, items: {type: string, enum: [authorization_code, refresh_token]}}
+                response_types: {type: array, items: {type: string, enum: [code]}}
+      responses:
+        '201': {description: 'Public client registered, RFC 7591'}
+        '400': {description: 'RFC 7591 invalid_client_metadata or invalid_redirect_uri'}
+        '429': {description: 'Registration rate or total cap exceeded'}
+  /oauth/authorize:
+    get:
+      operationId: authorizeOAuthClient
+      description: Requires client_id, registered redirect_uri, response_type=code, S256 code_challenge, resource=APP_BASE_URL/mcp; scope defaults to receipts:read offline_access. Preserves state. Uses the app session and Google sign-in. No redirects to unvalidated URIs.
+      responses:
+        '200': {description: 'Server-rendered consent naming client and redirect host'}
+        '302': {description: 'Google sign-in or validated OAuth error redirect'}
+        '400': {description: 'OAuth error for an untrusted authorization request'}
+    post:
+      operationId: approveOAuthClient
+      description: Same authorization parameters, decision=approve or deny, and a single-use csrf value bound to the app session. Requires the exact app Origin. Codes expire after 60 seconds.
+      responses:
+        '303': {description: 'Registered redirect with code and state or access_denied'}
+        '400': {description: 'OAuth error'}
+        '403': {description: 'Consent origin, session or CSRF check failed'}
+  /oauth/token:
+    post:
+      operationId: exchangeOAuthToken
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id, resource]
+              properties:
+                grant_type: {type: string, enum: [authorization_code, refresh_token]}
+                client_id: {type: string, format: uuid}
+                resource: {type: string, format: uri}
+                code: {type: string}
+                redirect_uri: {type: string, format: uri}
+                code_verifier: {type: string, minLength: 43, maxLength: 128}
+                refresh_token: {type: string}
+                scope: {type: string}
+      responses:
+        '200':
+          description: Opaque access token (3600 seconds), optional rotating refresh token (30-day absolute grant lifetime). Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [access_token, token_type, expires_in, scope]
+                properties:
+                  access_token: {type: string}
+                  token_type: {type: string, enum: [Bearer]}
+                  expires_in: {type: integer, minimum: 1, maximum: 3600}
+                  refresh_token: {type: string}
+                  scope: {type: string}
+        '400':
+          description: RFC 6749 error; expired, revoked or reused credentials produce invalid_grant
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+components:
+  schemas:
+    OAuthError:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+        error_description: {type: string}

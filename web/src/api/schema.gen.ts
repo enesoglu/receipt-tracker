@@ -32,7 +32,7 @@ export interface paths {
     put?: never;
     /**
      * Sign out
-     * @description Destroys the session. The cookie stops working immediately.
+     * @description Destroys the session and revokes all MCP connections and outstanding authorization codes for this user. The cookie stops working immediately.
      */
     post: operations['logout'];
     delete?: never;

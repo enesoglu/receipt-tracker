@@ -26,6 +26,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/httpapi"
 	"github.com/enesoglu/receipt-tracker/internal/ingest"
 	"github.com/enesoglu/receipt-tracker/internal/jobs"
+	"github.com/enesoglu/receipt-tracker/internal/oauthserver"
 	"github.com/enesoglu/receipt-tracker/internal/products"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
 	"github.com/enesoglu/receipt-tracker/internal/reports"
@@ -72,6 +73,11 @@ func run(logger *slog.Logger) error {
 	users := auth.New(pool, cfg, provider, time.Now)
 	sessions, stopSessions := auth.NewSessions(pool, cfg.Environment == config.EnvProd)
 	defer stopSessions()
+	oauth := oauthserver.New(pool, users, cfg.BaseURL, time.Now)
+	oauthHandler, err := oauthserver.NewHandler(oauth, sessions, logger)
+	if err != nil {
+		return fmt.Errorf("initialize OAuth handler: %w", err)
+	}
 	driveStorage, err := drive.New(sqlc.New(pool), users, drive.Options{Config: cfg, Logger: logger, OAuth: oauth2.Config{
 		ClientID: cfg.Google.ClientID, ClientSecret: cfg.Google.ClientSecret.Reveal(), RedirectURL: cfg.BaseURL + "/api/v1/storage/drive/callback",
 		//nolint:gosec // Google OAuth endpoint URLs are public configuration.
@@ -101,6 +107,9 @@ func run(logger *slog.Logger) error {
 		backups = backup.New(destination, backup.NewPostgresLock(pool, logger), logger, time.Now, backup.Options{DatabaseURL: cfg.DatabaseURL.Reveal(), HeartbeatURL: cfg.Backup.HeartbeatURL.Reveal()})
 	}
 	if len(os.Args) > 1 {
+		if os.Args[1] == "oauth" {
+			return oauth.CLI(ctx, os.Args[2:], os.Stdout)
+		}
 		if os.Args[1] == "backup" {
 			return backup.CLI(ctx, os.Args[2:], backups, destination, backup.NewRestorer(destination, backup.NewPostgresTarget(), cfg.DatabaseURL.Reveal()), os.Stdout)
 		}
@@ -151,7 +160,7 @@ func run(logger *slog.Logger) error {
 		workerDone <- err
 	}()
 	uploads := ingest.New(pool, images, string(cfg.Storage.Backend), ingest.NewHEICConverter(logger), worker, logger, time.Now)
-	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage, httpapi.Ingestion{Uploads: uploads, Usage: usage}, reports.New(pool), products.New(pool, time.Now), receiptService).Run(ctx)
+	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage, httpapi.Ingestion{Uploads: uploads, Usage: usage}, reports.New(pool), products.New(pool, time.Now), oauthHandler, receiptService).Run(ctx)
 	// The worker finishes its current job before the pool is closed.
 	stop()
 	workerErr := <-workerDone
