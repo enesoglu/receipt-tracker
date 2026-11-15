@@ -1,0 +1,254 @@
+package receipts
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/shopspring/decimal"
+
+	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
+	"github.com/enesoglu/receipt-tracker/internal/extract"
+	"github.com/enesoglu/receipt-tracker/internal/matching"
+)
+
+func amount(f extract.Field[decimal.Decimal], places int32) decimal.NullDecimal {
+	if !f.Found || f.Value.Round(places).Abs().GreaterThanOrEqual(decimal.New(1, 12-places)) {
+		return decimal.NullDecimal{}
+	}
+	return decimal.NewNullDecimal(f.Value.Round(places))
+}
+
+func text(f extract.Field[string]) *string {
+	v := strings.TrimSpace(f.Value)
+	if !f.Found || v == "" {
+		return nil
+	}
+	return &v
+}
+
+// ApplyResult replaces extracted data and derives product links and flags atomically.
+func (s *Service) ApplyResult(ctx context.Context, userID, receiptID uuid.UUID, result extract.Result) error {
+	return s.transaction(ctx, func(q *unit) error { return s.applyResult(ctx, q, userID, receiptID, result) })
+}
+
+func (s *Service) applyResult(ctx context.Context, q *unit, userID, receiptID uuid.UUID, result extract.Result) error {
+	if _, err := q.LockReviewReceipt(ctx, sqlc.LockReviewReceiptParams{UserID: userID, ReceiptID: receiptID}); err != nil {
+		return err
+	}
+	now := s.now().UTC()
+	p := sqlc.ApplyExtractedReceiptParams{UserID: userID, ReceiptID: receiptID, Subtotal: amount(result.Subtotal, 2), TaxTotal: amount(result.Tax, 2), Total: amount(result.Total, 2), Now: now}
+	if name := text(result.StoreName); name != nil {
+		key := matching.Normalize(*name).Key
+		if key != "" {
+			id, err := q.UpsertExtractedStore(ctx, sqlc.UpsertExtractedStoreParams{UserID: userID, Name: *name, NormalizedName: key, Now: now})
+			if err != nil {
+				return fmt.Errorf("save store: %w", err)
+			}
+			p.StoreID = uuid.NullUUID{UUID: id, Valid: true}
+		}
+	}
+	if result.Date.Found {
+		day := result.Date.Value.UTC()
+		p.PurchasedOn = &day
+	}
+	if result.Time.Found && result.Time.Value >= 0 && result.Time.Value < 24*time.Hour {
+		p.PurchasedTime = pgtype.Time{Microseconds: result.Time.Value.Microseconds(), Valid: true}
+	}
+	if currency := text(result.Currency); currency != nil && validCurrency(*currency) {
+		p.Currency = currency
+	}
+	if err := q.ApplyExtractedReceipt(ctx, p); err != nil {
+		return err
+	}
+	previous, err := q.ListReceiptLines(ctx, sqlc.ListReceiptLinesParams{UserID: userID, ReceiptID: receiptID})
+	if err != nil {
+		return err
+	}
+	lineIDs := make(map[int32]uuid.NullUUID, len(previous))
+	for _, l := range previous {
+		lineIDs[l.Position] = uuid.NullUUID{UUID: l.ID, Valid: true}
+	}
+	if err := q.DeleteReceiptFlags(ctx, sqlc.DeleteReceiptFlagsParams{UserID: userID, ReceiptID: receiptID}); err != nil {
+		return err
+	}
+	if err := q.DeleteExtractedLineItems(ctx, sqlc.DeleteExtractedLineItemsParams{UserID: userID, ReceiptID: receiptID}); err != nil {
+		return err
+	}
+	var matchFlags []Flag
+	for i, line := range result.Lines {
+		raw := line.Name.Value
+		name := extract.DisplayName(raw)
+		if !line.Name.Found || name == "" {
+			name = "Unreadable item"
+		}
+		confidence := min(max(line.Confidence, 0), 1)
+		l, err := q.InsertReviewLine(ctx, sqlc.InsertReviewLineParams{ExistingID: lineIDs[int32(i)], UserID: userID, ReceiptID: receiptID, Position: int32(i), RawName: raw, Name: name, Quantity: amount(line.Quantity, 3), QuantityUnit: text(line.Unit), UnitPrice: amount(line.UnitPrice, 2), LineTotal: amount(line.Total, 2), ProductCode: text(line.ProductCode), Confidence: &confidence, Now: now})
+		if err != nil {
+			return fmt.Errorf("save line: %w", err)
+		}
+		flags, err := s.matchLine(ctx, q, userID, p.StoreID, l)
+		if err != nil {
+			return err
+		}
+		matchFlags = append(matchFlags, flags...)
+	}
+	fields := []Confidence{{"store", result.StoreName.Confidence, result.StoreName.Found}, {"purchased_on", result.Date.Confidence, result.Date.Found}, {"total", result.Total.Confidence, result.Total.Found}}
+	return s.review(ctx, q, userID, receiptID, fields, matchFlags)
+}
+
+func validCurrency(v string) bool {
+	if len(v) != 3 {
+		return false
+	}
+	for _, c := range v {
+		if c < 'A' || c > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Service) matchLine(ctx context.Context, q *unit, userID uuid.UUID, storeID uuid.NullUUID, l sqlc.LineItem) ([]Flag, error) {
+	if l.LineTotal.Valid && l.LineTotal.Decimal.IsNegative() {
+		return nil, nil
+	}
+	code := ""
+	if l.ProductCode != nil {
+		code = *l.ProductCode
+	}
+	// Matching reads through the same transaction, so newly learned products are visible.
+	decision, err := matching.New(q.source).MatchLine(ctx, userID, matching.Line{Name: l.Name, Code: code, StoreID: storeID})
+	if err != nil {
+		return nil, err
+	}
+	p := sqlc.SetLineMatchParams{UserID: userID, LineID: l.ID, Now: s.now().UTC()}
+	switch decision.Outcome {
+	case matching.Ask:
+		p.MatchStatus = "needs_review"
+		if err := q.SetLineMatch(ctx, p); err != nil {
+			return nil, err
+		}
+		flag, err := matchQuestion(ctx, q, userID, l, decision)
+		if err != nil {
+			return nil, err
+		}
+		return []Flag{flag}, nil
+	case matching.CreateNew:
+		product, err := s.createProduct(ctx, q, userID, l.Name)
+		if err != nil {
+			return nil, err
+		}
+		p.ProductID = uuid.NullUUID{UUID: product.ID, Valid: true}
+		p.MatchStatus = "new_product"
+	case matching.AutoLink:
+		p.ProductID = uuid.NullUUID{UUID: decision.ProductID, Valid: true}
+		p.MatchStatus = "auto_linked"
+		method := "similarity"
+		switch decision.Reason {
+		case matching.ReasonExactAlias:
+			method = "alias"
+		case matching.ReasonCodeMatch:
+			method = "code"
+		}
+		p.MatchMethod = &method
+		for _, c := range decision.Candidates {
+			if c.ProductID == decision.ProductID {
+				score := c.Score
+				p.MatchScore = &score
+				break
+			}
+		}
+	}
+	if err := s.remember(ctx, q, userID, storeID, p.ProductID.UUID, l); err != nil {
+		return nil, err
+	}
+	return nil, q.SetLineMatch(ctx, p)
+}
+
+func (s *Service) createProduct(ctx context.Context, q *unit, userID uuid.UUID, name string) (sqlc.Product, error) {
+	p := sqlc.CreateReviewProductParams{UserID: userID, CanonicalName: name, Now: s.now().UTC()}
+	if size := matching.Normalize(name).Size; size != nil && size.Value.Abs().LessThan(decimal.New(1, 9)) {
+		p.SizeValue = decimal.NewNullDecimal(size.Value)
+		p.SizeUnit = &size.Unit
+	}
+	return q.CreateReviewProduct(ctx, p)
+}
+
+func (s *Service) remember(ctx context.Context, q *unit, userID uuid.UUID, storeID uuid.NullUUID, productID uuid.UUID, l sqlc.LineItem) error {
+	key := matching.Normalize(l.Name).Key
+	if key != "" {
+		if err := q.RememberReviewAlias(ctx, sqlc.RememberReviewAliasParams{UserID: userID, ProductID: productID, RawName: l.Name, NormalizedName: key, StoreID: storeID, Now: s.now().UTC()}); err != nil {
+			return err
+		}
+	}
+	if l.ProductCode == nil {
+		return nil
+	}
+	kind := "store"
+	codeStore := storeID
+	if matching.ValidGTIN(*l.ProductCode) {
+		kind = "gtin"
+		codeStore = uuid.NullUUID{}
+	} else if !storeID.Valid {
+		return nil
+	}
+	return q.RememberReviewCode(ctx, sqlc.RememberReviewCodeParams{UserID: userID, ProductID: productID, Code: *l.ProductCode, Kind: kind, StoreID: codeStore, Now: s.now().UTC()})
+}
+
+func matchQuestion(ctx context.Context, q *unit, userID uuid.UUID, l sqlc.LineItem, d matching.Decision) (Flag, error) {
+	candidates := make([]map[string]interface{}, 0, len(d.Candidates))
+
+	for _, c := range d.Candidates {
+		p, err := q.GetReviewProduct(ctx, sqlc.GetReviewProductParams{UserID: userID, ProductID: c.ProductID})
+		if err != nil {
+			return Flag{}, err
+		}
+		var size *string
+		if p.SizeValue.Valid {
+			v := p.SizeValue.Decimal.String()
+			size = &v
+		}
+		candidate := map[string]interface{}{"productId": p.ID, "canonicalName": p.CanonicalName, "sizeValue": size, "sizeUnit": p.SizeUnit, "score": c.Score}
+		candidates = append(candidates, candidate)
+
+	}
+	flags := uncertainMatch(l.ID, d, candidates)
+	flags = append(flags, codeConflict(l.ID, l.ProductCode, d, candidates)...)
+	return flags[0], nil
+}
+
+func (s *Service) review(ctx context.Context, q *unit, userID, receiptID uuid.UUID, fields []Confidence, extra []Flag) error {
+	r, err := q.GetReviewReceipt(ctx, sqlc.GetReviewReceiptParams{UserID: userID, ReceiptID: receiptID})
+	if err != nil {
+		return err
+	}
+	lines, err := q.ListReceiptLines(ctx, sqlc.ListReceiptLinesParams{UserID: userID, ReceiptID: receiptID})
+	if err != nil {
+		return err
+	}
+	duplicates, err := q.FindDuplicateReceipts(ctx, sqlc.FindDuplicateReceiptsParams{UserID: userID, ReceiptID: receiptID, StoreID: r.StoreID, PurchasedOn: r.PurchasedOn, Total: r.Total})
+	if err != nil {
+		return err
+	}
+	flags := append([]Flag{}, extra...)
+	flags = append(flags, lowConfidence(fields, lines)...)
+	flags = append(flags, missingFields(r.PurchasedOn, r.Total)...)
+	flags = append(flags, lineMath(lines)...)
+	flags = append(flags, sumMismatch(r.Total, lines)...)
+	flags = append(flags, possibleDuplicate(duplicates)...)
+	for _, f := range flags {
+		detail, err := json.Marshal(f.Detail)
+		if err != nil {
+			return err
+		}
+		if err = q.InsertReviewFlag(ctx, sqlc.InsertReviewFlagParams{UserID: userID, ReceiptID: receiptID, LineItemID: f.LineID, Kind: f.Kind, Detail: detail, Now: s.now().UTC()}); err != nil {
+			return err
+		}
+	}
+	return q.RefreshReviewStatus(ctx, sqlc.RefreshReviewStatusParams{UserID: userID, ReceiptID: receiptID, Now: s.now().UTC()})
+}

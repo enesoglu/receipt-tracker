@@ -546,6 +546,7 @@ func (e UncertainMatchFlagKind) Valid() bool {
 
 // Defines values for UncertainMatchReason.
 const (
+	UncertainMatchReasonAmbiguousCode    UncertainMatchReason = "ambiguous_code"
 	UncertainMatchReasonCodeNameMismatch UncertainMatchReason = "code_name_mismatch"
 	UncertainMatchReasonSimilarName      UncertainMatchReason = "similar_name"
 	UncertainMatchReasonSizeConflict     UncertainMatchReason = "size_conflict"
@@ -554,6 +555,8 @@ const (
 // Valid indicates whether the value is a known member of the UncertainMatchReason enum.
 func (e UncertainMatchReason) Valid() bool {
 	switch e {
+	case UncertainMatchReasonAmbiguousCode:
+		return true
 	case UncertainMatchReasonCodeNameMismatch:
 		return true
 	case UncertainMatchReasonSimilarName:
@@ -1705,6 +1708,7 @@ type UncertainMatchDetail struct {
 	// Reason - `size_conflict`: the name fits, but the size on the line differs from the product's.
 	// - `code_name_mismatch`: the code fits, but the name does not.
 	// - `similar_name`: the name is similar, but not clearly enough to link.
+	// - `ambiguous_code`: several products own the printed code.
 	Reason UncertainMatchReason `json:"reason"`
 }
 
@@ -1732,6 +1736,7 @@ type UncertainMatchFlagKind string
 // UncertainMatchReason - `size_conflict`: the name fits, but the size on the line differs from the product's.
 // - `code_name_mismatch`: the code fits, but the name does not.
 // - `similar_name`: the name is similar, but not clearly enough to link.
+// - `ambiguous_code`: several products own the printed code.
 type UncertainMatchReason string
 
 // UploadError defines model for UploadError.

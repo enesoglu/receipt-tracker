@@ -23,6 +23,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/httpapi"
 	"github.com/enesoglu/receipt-tracker/internal/ingest"
 	"github.com/enesoglu/receipt-tracker/internal/jobs"
+	"github.com/enesoglu/receipt-tracker/internal/receipts"
 	"github.com/enesoglu/receipt-tracker/internal/storage/backend"
 	"github.com/enesoglu/receipt-tracker/internal/storage/drive"
 	"github.com/enesoglu/receipt-tracker/internal/web"
@@ -99,7 +100,7 @@ func run(logger *slog.Logger) error {
 		}
 	}
 	// Handlers are registered before the worker starts reading them.
-	worker.Register(jobs.KindExtractReceipt, extract.NewJob(pool, images, extractor, usage, extract.NewStoreResult(pool, time.Now), logger, time.Now))
+	worker.Register(jobs.KindExtractReceipt, extract.NewJob(pool, images, extractor, usage, receipts.New(pool, time.Now), logger, time.Now))
 	workerDone := make(chan error, 1)
 	go func() {
 		err := worker.Run(ctx)

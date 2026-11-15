@@ -1225,10 +1225,14 @@ export interface components {
      * @description - `size_conflict`: the name fits, but the size on the line differs from the product's.
      *     - `code_name_mismatch`: the code fits, but the name does not.
      *     - `similar_name`: the name is similar, but not clearly enough to link.
+     *     - `ambiguous_code`: several products own the printed code.
      * @enum {string}
      */
     UncertainMatchReason:
-      'size_conflict' | 'code_name_mismatch' | 'similar_name';
+      | 'size_conflict'
+      | 'code_name_mismatch'
+      | 'similar_name'
+      | 'ambiguous_code';
     /** @description A product the line may be. */
     MatchCandidate: {
       /** Format: uuid */
