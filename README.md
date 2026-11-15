@@ -232,7 +232,9 @@ security fix required by the lint toolchain.
 
 Pull requests are rebase-merged after every check is green. Configure branch
 protection on `main` to require the final check named **ci**, require pull
-requests, and enforce linear history. There is no deployment workflow.
+requests, and enforce linear history. The image-publishing workflow pushes SHA/latest tags on main and version tags
+on `v*`; deployment remains manual. See [Operations](docs/OPERATIONS.md) for
+production Compose and recovery.
 
 ## Sign-in and sessions
 
@@ -275,7 +277,7 @@ a real persisted session through the production middleware. Provision a second
 user with another allowed dev email for resource-isolation assertions. The helper
 is for tests only and never enables a runtime authentication bypass.
 
-Google Drive setup and connection recovery are documented in [Storage operations](docs/OPERATIONS.md).
+Google Drive setup and connection recovery are documented in [Operations](docs/OPERATIONS.md).
 
 ## Database backups
 
