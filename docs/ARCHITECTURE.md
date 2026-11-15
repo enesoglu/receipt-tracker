@@ -160,6 +160,18 @@ per receipt later without a schema change.
    temporary JPEG for Azure only; the stored original is untouched.
 5. The raw result is saved in `extractions`, mapped to receipt fields and line
    items, then matching (5.2) and review rules (5.3) run in one transaction.
+
+   **Mapping repairs.** Mapping corrects what Azure was seen to get wrong on
+   real Turkish receipts, using only text from the stored response, so a
+   reprocess repairs old results the same way: a discount printed with a
+   minus keeps its sign even when Azure returns a positive amount; a missing
+   purchase unit is read from the unit price (`114,90 TL/kg`); a missing
+   total is filled only when the line totals equal subtotal plus tax to the
+   cent (an existing total is never replaced); a VAT rate glued to a name
+   (`BUGDA%01`) is dropped from the displayed name, never the number before
+   it (`3%01` keeps `3`), while `raw_name` keeps the printed text.
+   Unreadable characters are never guessed, and a weight/price row that
+   Azure attaches to the wrong item is left to the `line_math` flag.
 6. The UI polls `GET /api/v1/receipts?ids=…` every 2 s while any receipt is
    `queued` or `processing`. No websockets.
 
