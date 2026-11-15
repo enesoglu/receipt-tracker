@@ -1,0 +1,40 @@
+name: receipt-tracker
+services:
+  app:
+    image: ghcr.io/enesoglu/receipt-tracker:${IMAGE_TAG:-latest}
+    environment:
+      APP_ENV: prod
+      APP_LISTEN_ADDR: :8087
+    env_file: /etc/receipt-tracker/app.env
+    ports:
+      - "127.0.0.1:8087:8087"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8087/livez"]
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    depends_on:
+      db:
+        condition: service_healthy
+    stop_grace_period: 30s
+    restart: unless-stopped
+  db:
+    image: postgres:18.4-alpine3.23
+    env_file: /etc/receipt-tracker/db.env
+    volumes:
+      - pgdata:/var/lib/postgresql
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=20"]
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  pgdata:

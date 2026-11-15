@@ -1,4 +1,4 @@
-# Storage operations
+# Operations
 
 ## Connect Google Drive
 
@@ -97,3 +97,280 @@ consent. Use the same client ID and only `receipt-tracker-test`. Record both
 results before declaring storage complete; run this exercise only after the
 Drive implementation PR has merged. Neither production data nor real Google
 credentials belong in test fixtures or command output.
+
+## Production deployment
+
+The target is Debian 13, Docker Engine 29.9.3, Compose v5.7.0 and host Caddy
+v2.11.4. Deploy manually with `sudo docker compose`; CI publishes images and
+does not access the VPS. Check `timedatectl status` before deployment and
+after reboot.
+
+1. Restore or create `/etc/receipt-tracker/` (0700), with `app.env` and
+   `db.env` (0600, root-owned). The host's existing encrypted configuration
+   backup covers this directory. `.env.example` lists application variable
+   names; never commit real values. In `db.env`, set `POSTGRES_USER`,
+   `POSTGRES_PASSWORD` and `POSTGRES_DB`. Application `DATABASE_URL` uses
+   those credentials, hostname `db`, port 5432 and that database name.
+2. In `app.env`, set `APP_ENV=prod`, `APP_BASE_URL=https://receipt.enesoglu.com`,
+   encryption key, allowed/admin accounts, Google client and extractor.
+   Do not set `DEV_LOGIN_EMAIL`. For Drive backups use
+   `BACKUP_DESTINATION=drive` and `BACKUP_SCHEDULE=02:00` (UTC), independently
+   of the image backend. Preserve `DRIVE_ROOT_FOLDER_ID` when configured.
+3. Copy `deploy/compose.prod.yaml` from the selected repository revision to
+   `/opt/receipt-tracker/compose.yaml`. Keep only the non-secret `IMAGE_TAG`
+   in `/opt/receipt-tracker/.env`. Prefer a full commit SHA. Every push to
+   main publishes its full SHA and `latest`; `v*` Git tags publish that tag.
+   Images are `ghcr.io/enesoglu/receipt-tracker`. Ensure the package is public
+   or authenticate `sudo docker login ghcr.io` with a read-packages credential
+   through stdin before pulling.
+4. Start from `/opt/receipt-tracker`:
+
+   ```sh
+   sudo docker compose -f compose.yaml config --quiet
+   sudo docker compose -f compose.yaml pull
+   sudo docker compose -f compose.yaml up -d --wait
+   curl --fail http://127.0.0.1:8087/livez
+   ```
+
+   Always use `config --quiet`; the plain command prints resolved secrets.
+   App runs with a read-only root and a 64 MiB `/tmp` tmpfs. Only loopback
+   port 8087 is published. Postgres has no published port and persists in
+   `pgdata`. Limits start at 512 MiB app and 384 MiB db; Postgres uses
+   `shared_buffers=64MB`, `max_connections=20`, and the app pool is capped at
+   five. Container logging inherits the host daemon's rotation settings.
+5. Append `deploy/Caddyfile.snippet` once to the existing host Caddyfile,
+   leaving its four sites intact. It is a complete independent site block,
+   with HSTS and Server-header removal only; content security headers come
+   from the app. Nothing in Compose binds 80/443 or runs a Caddy container.
+   Prepare the log directory, validate and reload on the host:
+
+   ```sh
+   sudo install -d -o caddy -g caddy -m 0750 /var/log/caddy
+   sudo -u caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+   sudo systemctl reload caddy
+   ```
+
+   If a root-run validation previously created the site log, give it to user
+   `caddy`. JSON access logs go to
+   `/var/log/caddy/receipt.enesoglu.com.log`, roll at 10 MiB, and retain five
+   rolled files. The filter deletes OAuth `code` and `state` query parameters.
+   Changing rotation settings for an existing file requires a Caddy restart;
+   coordinate that with the other sites. `/mcp` response buffering is disabled.
+6. Sign in and connect Drive as admin using the earlier section. Before
+   consent, health may correctly return 503 while liveness stays 200.
+   Check health, open an image, run a backup and perform the recovery recheck
+   below before go-live.
+
+The snippet follows the official [query-filter syntax](https://caddyserver.com/docs/caddyfile/directives/log#query),
+confirmed against the [Caddy v2.11.4 source](https://github.com/caddyserver/caddy/blob/v2.11.4/modules/logging/filters.go).
+Its `flush_interval -1` follows the official [streaming documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#streaming).
+Validation versions and local memory measurements are recorded in the deployment PR.
+
+## Health, alerts and logs
+
+Both endpoints are unauthenticated. `/livez` answers 200 whenever HTTP serves
+requests and is the container health check. `/healthz` returns exactly
+`status`, `database` and `drive`, without tokens, account details or error text:
+
+```json
+{"status":"ok","database":"ok","drive":"ok"}
+```
+
+Health returns 200 only when the database answers and required Drive state is
+usable; otherwise 503 with `status: unavailable`. `database` is `ok` or
+`unavailable`. During database failure, HTTP retains its last known Drive state.
+
+| `drive` | Meaning and action |
+| --- | --- |
+| `ok` | Saved grant is connected; see the moved-root section for folder errors that do not invalidate a grant. |
+| `not_connected` | Images or backups require Drive, but no connection is saved. Connect as admin. |
+| `reconnect_needed` | Google returned `invalid_grant`, or the key cannot decrypt the saved token. Check the key and reconnect. |
+| `not_required` | Neither image storage nor backups uses Drive. |
+
+Health requests do not call Google. The background refresh runs at most every
+15 minutes. Only definitive Google `invalid_grant` changes grant state;
+network errors, timeouts, malformed replies, 429 and 5xx preserve the last
+state, log sanitized warnings and retry next interval. Reconnecting updates
+saved state immediately. Stopping db yields 503 and starting it restores 200
+once it answers and required Drive state is usable. Liveness is independent.
+
+Expect one alert from the host health script when app is intentionally
+stopped, including during maintenance. `BACKUP_HEARTBEAT_URL`, when set,
+receives one GET after success or one GET to its `/fail` path after failure,
+with a 5-second timeout and no retries. A heartbeat outage is a warning and
+never fails a successful backup. The app sends no email: host outbound SMTP
+is blocked.
+
+```sh
+cd /opt/receipt-tracker
+sudo docker compose -f compose.yaml logs --tail 100 app
+sudo docker compose -f compose.yaml logs --tail 100 db
+sudo tail -n 100 /var/log/caddy/receipt.enesoglu.com.log
+sudo journalctl -u caddy --since today
+sudo docker stats --no-stream
+```
+
+For a full disk, check space and inodes (`df -h`, `df -i`), `docker system df`,
+unused release images, daemon log rotation, the Caddy log directory and
+Postgres/WAL growth. Remove only identified unused files/images; keep
+`pgdata` and a verified dump. Dumps stream directly to their destination,
+without a database-sized spool file. Caddy logs are disposable and are not
+covered by the host backup.
+
+## Update and rollback
+
+Before updating, run a backup and verify its listing, record the current
+immutable image tag, check clock synchronization and the host secrets backup.
+Edit only `IMAGE_TAG` in `/opt/receipt-tracker/.env`, then:
+
+```sh
+cd /opt/receipt-tracker
+sudo docker compose -f compose.yaml config --quiet
+sudo docker compose -f compose.yaml pull app
+sudo docker compose -f compose.yaml up -d --wait app
+curl --fail http://127.0.0.1:8087/livez
+curl --fail https://receipt.enesoglu.com/healthz
+```
+
+Migrations run at startup. For a code rollback, put the previous SHA back and
+repeat pull/up. Confirm the old image supports the current schema: image
+rollback does not undo migrations. Otherwise restore a pre-update dump into a
+separate database, verify it, switch `DATABASE_URL` and recreate app. Retain
+the old database until recovery checks pass. Do not delete a volume to roll back.
+
+## Backup and restore
+
+From `/opt/receipt-tracker`:
+
+```sh
+sudo docker compose -f compose.yaml exec app /app/server backup run
+sudo docker compose -f compose.yaml exec app /app/server backup list
+```
+
+A run holds a Postgres advisory lock, streams `pg_dump --format=custom`,
+verifies stored size and records the result. Failed dumps remove partial
+objects. Names are UTC timestamps ending in `.dump`. Retention keeps the
+newest dump on seven distinct UTC days and in four distinct ISO weeks;
+overlaps count once. Unknown names and future-dated dumps are untouched.
+`BACKUP_DESTINATION=none` disables scheduling and logs a startup warning.
+
+Drive backups use `backups/` beneath the root returned by the shared
+connection, even with local image storage. Refer to
+[Keep the root folder inside another Drive folder](#keep-the-root-folder-inside-another-drive-folder):
+preserve the pinned id for a moved/renamed root. Backups never find a root
+by name in My Drive independently.
+
+Create an unused recovery database on the configured Postgres server. It
+must differ from the database in `DATABASE_URL`; use another name if the
+app already uses `receipt_recovery`. Passwords come from configuration:
+
+```sh
+sudo docker compose -f compose.yaml exec db sh -c 'createdb -U "$POSTGRES_USER" receipt_recovery'
+sudo docker compose -f compose.yaml run --rm app backup restore <object>.dump --target-db receipt_recovery
+sudo docker compose -f compose.yaml exec db sh -c 'psql -U "$POSTGRES_USER" -d receipt_recovery -c "SELECT count(*) FROM receipts;"'
+```
+
+Nonempty targets are refused unless `--force` is added. With force, archive
+objects are cleaned/recreated in a single transaction; failure rolls back.
+Verify counts, representative content and image references before switching
+configuration. `task backup:test` automates real dump/restore and compares
+counts/checksums of six key tables for two synthetic users, plus recovery
+through a fresh token against fake Drive. It uses a disposable database.
+
+To activate a recovered target, stop app and change the database name in the
+root-only `app.env` `DATABASE_URL`. Set `POSTGRES_DB` in `db.env` to that same
+name so container health checks and a future empty-host initialization agree.
+This setting does not rename or remove existing databases. Recreate both
+services with `sudo docker compose -f compose.yaml up -d --force-recreate --wait`;
+`pgdata` is retained. A plain restart does not reload environment files. Check health, sign in,
+inspect old receipts/images and reconnect if an older restored token needs
+it. Keep the previous database until these checks pass.
+
+### App down: local-file recovery
+
+Download a dump by hand from the configured root's `backups/` folder in the
+Drive web UI. Transfer it securely to a private host directory such as
+`/root/receipt-recovery/`, with no public link. Start only db, create a separate
+target as above and use a one-off container; app HTTP can remain stopped:
+
+```sh
+sudo docker compose -f compose.yaml up -d --wait db
+sudo docker compose -f compose.yaml run --rm --user root --volume /root/receipt-recovery:/restore:ro app backup restore /restore/downloaded.dump --target-db receipt_recovery
+```
+
+The one-off root user reads the root-owned recovery file; the app service
+keeps its unprivileged image user. No working Drive grant is needed for this
+file path. Use `--force` only for an intentionally replaceable nonempty target.
+Verify, switch `DATABASE_URL` and recreate app as above; remove the private
+downloaded copy when no longer needed.
+
+## Secrets and key rotation
+
+`APP_ENCRYPTION_KEY` is not in the dump. Keep it, database credentials, Google
+client secret, allowed/admin accounts and pinned root id in the encrypted
+host configuration backup. Also retain a monthly dump and configuration copy
+outside Google, as recorded in ARCHITECTURE §8. Never delete or recreate the
+Google Cloud project or Drive OAuth client: keep the same `GOOGLE_CLIENT_ID`.
+Only the client secret may be rotated; update app.env and recreate app.
+
+For encryption-key rotation, first verify a dump, preserve the old key with
+its dated configuration backup, and stop app. Generate a new random 32-byte
+base64 key in the owner's secret workflow (for example host
+`openssl rand -base64 32`), replace it in `app.env` and recreate app. The old
+token cannot decrypt and reports `reconnect_needed`. Reconnect as admin to
+save a fresh grant under the new key. Check an earlier image, list old dumps
+and take a new dump. Keep the old key for older recovery sets; restoring an
+old dump may require that key or another reconnect under the current key.
+Disconnect/reconnect never revokes Google's grant.
+
+## Recovery onto a fresh host
+
+Use this order: **restore secrets -> empty database -> re-authorize Drive ->
+restore the database -> restart/recreate app**.
+
+1. Restore `/etc/receipt-tracker/`, including the encryption key, same Google
+   client/project and `DRIVE_ROOT_FOLDER_ID` when configured. Restore Compose
+   from the repository and the selected image tag under `/opt/receipt-tracker/`.
+2. Bring up empty db and app as in first deployment. The app migrates its
+   empty bootstrap database; admit the same owner/admin. Docker volumes and
+   `/opt` are not recovered from the host backup.
+3. Re-authorize Drive without revoking the previous grant. Preserve a moved
+   root's id using the earlier moved-root section. Run `backup list` and
+   confirm older dumps are visible before proceeding.
+4. Create a different database and restore an earlier dump through the new
+   connection. This separate target is required because CLI refuses its
+   configured source database. Verify counts and content. If files are not
+   visible, use the Drive web UI/local-file fallback.
+5. Stop app, switch `DATABASE_URL` and `db.env` `POSTGRES_DB` to the restored
+   target and recreate both services with `up -d --force-recreate --wait`.
+   The existing volume is retained. Check health, sign in and inspect old
+   images. Reconnect again if the restored dump contained an unusable old token.
+
+The owner proved both required real-account cases on **2026-11-15**, recorded
+in package 04's progress: (a) fresh database/new consent without revoking and
+(b) manual Google revocation followed by consent. Both preserved the earlier
+synthetic marker and reused the root. These results are specific to that
+client/account/date. The moved-root exercise (guide 2.8) is separate and is
+not claimed verified.
+
+Before go-live, perform a short **non-revoking** recheck: create a synthetic
+dump and record its name/counts, use an isolated empty bootstrap database with
+the same client/root settings, authorize anew, list the earlier dump and
+restore it into another scratch database with `--force`. Compare counts and
+content and confirm one root and one `backups` folder. Leave production data
+unchanged; record the result, remove only scratch databases/test dump, and
+never revoke Google access as cleanup. This is the manual counterpart of
+the fake-Drive recovery test.
+
+The app never revokes Drive access. Manual Google-account revocation may hide
+earlier files after reconnecting; the successful 2026-11-15 exercise is not a
+guarantee of future provider behavior. The Picker-based re-grant flow in
+ARCHITECTURE §5.7 is **planned and unbuilt**, intended for selecting a small
+set of dumps; it is not an available recovery button or a proven solution
+for thousands of images.
+
+Drive policy restricts app-content backups without Google's written consent.
+The owner accepted this risk for personal use (ARCHITECTURE §8); revisit
+before public launch. The destination interface allows replacing Drive
+without changing retention or scheduling. Images are not copied by this
+backup service: Drive is their durable home.

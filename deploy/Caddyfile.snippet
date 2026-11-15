@@ -1,0 +1,28 @@
+receipt.enesoglu.com {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/receipt.enesoglu.com.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					delete code
+					delete state
+				}
+			}
+		}
+	}
+
+	@mcp path /mcp /mcp/*
+	reverse_proxy @mcp 127.0.0.1:8087 {
+		flush_interval -1
+	}
+	reverse_proxy 127.0.0.1:8087
+}
