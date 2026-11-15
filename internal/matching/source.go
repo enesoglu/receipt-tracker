@@ -44,6 +44,7 @@ func (s *SQLSource) Candidates(ctx context.Context, userID uuid.UUID, key, code 
 			c := found.product(row.ProductID, row.Rejected)
 			c.Aliases = append(c.Aliases, Alias{Name: row.NormalizedName, StoreID: row.StoreID})
 			c.Size = recordedSize(row.SizeValue, row.SizeUnit)
+			c.Basis = Basis(row.PriceBasis)
 		}
 	}
 	if code != "" {
@@ -103,6 +104,7 @@ func (s *candidateSet) addCodeOwners(rows []sqlc.ListMatchCodeOwnersRow) {
 			owners[row.ProductID] = o
 			c.Aliases = nil
 			c.Size = recordedSize(row.SizeValue, row.SizeUnit)
+			c.Basis = Basis(row.PriceBasis)
 		}
 		code := Code{Value: row.Code, Kind: CodeKind(row.Kind), StoreID: row.CodeStoreID}
 		if !o.codes[code] {

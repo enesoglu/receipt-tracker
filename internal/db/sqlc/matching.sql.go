@@ -13,7 +13,7 @@ import (
 )
 
 const listMatchAliasesBySimilarity = `-- name: ListMatchAliasesBySimilarity :many
-SELECT a.product_id, a.normalized_name, a.store_id, p.size_value, p.size_unit,
+SELECT a.product_id, a.normalized_name, a.store_id, p.size_value, p.size_unit, p.price_basis,
        EXISTS (
            SELECT 1 FROM match_rejections r
            WHERE r.user_id = $1
@@ -40,6 +40,7 @@ type ListMatchAliasesBySimilarityRow struct {
 	StoreID        uuid.NullUUID
 	SizeValue      decimal.NullDecimal
 	SizeUnit       *string
+	PriceBasis     string
 	Rejected       bool
 }
 
@@ -47,7 +48,7 @@ type ListMatchAliasesBySimilarityRow struct {
 // comparison key by trigram distance, which is 1 minus pg_trgm similarity,
 // so the nearest are the most similar. The <-> operator walks the GiST
 // index on (user_id, normalized_name). Each row carries the size recorded
-// on the product and whether the user rejected the key for that product.
+// on the product, its price basis, and whether the user rejected the key for that product.
 func (q *Queries) ListMatchAliasesBySimilarity(ctx context.Context, arg ListMatchAliasesBySimilarityParams) ([]ListMatchAliasesBySimilarityRow, error) {
 	rows, err := q.db.Query(ctx, listMatchAliasesBySimilarity, arg.UserID, arg.Name, arg.MaxAliases)
 	if err != nil {
@@ -63,6 +64,7 @@ func (q *Queries) ListMatchAliasesBySimilarity(ctx context.Context, arg ListMatc
 			&i.StoreID,
 			&i.SizeValue,
 			&i.SizeUnit,
+			&i.PriceBasis,
 			&i.Rejected,
 		); err != nil {
 			return nil, err
@@ -77,7 +79,7 @@ func (q *Queries) ListMatchAliasesBySimilarity(ctx context.Context, arg ListMatc
 
 const listMatchCodeOwners = `-- name: ListMatchCodeOwners :many
 SELECT c.product_id, c.code, c.kind, c.store_id AS code_store_id,
-       p.canonical_name, p.size_value, p.size_unit,
+       p.canonical_name, p.size_value, p.size_unit, p.price_basis,
        a.normalized_name AS alias_name, a.store_id AS alias_store_id,
        EXISTS (
            SELECT 1 FROM match_rejections r
@@ -107,6 +109,7 @@ type ListMatchCodeOwnersRow struct {
 	CanonicalName string
 	SizeValue     decimal.NullDecimal
 	SizeUnit      *string
+	PriceBasis    string
 	AliasName     *string
 	AliasStoreID  uuid.NullUUID
 	Rejected      bool
@@ -133,6 +136,7 @@ func (q *Queries) ListMatchCodeOwners(ctx context.Context, arg ListMatchCodeOwne
 			&i.CanonicalName,
 			&i.SizeValue,
 			&i.SizeUnit,
+			&i.PriceBasis,
 			&i.AliasName,
 			&i.AliasStoreID,
 			&i.Rejected,

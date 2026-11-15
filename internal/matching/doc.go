@@ -71,6 +71,11 @@
 //   - Rule 2 blocks a product whose size differs from the line's ("1 L"
 //     against "2 L", or "1 L" against "1 KG"). A blocked product is never
 //     linked automatically, but it can still be offered in a question.
+//     A generic product, whose prices are compared per kilogram or litre
+//     ([BasisKilogram], [BasisLitre]), stands for every amount of its
+//     dimension: "500 G" and "1 KG" both fit a kg product, so a new pack
+//     size links when the name fits. A size of another dimension still
+//     blocks it: a "1 L" line is never a kg product.
 //
 // The candidates are sorted by score, best first; among equal scores,
 // products that are not blocked come first, then the order is by product

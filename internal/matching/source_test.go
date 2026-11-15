@@ -370,6 +370,9 @@ func TestMatchLine_GoldenCasesThroughPostgres(t *testing.T) {
 					size = &Size{Value: decimal.RequireFromString(value), Unit: unit}
 				}
 				f.product(user, id, p.ID, size)
+				if p.Basis != "" {
+					f.exec(`UPDATE products SET price_basis = $1 WHERE id = $2`, string(p.Basis), id)
+				}
 				for _, a := range p.Aliases {
 					f.alias(user, id, a.Name, store(a.Store))
 				}
