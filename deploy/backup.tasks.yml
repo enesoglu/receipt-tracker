@@ -1,0 +1,17 @@
+version: '3'
+env:
+  GOTOOLCHAIN: go1.26.11
+  TEST_DATABASE_URL: '{{default "postgres://receipt:receipt@localhost:15432/receipt_tracker_test?sslmode=disable" .TEST_DATABASE_URL}}'
+tasks:
+  test:
+    dir: '{{.ROOT_DIR}}/..'
+    cmds:
+      - go test -count=1 ./internal/backup/...
+  format:
+    dir: '{{.ROOT_DIR}}/..'
+    cmds:
+      - bin/golangci-lint fmt internal/backup
+  lint:
+    dir: '{{.ROOT_DIR}}/..'
+    cmds:
+      - bin/golangci-lint run ./internal/backup/...
