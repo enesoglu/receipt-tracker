@@ -162,6 +162,22 @@ func (q *Queries) GetOwnedReceiptImage(ctx context.Context, arg GetOwnedReceiptI
 	return i, err
 }
 
+const getOwnedSettings = `-- name: GetOwnedSettings :one
+SELECT user_id, default_currency, default_receipt_title, updated_at FROM user_settings WHERE user_id = $1
+`
+
+func (q *Queries) GetOwnedSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error) {
+	row := q.db.QueryRow(ctx, getOwnedSettings, userID)
+	var i UserSetting
+	err := row.Scan(
+		&i.UserID,
+		&i.DefaultCurrency,
+		&i.DefaultReceiptTitle,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getReceiptStore = `-- name: GetReceiptStore :one
 SELECT id, user_id, name, normalized_name, created_at, updated_at FROM stores WHERE user_id = $1 AND id = $2
 `
@@ -397,6 +413,22 @@ func (q *Queries) ListReceiptLines(ctx context.Context, arg ListReceiptLinesPara
 	return items, nil
 }
 
+const lockOwnedSettings = `-- name: LockOwnedSettings :one
+SELECT user_id, default_currency, default_receipt_title, updated_at FROM user_settings WHERE user_id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockOwnedSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error) {
+	row := q.db.QueryRow(ctx, lockOwnedSettings, userID)
+	var i UserSetting
+	err := row.Scan(
+		&i.UserID,
+		&i.DefaultCurrency,
+		&i.DefaultReceiptTitle,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const lockReviewReceipt = `-- name: LockReviewReceipt :one
 SELECT id, user_id, title, store_id, purchased_on, purchased_time, currency, subtotal, tax_total, total, status, source, failure_reason, created_at, updated_at FROM receipts WHERE user_id = $1 AND id = $2 FOR UPDATE
 `
@@ -591,6 +623,35 @@ func (q *Queries) SetLineMatch(ctx context.Context, arg SetLineMatchParams) erro
 		arg.LineID,
 	)
 	return err
+}
+
+const updateOwnedSettings = `-- name: UpdateOwnedSettings :one
+UPDATE user_settings SET default_currency = $1,default_receipt_title = $2,updated_at = $3
+WHERE user_id = $4 RETURNING user_id, default_currency, default_receipt_title, updated_at
+`
+
+type UpdateOwnedSettingsParams struct {
+	DefaultCurrency     string
+	DefaultReceiptTitle string
+	Now                 time.Time
+	UserID              uuid.UUID
+}
+
+func (q *Queries) UpdateOwnedSettings(ctx context.Context, arg UpdateOwnedSettingsParams) (UserSetting, error) {
+	row := q.db.QueryRow(ctx, updateOwnedSettings,
+		arg.DefaultCurrency,
+		arg.DefaultReceiptTitle,
+		arg.Now,
+		arg.UserID,
+	)
+	var i UserSetting
+	err := row.Scan(
+		&i.UserID,
+		&i.DefaultCurrency,
+		&i.DefaultReceiptTitle,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateReviewLine = `-- name: UpdateReviewLine :one

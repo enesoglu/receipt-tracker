@@ -93,3 +93,13 @@ DELETE FROM receipts WHERE user_id = @user_id AND id = @receipt_id;
 -- name: WriteReceiptAudit :exec
 INSERT INTO audit_events (user_id,entity,entity_id,action,detail,created_at)
 VALUES (@user_id,@entity,@entity_id,@action,@detail,@now);
+
+-- name: GetOwnedSettings :one
+SELECT * FROM user_settings WHERE user_id = @user_id;
+
+-- name: LockOwnedSettings :one
+SELECT * FROM user_settings WHERE user_id = @user_id FOR UPDATE;
+
+-- name: UpdateOwnedSettings :one
+UPDATE user_settings SET default_currency = @default_currency,default_receipt_title = @default_receipt_title,updated_at = @now
+WHERE user_id = @user_id RETURNING *;
