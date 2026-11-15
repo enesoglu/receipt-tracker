@@ -63,7 +63,15 @@ func newProductServer(t *testing.T) *productServer {
 
 func (s *productServer) get(user uuid.UUID, path string) *httptest.ResponseRecorder {
 	s.t.Helper()
-	request := testutil.Request(s.t, s.sessions, user, http.MethodGet, "/api/v1"+path, strings.NewReader(""))
+	return s.call(user, http.MethodGet, path, "")
+}
+
+func (s *productServer) call(user uuid.UUID, method, path, body string) *httptest.ResponseRecorder {
+	s.t.Helper()
+	request := testutil.Request(s.t, s.sessions, user, method, "/api/v1"+path, strings.NewReader(body))
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
 	response := httptest.NewRecorder()
 	s.http.Handler().ServeHTTP(response, request)
 	return response
@@ -165,4 +173,45 @@ func TestProducts_IsolatesReadOperations(t *testing.T) {
 		t.Errorf("problem leaks data: %s", body)
 	}
 	decodeProblem(t, response)
+}
+
+func TestProducts_UpdateFollowsTheContract(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	category := s.id(`INSERT INTO categories (user_id, name) VALUES ($1, 'Dairy') RETURNING id`, s.alice)
+
+	body := `{"canonicalName":"Süt 2 L","categoryId":"` + category.String() + `","sizeValue":"2","sizeUnit":"l"}`
+	product := decodeAs[httpapi.Product](t, s.call(s.alice, http.MethodPut, "/products/"+milk.String(), body), http.StatusOK, "Product")
+	if product.CanonicalName != "Süt 2 L" || product.Category == nil || product.Category.Id != category || *product.SizeValue != "2.000" {
+		t.Errorf("product = %+v", product)
+	}
+
+	for name, body := range map[string]string{
+		"size without unit": `{"canonicalName":"Süt","sizeValue":"2"}`,
+		"blank name":        `{"canonicalName":"   "}`,
+		"bad size":          `{"canonicalName":"Süt","sizeValue":"two","sizeUnit":"l"}`,
+		"unknown category":  `{"canonicalName":"Süt","categoryId":"` + uuid.NewString() + `"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := s.call(s.alice, http.MethodPut, "/products/"+milk.String(), body)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+			}
+			decodeProblem(t, response)
+		})
+	}
+}
+
+func TestProducts_IsolatesUpdate(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	response := s.call(s.bob, http.MethodPut, "/products/"+milk.String(), `{"canonicalName":"Taken"}`)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	decodeProblem(t, response)
+	product := decodeAs[httpapi.Product](t, s.get(s.alice, "/products/"+milk.String()), http.StatusOK, "Product")
+	if product.CanonicalName != "Süt 1 L" {
+		t.Errorf("name = %q", product.CanonicalName)
+	}
 }

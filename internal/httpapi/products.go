@@ -80,8 +80,28 @@ func (h productsHandlers) GetProduct(ctx context.Context, request GetProductRequ
 }
 
 // UpdateProduct replaces the name, category and size of a product.
-func (productsHandlers) UpdateProduct(_ context.Context, _ UpdateProductRequestObject) (UpdateProductResponseObject, error) {
-	return nil, notImplemented()
+func (h productsHandlers) UpdateProduct(ctx context.Context, request UpdateProductRequestObject) (UpdateProductResponseObject, error) {
+	userID, err := h.identity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if request.Body == nil {
+		return nil, apperr.New(apperr.Invalid, "product body is required")
+	}
+	body := *request.Body
+	size, err := parseAmount(body.SizeValue, 3)
+	if err != nil {
+		return nil, apperr.New(apperr.Invalid, "invalid size").WithField("sizeValue", "must be a decimal with at most three places")
+	}
+	u := products.Update{CanonicalName: body.CanonicalName, SizeValue: size, SizeUnit: body.SizeUnit}
+	if body.CategoryId != nil {
+		u.CategoryID = uuid.NullUUID{UUID: *body.CategoryId, Valid: true}
+	}
+	d, err := h.products.Update(ctx, userID, request.ProductId, u)
+	if err != nil {
+		return nil, err
+	}
+	return UpdateProduct200JSONResponse(productResponse(d)), nil
 }
 
 // MergeProducts merges another product into the one in the path.

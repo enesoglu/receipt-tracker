@@ -11,6 +11,7 @@ package products
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,4 +63,21 @@ func classify(err error) error {
 		return notFound()
 	}
 	return err
+}
+
+// transaction runs fn in one database transaction and commits it when fn
+// returns nil.
+func (s *Service) transaction(ctx context.Context, fn func(*sqlc.Queries) error) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin product transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := fn(sqlc.New(tx)); err != nil {
+		return classify(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit product transaction: %w", err)
+	}
+	return nil
 }
