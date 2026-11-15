@@ -660,6 +660,10 @@ let mockCategoriesState: components['schemas']['Category'][] = structuredClone(
   mockCategoryPage.items,
 );
 let nextMockCategoryIndex = 29;
+let mockSettingsState: components['schemas']['Settings'] =
+  structuredClone(mockSettings);
+let mockStorageState: components['schemas']['StorageStatus'] =
+  structuredClone(mockStorageStatus);
 
 /** Clears runtime mock state created during uploads and reviews so tests stay isolated. */
 export function resetMockState(): void {
@@ -673,6 +677,8 @@ export function resetMockState(): void {
   nextMockSplitIndex = 499;
   mockCategoriesState = structuredClone(mockCategoryPage.items);
   nextMockCategoryIndex = 29;
+  mockSettingsState = structuredClone(mockSettings);
+  mockStorageState = structuredClone(mockStorageStatus);
 }
 
 function hasAllowedUploadType(file: { name: string; type: string }): boolean {
@@ -1728,5 +1734,60 @@ export function deleteMockCategory(categoryId: string): boolean {
       ? { ...product, category: null }
       : product,
   );
+  return true;
+}
+
+/** Returns current stateful mock user settings. */
+export function getMockSettings(): components['schemas']['Settings'] {
+  return { ...mockSettingsState };
+}
+
+/** Updates stateful mock user settings with OpenAPI boundary checks. */
+export function updateMockSettings(
+  body: components['schemas']['Settings'],
+):
+  | { ok: true; settings: components['schemas']['Settings'] }
+  | { ok: false; field: string; message: string } {
+  const currency = body.defaultCurrency.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    return {
+      ok: false,
+      field: 'defaultCurrency',
+      message: 'must be a 3-letter ISO 4217 code',
+    };
+  }
+  const title = body.defaultReceiptTitle.trim();
+  if (title.length === 0 || title.length > 200) {
+    return {
+      ok: false,
+      field: 'defaultReceiptTitle',
+      message: 'must be between 1 and 200 characters',
+    };
+  }
+  mockSettingsState = {
+    defaultCurrency: currency,
+    defaultReceiptTitle: title,
+  };
+  return { ok: true, settings: { ...mockSettingsState } };
+}
+
+/** Returns current stateful mock storage status. */
+export function getMockStorageStatus(): components['schemas']['StorageStatus'] {
+  return structuredClone(mockStorageState);
+}
+
+/** Disconnects mock Google Drive authorization if the current user can manage storage. */
+export function disconnectMockStorage(): boolean {
+  if (!mockStorageState.canManage) {
+    return false;
+  }
+  mockStorageState = {
+    ...mockStorageState,
+    drive:
+      mockStorageState.backend === 'drive'
+        ? 'not_connected'
+        : mockStorageState.drive,
+    lastError: null,
+  };
   return true;
 }

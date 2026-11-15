@@ -44,6 +44,31 @@ function mockAuthenticatedApi() {
         response: new Response(null, { status: 200 }),
       }) as never;
     }
+    if (path === '/settings') {
+      return Promise.resolve({
+        data: {
+          defaultCurrency: 'TRY',
+          defaultReceiptTitle: 'Home shopping',
+        },
+        response: new Response(null, { status: 200 }),
+      }) as never;
+    }
+    if (path === '/storage') {
+      return Promise.resolve({
+        data: {
+          backend: 'drive',
+          drive: 'ok',
+          lastError: null,
+          canManage: true,
+          backup: {
+            destination: 'drive',
+            lastSuccessAt: '2026-11-13T03:15:42Z',
+            lastError: null,
+          },
+        },
+        response: new Response(null, { status: 200 }),
+      }) as never;
+    }
     if (path === '/receipts') {
       return Promise.resolve({
         data: { items: [], nextCursor: null },

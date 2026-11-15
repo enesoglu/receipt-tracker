@@ -20,6 +20,7 @@ import { ProductsListPage } from '../features/products/ProductsListPage';
 import { ReceiptDetailPage } from '../features/receipts/ReceiptDetailPage';
 import { ReceiptsListPage } from '../features/receipts/ReceiptsListPage';
 import { ReviewQueuePage } from '../features/review/ReviewQueuePage';
+import { SettingsPage } from '../features/settings/SettingsPage';
 import { SpendingPage } from '../features/spending/SpendingPage';
 import { UploadPage } from '../features/upload/UploadPage';
 import { AuthGate } from './AuthGate';
@@ -81,18 +82,7 @@ export function AppRouterContent({ queryClient }: AppRouterContentProps) {
           <Route path="/products/:productId" element={<ProductDetailPage />} />
           <Route path="/spending" element={<SpendingPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
-          <Route
-            path="/settings"
-            element={
-              <PlaceholderPage
-                eyebrow="Preferences"
-                title="Settings"
-                description="Configure default currency, receipt title, OCR quota visibility, and Google Drive storage."
-                emptyTitle="Settings screen coming next"
-                emptyDescription="Account preferences, OCR usage meter, and Google Drive backup status will live here."
-              />
-            }
-          />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route
             path="*"
             element={
