@@ -2,6 +2,7 @@ package receipts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -10,7 +11,9 @@ import (
 
 	"github.com/enesoglu/receipt-tracker/internal/apperr"
 	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
+	"github.com/enesoglu/receipt-tracker/internal/extract"
 	"github.com/enesoglu/receipt-tracker/internal/matching"
+	"github.com/enesoglu/receipt-tracker/internal/storage"
 )
 
 type database interface {
@@ -20,12 +23,34 @@ type database interface {
 
 // Service owns transactional receipt mapping and review.
 type Service struct {
-	db  database
-	now func() time.Time
+	db      database
+	now     func() time.Time
+	images  storage.Store
+	parsers map[string]ResultParser
 }
 
 // New returns a receipt service with an injected UTC clock.
-func New(db database, now func() time.Time) *Service { return &Service{db: db, now: now} }
+func New(db database, now func() time.Time, options ...Options) *Service {
+	s := &Service{db: db, now: now, parsers: make(map[string]ResultParser)}
+	if len(options) > 0 {
+		s.images = options[0].Images
+		for provider, parser := range options[0].Parsers {
+			s.parsers[provider] = parser
+		}
+	}
+	return s
+}
+
+// ResultParser maps stored provider data without making an extraction request.
+type ResultParser interface {
+	Parse(json.RawMessage) (extract.Result, error)
+}
+
+// Options supplies image storage and parsers for previously stored extractions.
+type Options struct {
+	Images  storage.Store
+	Parsers map[string]ResultParser
+}
 
 func classify(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {

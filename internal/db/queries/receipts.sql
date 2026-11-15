@@ -45,3 +45,51 @@ UPDATE receipts SET status = CASE WHEN EXISTS (
  SELECT 1 FROM review_flags f WHERE f.user_id = @user_id AND f.receipt_id = @receipt_id AND f.resolved_at IS NULL
 ) THEN 'needs_review' ELSE 'ready' END, failure_reason = NULL, updated_at = @now
 WHERE user_id = @user_id AND id = @receipt_id;
+
+-- name: PageReceiptIDs :many
+SELECT r.id FROM receipts r
+LEFT JOIN stores s ON s.user_id = @user_id AND s.id = r.store_id
+WHERE r.user_id = @user_id
+ AND (cardinality(@ids::uuid[]) = 0 OR r.id = ANY(@ids::uuid[]))
+ AND (@status::text = '' OR r.status = @status)
+ AND (sqlc.narg(store_id)::uuid IS NULL OR r.store_id = sqlc.narg(store_id))
+ AND (sqlc.narg(month_start)::date IS NULL OR (r.purchased_on >= sqlc.narg(month_start) AND r.purchased_on < sqlc.narg(month_end)))
+ AND (@search::text = '' OR strpos(lower(r.title),lower(@search)) > 0 OR strpos(lower(s.name),lower(@search)) > 0
+  OR EXISTS (SELECT 1 FROM line_items l WHERE l.user_id = @user_id AND l.receipt_id = r.id AND strpos(lower(l.name),lower(@search)) > 0))
+ AND (NOT @has_after::boolean OR (COALESCE(r.purchased_on,'infinity'::date),r.created_at,r.id)
+  < (COALESCE(sqlc.narg(after_date)::date,'infinity'::date),@after_created::timestamptz,@after_id::uuid))
+ORDER BY r.purchased_on DESC NULLS FIRST,r.created_at DESC,r.id DESC LIMIT @page_limit;
+
+-- name: GetReceiptStore :one
+SELECT * FROM stores WHERE user_id = @user_id AND id = @store_id;
+
+-- name: ListReceiptImages :many
+SELECT * FROM receipt_images WHERE user_id = @user_id AND receipt_id = @receipt_id ORDER BY position;
+
+-- name: GetOwnedReceiptImage :one
+SELECT * FROM receipt_images WHERE user_id = @user_id AND receipt_id = @receipt_id AND id = @image_id;
+
+-- name: UpdateReviewReceipt :exec
+UPDATE receipts SET title = @title, store_id = sqlc.narg(store_id), purchased_on = sqlc.narg(purchased_on),
+ purchased_time = sqlc.narg(purchased_time), currency = @currency, subtotal = sqlc.narg(subtotal),
+ tax_total = sqlc.narg(tax_total), total = sqlc.narg(total), updated_at = @now
+WHERE user_id = @user_id AND id = @receipt_id;
+
+-- name: UpdateReviewLine :one
+UPDATE line_items SET name = @name, quantity = sqlc.narg(quantity), quantity_unit = sqlc.narg(quantity_unit),
+ unit_price = sqlc.narg(unit_price), line_total = @line_total, product_code = sqlc.narg(product_code),
+ confidence = NULL, updated_at = @now
+WHERE user_id = @user_id AND receipt_id = @receipt_id AND id = @line_id RETURNING *;
+
+-- name: DeleteReviewLine :exec
+DELETE FROM line_items WHERE user_id = @user_id AND receipt_id = @receipt_id AND id = @line_id;
+
+-- name: DeleteReceiptJobs :exec
+DELETE FROM jobs WHERE kind = 'extract_receipt' AND payload->>'user_id' = @user_id::text AND payload->>'receipt_id' = @receipt_id::text;
+
+-- name: DeleteReceiptData :exec
+DELETE FROM receipts WHERE user_id = @user_id AND id = @receipt_id;
+
+-- name: WriteReceiptAudit :exec
+INSERT INTO audit_events (user_id,entity,entity_id,action,detail,created_at)
+VALUES (@user_id,@entity,@entity_id,@action,@detail,@now);

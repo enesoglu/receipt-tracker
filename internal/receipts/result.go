@@ -2,7 +2,6 @@ package receipts
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -65,6 +64,10 @@ func (s *Service) applyResult(ctx context.Context, q *unit, userID, receiptID uu
 	if err := q.ApplyExtractedReceipt(ctx, p); err != nil {
 		return err
 	}
+	previousFlags, err := q.GetReceiptFlags(ctx, sqlc.GetReceiptFlagsParams{UserID: userID, ReceiptID: receiptID})
+	if err != nil {
+		return err
+	}
 	previous, err := q.ListReceiptLines(ctx, sqlc.ListReceiptLinesParams{UserID: userID, ReceiptID: receiptID})
 	if err != nil {
 		return err
@@ -98,7 +101,11 @@ func (s *Service) applyResult(ctx context.Context, q *unit, userID, receiptID uu
 		matchFlags = append(matchFlags, flags...)
 	}
 	fields := []Confidence{{"store", result.StoreName.Confidence, result.StoreName.Found}, {"purchased_on", result.Date.Confidence, result.Date.Found}, {"total", result.Total.Confidence, result.Total.Found}}
-	return s.review(ctx, q, userID, receiptID, fields, matchFlags)
+	flags, err := s.evaluate(ctx, q, userID, receiptID, fields, matchFlags)
+	if err != nil {
+		return err
+	}
+	return s.syncFlags(ctx, q, userID, receiptID, flags, previousFlags, true)
 }
 
 func validCurrency(v string) bool {
@@ -222,18 +229,18 @@ func matchQuestion(ctx context.Context, q *unit, userID uuid.UUID, l sqlc.LineIt
 	return flags[0], nil
 }
 
-func (s *Service) review(ctx context.Context, q *unit, userID, receiptID uuid.UUID, fields []Confidence, extra []Flag) error {
+func (s *Service) evaluate(ctx context.Context, q *unit, userID, receiptID uuid.UUID, fields []Confidence, extra []Flag) ([]Flag, error) {
 	r, err := q.GetReviewReceipt(ctx, sqlc.GetReviewReceiptParams{UserID: userID, ReceiptID: receiptID})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	lines, err := q.ListReceiptLines(ctx, sqlc.ListReceiptLinesParams{UserID: userID, ReceiptID: receiptID})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	duplicates, err := q.FindDuplicateReceipts(ctx, sqlc.FindDuplicateReceiptsParams{UserID: userID, ReceiptID: receiptID, StoreID: r.StoreID, PurchasedOn: r.PurchasedOn, Total: r.Total})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	flags := append([]Flag{}, extra...)
 	flags = append(flags, lowConfidence(fields, lines)...)
@@ -241,14 +248,5 @@ func (s *Service) review(ctx context.Context, q *unit, userID, receiptID uuid.UU
 	flags = append(flags, lineMath(lines)...)
 	flags = append(flags, sumMismatch(r.Total, lines)...)
 	flags = append(flags, possibleDuplicate(duplicates)...)
-	for _, f := range flags {
-		detail, err := json.Marshal(f.Detail)
-		if err != nil {
-			return err
-		}
-		if err = q.InsertReviewFlag(ctx, sqlc.InsertReviewFlagParams{UserID: userID, ReceiptID: receiptID, LineItemID: f.LineID, Kind: f.Kind, Detail: detail, Now: s.now().UTC()}); err != nil {
-			return err
-		}
-	}
-	return q.RefreshReviewStatus(ctx, sqlc.RefreshReviewStatusParams{UserID: userID, ReceiptID: receiptID, Now: s.now().UTC()})
+	return flags, nil
 }
