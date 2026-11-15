@@ -3,6 +3,7 @@ package azure
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -107,7 +108,7 @@ func parse(raw json.RawMessage) (extract.Result, error) {
 		result.Lines = append(result.Lines, extract.Line{
 			Name:        text(values["Description"], true),
 			Quantity:    number(values["Quantity"]),
-			Unit:        text(values["QuantityUnit"], false),
+			Unit:        unit(values),
 			UnitPrice:   money(values["Price"]),
 			Total:       lineTotal(item, values["TotalPrice"]),
 			ProductCode: text(values["ProductCode"], false),
@@ -115,6 +116,33 @@ func parse(raw json.RawMessage) (extract.Result, error) {
 		})
 	}
 	return result, nil
+}
+
+// priceDenominator finds the unit at the end of a unit price such as
+// "x114,90 TL/kg".
+var priceDenominator = regexp.MustCompile(`(?i)/\s*(kg|kgr|g|gr|lt|l|adet|ad)\s*$`)
+
+// priceUnits maps a denominator to the unit spelling the service uses.
+var priceUnits = map[string]string{"kg": "KG", "kgr": "KG", "g": "G", "gr": "G", "l": "L", "lt": "L", "ad": "AD", "adet": "AD"}
+
+// unit reads an item's QuantityUnit. When the service found a quantity but
+// no unit, the unit printed in the unit price ("114,90 TL/kg") stands in;
+// it belongs to the same printed block. A package size in the name
+// ("680 GR") is never used: it is not the unit of the purchase.
+func unit(values map[string]field) extract.Field[string] {
+	found := text(values["QuantityUnit"], false)
+	if found.Found || !number(values["Quantity"]).Found {
+		return found
+	}
+	price := values["Price"]
+	if price.Content == nil {
+		return found
+	}
+	match := priceDenominator.FindStringSubmatch(*price.Content)
+	if match == nil {
+		return found
+	}
+	return extract.Field[string]{Value: priceUnits[strings.ToLower(match[1])], Confidence: confidence(price), Found: true}
 }
 
 // lineTotal reads an item's TotalPrice and keeps the minus sign that the

@@ -55,4 +55,7 @@
 //   - A discount printed with a minus ("*- 54.90") can come back with a
 //     positive TotalPrice amount. The total is negated when a minus stands
 //     right before the printed amount in the item's content.
+//   - A weighed item can come back with a quantity and a unit price but no
+//     QuantityUnit, while the price reads "114,90 TL/kg". The unit after
+//     the slash stands in.
 package azure
