@@ -26,6 +26,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/httpapi"
 	"github.com/enesoglu/receipt-tracker/internal/ingest"
 	"github.com/enesoglu/receipt-tracker/internal/jobs"
+	"github.com/enesoglu/receipt-tracker/internal/mcpserver"
 	"github.com/enesoglu/receipt-tracker/internal/oauthserver"
 	"github.com/enesoglu/receipt-tracker/internal/products"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
@@ -160,7 +161,10 @@ func run(logger *slog.Logger) error {
 		workerDone <- err
 	}()
 	uploads := ingest.New(pool, images, string(cfg.Storage.Backend), ingest.NewHEICConverter(logger), worker, logger, time.Now)
-	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage, httpapi.Ingestion{Uploads: uploads, Usage: usage}, reports.New(pool), products.New(pool, time.Now), oauthHandler, receiptService).Run(ctx)
+	productService := products.New(pool, time.Now)
+	reportService := reports.New(pool)
+	mcp := mcpserver.New(oauth, receiptService, productService, reportService, cfg.BaseURL, logger, mcpserver.Options{})
+	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage, httpapi.Ingestion{Uploads: uploads, Usage: usage}, reportService, productService, oauthHandler, mcp, receiptService).Run(ctx)
 	// The worker finishes its current job before the pool is closed.
 	stop()
 	workerErr := <-workerDone

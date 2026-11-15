@@ -1,0 +1,53 @@
+openapi: 3.0.3
+info:
+  title: Read-only receipt MCP transport
+  version: 1.0.0
+servers: [{url: /}]
+security: [{mcpBearer: []}]
+paths:
+  /mcp:
+    post:
+      operationId: callMcp
+      description: Streamable HTTP JSON-RPC for protocol versions 2025-06-18 and 2025-11-25. Initialize without a session id; subsequent requests use the assigned Mcp-Session-Id. Only the seven read tools are registered. Each request verifies a bearer access token bound to APP_BASE_URL/mcp; session cookies provide no authorization.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200': {description: 'Independent JSON response, no open stream required'}
+        '202': {description: Notification accepted}
+        '400': {description: Invalid MCP request or protocol version}
+        '401': {$ref: '#/components/responses/Challenge'}
+        '403': {description: Invalid origin or token user differs from the session owner}
+        '404': {description: Unknown session; initialize again with the existing token}
+    get:
+      operationId: openMcpStream
+      description: Optional standalone SSE stream for an initialized session. Initial SDK comment and periodic 25-second comments keep it alive; no financial tool depends on it.
+      responses:
+        '200': {description: 'text/event-stream with periodic SSE comments'}
+        '400': {description: Missing session or invalid Accept header}
+        '401': {$ref: '#/components/responses/Challenge'}
+        '403': {description: Invalid origin or session owner}
+        '404': {description: Unknown session; initialize again}
+    delete:
+      operationId: closeMcpSession
+      responses:
+        '204': {description: MCP session closed}
+        '400': {description: Missing session id}
+        '401': {$ref: '#/components/responses/Challenge'}
+        '403': {description: Invalid origin or session owner}
+        '404': {description: Unknown session}
+components:
+  securitySchemes:
+    mcpBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  responses:
+    Challenge:
+      description: Missing or invalid MCP access token; discover the authorization server from the metadata URL
+      headers:
+        WWW-Authenticate:
+          schema: {type: string}
+          example: 'Bearer resource_metadata="https://receipts.example.test/.well-known/oauth-protected-resource/mcp"'
