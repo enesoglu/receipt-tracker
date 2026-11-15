@@ -143,3 +143,5 @@ func date(value string) time.Time {
 func dec(value string) decimal.Decimal {
 	return decimal.RequireFromString(value)
 }
+
+func ptr[T any](v T) *T { return &v }

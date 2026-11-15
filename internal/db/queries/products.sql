@@ -79,6 +79,24 @@ LEFT JOIN stores s ON s.user_id = @user_id AND s.id = c.store_id
 ORDER BY c.product_id, c.purchased_on DESC, c.purchased_time DESC NULLS LAST, c.created_at DESC,
          c.receipt_id DESC, c.position DESC;
 
+-- name: LockProduct :one
+-- LockProduct reads a product and holds it until the transaction ends, so
+-- that concurrent edits, merges and splits of it run one after another.
+SELECT * FROM products WHERE user_id = @user_id AND id = @product_id FOR UPDATE;
+
+-- name: ProductCategoryExists :one
+SELECT EXISTS (SELECT 1 FROM categories WHERE user_id = @user_id AND id = @category_id);
+
+-- name: UpdateProduct :exec
+UPDATE products
+SET canonical_name = @canonical_name, category_id = sqlc.narg(category_id),
+    size_value = sqlc.narg(size_value), size_unit = sqlc.narg(size_unit), updated_at = @now
+WHERE user_id = @user_id AND id = @product_id;
+
+-- name: WriteProductAudit :exec
+INSERT INTO audit_events (user_id, entity, entity_id, action, detail, created_at)
+VALUES (@user_id, 'product', @product_id, @action, @detail, @now);
+
 -- The product catalogue: list and search, detail with aliases and codes,
 -- edits, merge, split and price history.
 --

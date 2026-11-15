@@ -222,6 +222,33 @@ func (q *Queries) ListProductPurchaseStats(ctx context.Context, arg ListProductP
 	return items, nil
 }
 
+const lockProduct = `-- name: LockProduct :one
+SELECT id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at FROM products WHERE user_id = $1 AND id = $2 FOR UPDATE
+`
+
+type LockProductParams struct {
+	UserID    uuid.UUID
+	ProductID uuid.UUID
+}
+
+// LockProduct reads a product and holds it until the transaction ends, so
+// that concurrent edits, merges and splits of it run one after another.
+func (q *Queries) LockProduct(ctx context.Context, arg LockProductParams) (Product, error) {
+	row := q.db.QueryRow(ctx, lockProduct, arg.UserID, arg.ProductID)
+	var i Product
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CanonicalName,
+		&i.CategoryID,
+		&i.SizeValue,
+		&i.SizeUnit,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const pageProducts = `-- name: PageProducts :many
 SELECT p.id, p.user_id, p.canonical_name, p.category_id, p.size_value, p.size_unit, p.created_at, p.updated_at, c.name AS category_name
 FROM products p
@@ -301,4 +328,74 @@ func (q *Queries) PageProducts(ctx context.Context, arg PageProductsParams) ([]P
 		return nil, err
 	}
 	return items, nil
+}
+
+const productCategoryExists = `-- name: ProductCategoryExists :one
+SELECT EXISTS (SELECT 1 FROM categories WHERE user_id = $1 AND id = $2)
+`
+
+type ProductCategoryExistsParams struct {
+	UserID     uuid.UUID
+	CategoryID uuid.UUID
+}
+
+func (q *Queries) ProductCategoryExists(ctx context.Context, arg ProductCategoryExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, productCategoryExists, arg.UserID, arg.CategoryID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const updateProduct = `-- name: UpdateProduct :exec
+UPDATE products
+SET canonical_name = $1, category_id = $2,
+    size_value = $3, size_unit = $4, updated_at = $5
+WHERE user_id = $6 AND id = $7
+`
+
+type UpdateProductParams struct {
+	CanonicalName string
+	CategoryID    uuid.NullUUID
+	SizeValue     decimal.NullDecimal
+	SizeUnit      *string
+	Now           time.Time
+	UserID        uuid.UUID
+	ProductID     uuid.UUID
+}
+
+func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) error {
+	_, err := q.db.Exec(ctx, updateProduct,
+		arg.CanonicalName,
+		arg.CategoryID,
+		arg.SizeValue,
+		arg.SizeUnit,
+		arg.Now,
+		arg.UserID,
+		arg.ProductID,
+	)
+	return err
+}
+
+const writeProductAudit = `-- name: WriteProductAudit :exec
+INSERT INTO audit_events (user_id, entity, entity_id, action, detail, created_at)
+VALUES ($1, 'product', $2, $3, $4, $5)
+`
+
+type WriteProductAuditParams struct {
+	UserID    uuid.UUID
+	ProductID uuid.UUID
+	Action    string
+	Detail    []byte
+	Now       time.Time
+}
+
+func (q *Queries) WriteProductAudit(ctx context.Context, arg WriteProductAuditParams) error {
+	_, err := q.db.Exec(ctx, writeProductAudit,
+		arg.UserID,
+		arg.ProductID,
+		arg.Action,
+		arg.Detail,
+		arg.Now,
+	)
+	return err
 }
