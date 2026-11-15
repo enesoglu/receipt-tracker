@@ -34,6 +34,17 @@ func (q *Queries) CloseReviewFlag(ctx context.Context, arg CloseReviewFlagParams
 	return err
 }
 
+const countOpenReviewFlags = `-- name: CountOpenReviewFlags :one
+SELECT count(*)::integer FROM review_flags WHERE user_id = $1 AND resolved_at IS NULL
+`
+
+func (q *Queries) CountOpenReviewFlags(ctx context.Context, userID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countOpenReviewFlags, userID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteReceiptFlags = `-- name: DeleteReceiptFlags :exec
 DELETE FROM review_flags WHERE user_id = $1 AND receipt_id = $2
 `
@@ -46,6 +57,32 @@ type DeleteReceiptFlagsParams struct {
 func (q *Queries) DeleteReceiptFlags(ctx context.Context, arg DeleteReceiptFlagsParams) error {
 	_, err := q.db.Exec(ctx, deleteReceiptFlags, arg.UserID, arg.ReceiptID)
 	return err
+}
+
+const getOwnedReviewFlag = `-- name: GetOwnedReviewFlag :one
+SELECT id, user_id, receipt_id, line_item_id, kind, detail, resolved_at, resolution, created_at FROM review_flags WHERE user_id = $1 AND id = $2
+`
+
+type GetOwnedReviewFlagParams struct {
+	UserID uuid.UUID
+	FlagID uuid.UUID
+}
+
+func (q *Queries) GetOwnedReviewFlag(ctx context.Context, arg GetOwnedReviewFlagParams) (ReviewFlag, error) {
+	row := q.db.QueryRow(ctx, getOwnedReviewFlag, arg.UserID, arg.FlagID)
+	var i ReviewFlag
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.LineItemID,
+		&i.Kind,
+		&i.Detail,
+		&i.ResolvedAt,
+		&i.Resolution,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const getReceiptFlags = `-- name: GetReceiptFlags :many
@@ -109,6 +146,82 @@ func (q *Queries) InsertReviewFlag(ctx context.Context, arg InsertReviewFlagPara
 		arg.Kind,
 		arg.Detail,
 		arg.Now,
+	)
+	return err
+}
+
+const pageReviewFlagIDs = `-- name: PageReviewFlagIDs :many
+SELECT f.id,r.created_at AS receipt_created_at,f.created_at AS flag_created_at
+FROM review_flags f JOIN receipts r ON r.user_id = $1 AND r.id = f.receipt_id
+WHERE f.user_id = $1 AND f.resolved_at IS NULL
+ AND (NOT $2::boolean OR (r.created_at,f.created_at,f.id) > ($3::timestamptz,$4::timestamptz,$5::uuid))
+ORDER BY r.created_at,f.created_at,f.id LIMIT $6
+`
+
+type PageReviewFlagIDsParams struct {
+	UserID       uuid.UUID
+	HasAfter     bool
+	AfterReceipt time.Time
+	AfterFlag    time.Time
+	AfterID      uuid.UUID
+	PageLimit    int32
+}
+
+type PageReviewFlagIDsRow struct {
+	ID               uuid.UUID
+	ReceiptCreatedAt time.Time
+	FlagCreatedAt    time.Time
+}
+
+func (q *Queries) PageReviewFlagIDs(ctx context.Context, arg PageReviewFlagIDsParams) ([]PageReviewFlagIDsRow, error) {
+	rows, err := q.db.Query(ctx, pageReviewFlagIDs,
+		arg.UserID,
+		arg.HasAfter,
+		arg.AfterReceipt,
+		arg.AfterFlag,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PageReviewFlagIDsRow{}
+	for rows.Next() {
+		var i PageReviewFlagIDsRow
+		if err := rows.Scan(&i.ID, &i.ReceiptCreatedAt, &i.FlagCreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const rememberReviewRejection = `-- name: RememberReviewRejection :exec
+INSERT INTO match_rejections (user_id,product_id,normalized_name,store_id,created_at)
+SELECT $1,p.id,$2,$3::uuid,$4
+FROM products p WHERE p.user_id = $1 AND p.id = $5
+ON CONFLICT (product_id,normalized_name,store_id) DO NOTHING
+`
+
+type RememberReviewRejectionParams struct {
+	UserID         uuid.UUID
+	NormalizedName string
+	StoreID        uuid.NullUUID
+	Now            time.Time
+	ProductID      uuid.UUID
+}
+
+func (q *Queries) RememberReviewRejection(ctx context.Context, arg RememberReviewRejectionParams) error {
+	_, err := q.db.Exec(ctx, rememberReviewRejection,
+		arg.UserID,
+		arg.NormalizedName,
+		arg.StoreID,
+		arg.Now,
+		arg.ProductID,
 	)
 	return err
 }

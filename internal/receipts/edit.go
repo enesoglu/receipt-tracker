@@ -202,28 +202,9 @@ func (s *Service) writeLine(ctx context.Context, q *unit, userID, receiptID, lin
 // UpdateLine replaces a line and re-runs matching when its identity or discount status changes.
 func (s *Service) UpdateLine(ctx context.Context, userID, receiptID, lineID uuid.UUID, input LineInput) (Detail, error) {
 	return s.edit(ctx, userID, receiptID, "line_item", lineID, "updated", func(q *unit, before Detail) error {
-		old, err := findLine(before, lineID)
+		flags, changed, err := s.changeLine(ctx, q, userID, before, lineID, input)
 		if err != nil {
 			return err
-		}
-		l, err := s.writeLine(ctx, q, userID, receiptID, lineID, input)
-		if err != nil {
-			return err
-		}
-		rematch := old.Name != l.Name || !sameText(old.ProductCode, l.ProductCode) || (old.LineTotal.Valid && old.LineTotal.Decimal.IsNegative()) != input.LineTotal.IsNegative()
-		var flags []Flag
-		changed := map[uuid.UUID]bool{}
-		if rematch {
-			if err := q.SetLineMatch(ctx, sqlc.SetLineMatchParams{UserID: userID, LineID: lineID, MatchStatus: "unmatched", Now: s.now().UTC()}); err != nil {
-				return err
-			}
-			l.ProductID = uuid.NullUUID{}
-			l.MatchStatus = "unmatched"
-			flags, err = s.matchLine(ctx, q, userID, before.Receipt.StoreID, l)
-			if err != nil {
-				return err
-			}
-			changed[lineID] = true
 		}
 		return s.refresh(ctx, q, userID, receiptID, nil, changed, flags)
 	})
@@ -247,4 +228,31 @@ func (s *Service) DeleteLine(ctx context.Context, userID, receiptID, lineID uuid
 		}
 		return s.refresh(ctx, q, userID, receiptID, nil, nil, nil)
 	})
+}
+
+func (s *Service) changeLine(ctx context.Context, q *unit, userID uuid.UUID, before Detail, lineID uuid.UUID, input LineInput) ([]Flag, map[uuid.UUID]bool, error) {
+	old, err := findLine(before, lineID)
+	if err != nil {
+		return nil, nil, err
+	}
+	l, err := s.writeLine(ctx, q, userID, before.Receipt.ID, lineID, input)
+	if err != nil {
+		return nil, nil, err
+	}
+	rematch := old.Name != l.Name || !sameText(old.ProductCode, l.ProductCode) || (old.LineTotal.Valid && old.LineTotal.Decimal.IsNegative()) != input.LineTotal.IsNegative()
+	var flags []Flag
+	changed := map[uuid.UUID]bool{}
+	if rematch {
+		if err := q.SetLineMatch(ctx, sqlc.SetLineMatchParams{UserID: userID, LineID: lineID, MatchStatus: "unmatched", Now: s.now().UTC()}); err != nil {
+			return nil, nil, err
+		}
+		l.ProductID = uuid.NullUUID{}
+		l.MatchStatus = "unmatched"
+		flags, err = s.matchLine(ctx, q, userID, before.Receipt.StoreID, l)
+		if err != nil {
+			return nil, nil, err
+		}
+		changed[lineID] = true
+	}
+	return flags, changed, nil
 }

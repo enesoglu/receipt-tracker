@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/enesoglu/receipt-tracker/internal/apperr"
 	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
@@ -53,6 +54,11 @@ type Options struct {
 }
 
 func classify(err error) error {
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) && databaseError.Code == "23505" {
+		return apperr.New(apperr.Conflict, "this name already exists")
+	}
+
 	if errors.Is(err, pgx.ErrNoRows) {
 		return apperr.New(apperr.NotFound, "receipt resource not found")
 	}

@@ -43,9 +43,14 @@ func notImplemented() error {
 func mountAPI(router chi.Router, problems problemWriter, authentication authHandlers, storage storageHandlers, ingestion Ingestion, reportService *reports.Service, productService *products.Service, receiptService *receipts.Service) {
 	all := handlers{
 		authHandlers: authentication, storageHandlers: storage,
-		receiptsHandlers: receiptsHandlers{receipts: receiptService}, reportsHandlers: reportsHandlers{reports: reportService},
-		productsHandlers: productsHandlers{products: productService},
-		uploadsHandlers:  uploadsHandlers{uploads: ingestion.Uploads}, usageHandlers: usageHandlers{usage: ingestion.Usage},
+		receiptsHandlers:   receiptsHandlers{receipts: receiptService},
+		reviewHandlers:     reviewHandlers{receipts: receiptService},
+		storesHandlers:     storesHandlers{receipts: receiptService},
+		categoriesHandlers: categoriesHandlers{receipts: receiptService},
+		settingsHandlers:   settingsHandlers{receipts: receiptService},
+		reportsHandlers:    reportsHandlers{reports: reportService},
+		productsHandlers:   productsHandlers{products: productService},
+		uploadsHandlers:    uploadsHandlers{uploads: ingestion.Uploads}, usageHandlers: usageHandlers{usage: ingestion.Usage},
 	}
 	strict := NewStrictHandlerWithOptions(all, []StrictMiddlewareFunc{uploadDeadlines}, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {

@@ -18,7 +18,11 @@ import (
 type receiptsHandlers struct{ receipts *receipts.Service }
 
 func (h receiptsHandlers) identity(ctx context.Context) (uuid.UUID, error) {
-	if h.receipts == nil {
+	return receiptUser(ctx, h.receipts)
+}
+
+func receiptUser(ctx context.Context, service *receipts.Service) (uuid.UUID, error) {
+	if service == nil {
 		return uuid.Nil, notImplemented()
 	}
 	id, ok := UserID(ctx)
@@ -26,6 +30,24 @@ func (h receiptsHandlers) identity(ctx context.Context) (uuid.UUID, error) {
 		return uuid.Nil, unauthenticated()
 	}
 	return id, nil
+}
+
+func receiptPaging(limit *Limit, cursor *Cursor) (int, string, error) {
+	size := 0
+	after := ""
+	if limit != nil {
+		if *limit < 1 || *limit > 100 {
+			return 0, "", apperr.New(apperr.Invalid, "limit must be between 1 and 100")
+		}
+		size = *limit
+	}
+	if cursor != nil {
+		if *cursor == "" {
+			return 0, "", apperr.New(apperr.Invalid, "cursor must not be empty")
+		}
+		after = *cursor
+	}
+	return size, after, nil
 }
 
 // ListReceipts returns one page of receipts that match the filters.
