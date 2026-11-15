@@ -48,8 +48,9 @@ func TestParse_FullSyntheticResponse(t *testing.T) {
 				UnitPrice: wantAmount("32.5", 0.944), Total: wantAmount("65", 0.961), ProductCode: wantText("8690000000012", 0.82),
 				Confidence: 0.94,
 			},
-			// No valueString: the content stands in for the name.
-			{Name: wantText("EKMEK", 0.918), Total: wantAmount("15", 0.957), Confidence: 0.91},
+			// No valueString: the content stands in for the name, with the
+			// glued VAT rate the provider left in it.
+			{Name: wantText("EKMEK%01", 0.918), Total: wantAmount("15", 0.957), Confidence: 0.91},
 			// A discount keeps its negative total.
 			{Name: wantText("INDIRIM", 0.801), Total: wantAmount("-10", 0.772), Confidence: 0.77},
 			// Values the service could not normalise are not found.

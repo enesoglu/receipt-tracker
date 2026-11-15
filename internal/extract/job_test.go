@@ -336,7 +336,7 @@ func TestPipeline_StoresExtractedFieldsAndLines(t *testing.T) {
 	}
 	want := [][]string{
 		{"SUT 1LT", "SUT 1LT", "2.000", "AD", "32.50", "65.00", "8690000000012", "unmatched"},
-		{"EKMEK", "EKMEK", "", "", "", "15.00", "", "unmatched"},
+		{"EKMEK%01", "EKMEK", "", "", "", "15.00", "", "unmatched"},
 		{"INDIRIM", "INDIRIM", "", "", "", "-10.00", "", "unmatched"},
 		{"", "Unreadable item", "", "", "", "", "", "unmatched"},
 	}

@@ -102,7 +102,7 @@ func (s *StoreResult) ApplyResult(ctx context.Context, userID, receiptID uuid.UU
 	}
 	for i, line := range result.Lines {
 		raw := strings.TrimSpace(line.Name.Value)
-		name := raw
+		name := DisplayName(raw)
 		if !line.Name.Found || name == "" {
 			raw, name = "", unnamedLine
 		}

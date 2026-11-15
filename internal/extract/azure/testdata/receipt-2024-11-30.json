@@ -41,7 +41,7 @@
                 "type": "object",
                 "confidence": 0.91,
                 "valueObject": {
-                  "Description": {"type": "string", "content": "EKMEK", "confidence": 0.918},
+                  "Description": {"type": "string", "content": "EKMEK%01", "confidence": 0.918},
                   "TotalPrice": {"type": "currency", "valueCurrency": {"amount": 15.0}, "content": "15,00", "confidence": 0.957}
                 }
               },
