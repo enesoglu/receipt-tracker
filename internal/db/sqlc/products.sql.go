@@ -404,6 +404,7 @@ func (q *Queries) ListProductLines(ctx context.Context, arg ListProductLinesPara
 const listProductPricePoints = `-- name: ListProductPricePoints :many
 SELECT l.id AS line_item_id, r.id AS receipt_id, r.purchased_on::date AS purchased_on,
        r.store_id, s.name AS store_name, r.currency, l.quantity, l.quantity_unit,
+       l.name, l.line_total,
        COALESCE(l.unit_price, round(l.line_total / NULLIF(l.quantity, 0), 2), l.line_total)::numeric AS unit_price
 FROM line_items l
 JOIN receipts r ON r.user_id = l.user_id AND r.id = l.receipt_id
@@ -438,6 +439,8 @@ type ListProductPricePointsRow struct {
 	Currency     string
 	Quantity     decimal.NullDecimal
 	QuantityUnit *string
+	Name         string
+	LineTotal    decimal.NullDecimal
 	UnitPrice    decimal.Decimal
 }
 
@@ -468,6 +471,8 @@ func (q *Queries) ListProductPricePoints(ctx context.Context, arg ListProductPri
 			&i.Currency,
 			&i.Quantity,
 			&i.QuantityUnit,
+			&i.Name,
+			&i.LineTotal,
 			&i.UnitPrice,
 		); err != nil {
 			return nil, err

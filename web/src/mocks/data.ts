@@ -427,6 +427,8 @@ export const mockPriceHistory: components['schemas']['PriceHistory'] = {
       quantity: '1',
       quantityUnit: 'ad',
       currency: 'TRY',
+      basis: 'item',
+      basisPrice: null,
     },
     {
       receiptId: '0193a1b2-0000-7000-8000-000000000099',
@@ -440,6 +442,8 @@ export const mockPriceHistory: components['schemas']['PriceHistory'] = {
       quantity: '1',
       quantityUnit: 'ad',
       currency: 'TRY',
+      basis: 'item',
+      basisPrice: null,
     },
     {
       receiptId: '0193a1b2-0000-7000-8000-000000000100',
@@ -453,6 +457,8 @@ export const mockPriceHistory: components['schemas']['PriceHistory'] = {
       quantity: '2',
       quantityUnit: 'ad',
       currency: 'TRY',
+      basis: 'item',
+      basisPrice: null,
     },
   ],
   stores: [

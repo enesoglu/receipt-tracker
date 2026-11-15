@@ -43,7 +43,7 @@ func newHistoryFixture(t *testing.T) *historyFixture {
 		if err := f.pool.QueryRow(t.Context(), `SELECT receipt_id FROM line_items WHERE id = $1`, lineID).Scan(&receiptID); err != nil {
 			t.Fatal(err)
 		}
-		p := products.PricePoint{ReceiptID: receiptID, LineItemID: lineID, PurchasedOn: date(day), Store: store, UnitPrice: dec(price), QuantityUnit: unit, Currency: currency}
+		p := products.PricePoint{ReceiptID: receiptID, LineItemID: lineID, PurchasedOn: date(day), Store: store, UnitPrice: dec(price), QuantityUnit: unit, Currency: currency, Basis: "item"}
 		if quantity != "" {
 			p.Quantity = decimal.NewNullDecimal(dec(quantity))
 		}
@@ -151,5 +151,51 @@ func TestPriceHistory_ExcludesOtherUsers(t *testing.T) {
 	}
 	if len(h.Points) != 1 || !h.Points[0].UnitPrice.Equal(dec("1.00")) || !h.Points[0].PurchasedOn.Equal(date("2026-10-05")) {
 		t.Errorf("bob's history = %+v", h.Points)
+	}
+}
+
+func TestPriceHistory_KilogramProductComparesPerKilogram(t *testing.T) {
+	f := newFixture(t)
+	market := f.store(f.alice, "Market")
+	chicken := f.product(f.alice, "Tavuk Göğüs")
+	f.exec(`UPDATE products SET price_basis = 'kg' WHERE id = $1`, chicken)
+	buy := func(day string, l line) {
+		l.product = chicken
+		f.line(f.alice, f.receipt(f.alice, receipt{store: market, date: day}), 0, l)
+	}
+	buy("2026-10-01", line{name: "TAVUK GOGUS 500 G", quantity: "1", unit: "AD", unitPrice: "60.00", total: "60.00"})
+	buy("2026-10-02", line{name: "PILIC GOGUS 1KG", quantity: "1", unit: "AD", unitPrice: "118.00", total: "118.00"})
+	buy("2026-10-03", line{name: "TAVUK GOGUS", quantity: "0.75", unit: "KG", unitPrice: "122.00", total: "91.50"})
+	buy("2026-10-04", line{name: "TAVUK GOGUS", quantity: "1", unit: "AD", unitPrice: "70.00", total: "70.00"})
+	buy("2026-10-05", line{name: "TAVUK SUYU 1 L", quantity: "1", unit: "AD", unitPrice: "30.00", total: "30.00"})
+
+	h, err := f.service.PriceHistory(t.Context(), f.alice, chicken, products.HistoryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, p := range h.Points {
+		price := "null"
+		if p.BasisPrice.Valid {
+			price = p.BasisPrice.Decimal.StringFixed(2)
+		}
+		got = append(got, p.Basis+" "+price)
+	}
+	want := []string{"kg 120.00", "kg 118.00", "kg 122.00", "kg null", "kg null"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("basis prices (-want +got):\n%s", diff)
+	}
+}
+
+func TestPriceHistory_ItemProductHasNoBasisPrice(t *testing.T) {
+	f := newHistoryFixture(t)
+	h, err := f.service.PriceHistory(t.Context(), f.alice, f.milk, products.HistoryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range h.Points {
+		if p.Basis != "item" || p.BasisPrice.Valid {
+			t.Errorf("point = %+v", p)
+		}
 	}
 }

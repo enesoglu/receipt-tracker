@@ -30,6 +30,10 @@ type (
 		Quantity     decimal.NullDecimal
 		QuantityUnit *string
 		Currency     string
+		// Basis is the product's price basis; BasisPrice is the price of one
+		// kilogram or litre for a generic product, when it can be known.
+		Basis      string
+		BasisPrice decimal.NullDecimal
 	}
 	// StoreSummary sums up the purchases at one store in one currency.
 	StoreSummary struct {
@@ -58,13 +62,15 @@ type (
 // ready or needs review and has a date, and the line is not a discount;
 // its unit price is the printed one, or else the line total divided by the
 // quantity, or else the line total. Prices in different currencies are
-// never combined.
+// never combined. For a generic product (price basis kg or l) each point
+// also carries the price of one kilogram or litre (see basisPrice).
 func (s *Service) PriceHistory(ctx context.Context, userID, productID uuid.UUID, f HistoryFilter) (History, error) {
 	if f.From != nil && f.To != nil && f.From.After(*f.To) {
 		return History{}, apperr.New(apperr.Invalid, "the date range ends before it starts").WithField("to", "must not be before from")
 	}
 	q := sqlc.New(s.db)
-	if _, err := q.GetProduct(ctx, sqlc.GetProductParams{UserID: userID, ProductID: productID}); err != nil {
+	product, err := q.GetProduct(ctx, sqlc.GetProductParams{UserID: userID, ProductID: productID})
+	if err != nil {
 		return History{}, classify(err)
 	}
 	rows, err := q.ListProductPricePoints(ctx, sqlc.ListProductPricePointsParams{
@@ -79,6 +85,10 @@ func (s *Service) PriceHistory(ctx context.Context, userID, productID uuid.UUID,
 			ReceiptID: row.ReceiptID, LineItemID: row.LineItemID, PurchasedOn: row.PurchasedOn,
 			Store: ref(row.StoreID, row.StoreName), UnitPrice: row.UnitPrice,
 			Quantity: row.Quantity, QuantityUnit: row.QuantityUnit, Currency: row.Currency,
+			Basis: product.Product.PriceBasis,
+			BasisPrice: basisPrice(product.Product.PriceBasis, pricedLine{
+				name: row.Name, quantity: row.Quantity, unit: row.QuantityUnit, lineTotal: row.LineTotal, unitPrice: row.UnitPrice,
+			}),
 		})
 	}
 	h.Stores = summarise(h.Points)
