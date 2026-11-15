@@ -1324,3 +1324,292 @@ export function getMockProductPriceHistory(
     stores,
   };
 }
+
+const mockMonthlyTotalsByMonth: Record<
+  string,
+  components['schemas']['CurrencyTotal'][]
+> = {
+  '2026-07': [{ currency: 'TRY', amount: '765.00', receiptCount: 5 }],
+  '2026-08': [
+    { currency: 'TRY', amount: '1140.25', receiptCount: 8 },
+    { currency: 'EUR', amount: '18.50', receiptCount: 1 },
+  ],
+  '2026-09': [{ currency: 'TRY', amount: '980.50', receiptCount: 6 }],
+  '2026-10': [],
+  '2026-11': mockMonthlySpending.months[1].totals,
+};
+
+function enumerateMockMonths(from: string, to: string): string[] {
+  const fromMatch = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(from);
+  const toMatch = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(to);
+  if (!fromMatch || !toMatch || from > to) {
+    return [];
+  }
+  let year = Number(fromMatch[1]);
+  let month = Number(fromMatch[2]);
+  const endYear = Number(toMatch[1]);
+  const endMonth = Number(toMatch[2]);
+  const result: string[] = [];
+  while (
+    (year < endYear || (year === endYear && month <= endMonth)) &&
+    result.length < 60
+  ) {
+    result.push(`${year}-${String(month).padStart(2, '0')}`);
+    month += 1;
+    if (month > 12) {
+      month = 1;
+      year += 1;
+    }
+  }
+  return result;
+}
+
+/** Returns range-aware monthly spending totals grouped per currency. */
+export function queryMockMonthlySpending(
+  searchParams: URLSearchParams,
+): components['schemas']['MonthlySpending'] {
+  const from = searchParams.get('from')?.trim() || mockMonthlySpending.from;
+  const to = searchParams.get('to')?.trim() || mockMonthlySpending.to;
+  const monthKeys = enumerateMockMonths(from, to);
+
+  return {
+    from,
+    to,
+    months: monthKeys.map((month) => ({
+      month,
+      totals: mockMonthlyTotalsByMonth[month] ?? [],
+    })),
+    excludedReceipts: mockMonthlySpending.excludedReceipts,
+  };
+}
+
+/** Returns month breakdown grouped by category or store with currency shares. */
+export function queryMockMonthBreakdown(
+  searchParams: URLSearchParams,
+): components['schemas']['MonthBreakdown'] {
+  const month = searchParams.get('month')?.trim() || mockMonthBreakdown.month;
+  const rawGroupBy = searchParams.get('groupBy')?.trim();
+  const groupBy: 'category' | 'store' =
+    rawGroupBy === 'store' ? 'store' : 'category';
+
+  if (month === '2026-10') {
+    return {
+      month,
+      groupBy,
+      currencies: [],
+      excludedReceipts: 1,
+    };
+  }
+
+  if (month === '2026-09') {
+    return {
+      month,
+      groupBy,
+      currencies: [
+        {
+          currency: 'TRY',
+          total: '980.50',
+          groups:
+            groupBy === 'store'
+              ? [
+                  {
+                    kind: 'store',
+                    id: '0193a1b2-0000-7000-8000-000000000010',
+                    name: 'Example Market',
+                    amount: '620.00',
+                    share: '0.6323',
+                    itemCount: 14,
+                  },
+                  {
+                    kind: 'store',
+                    id: '0193a1b2-0000-7000-8000-000000000011',
+                    name: 'Corner Shop',
+                    amount: '360.50',
+                    share: '0.3677',
+                    itemCount: 8,
+                  },
+                ]
+              : [
+                  {
+                    kind: 'category',
+                    id: '0193a1b2-0000-7000-8000-000000000020',
+                    name: 'Dairy',
+                    amount: '540.00',
+                    share: '0.5507',
+                    itemCount: 12,
+                  },
+                  {
+                    kind: 'category',
+                    id: '0193a1b2-0000-7000-8000-000000000021',
+                    name: 'Bakery',
+                    amount: '440.50',
+                    share: '0.4493',
+                    itemCount: 10,
+                  },
+                ],
+        },
+      ],
+      excludedReceipts: 0,
+    };
+  }
+
+  if (month === '2026-08') {
+    return {
+      month,
+      groupBy,
+      currencies: [
+        {
+          currency: 'TRY',
+          total: '1140.25',
+          groups:
+            groupBy === 'store'
+              ? [
+                  {
+                    kind: 'store',
+                    id: '0193a1b2-0000-7000-8000-000000000010',
+                    name: 'Example Market',
+                    amount: '1140.25',
+                    share: '1.0000',
+                    itemCount: 19,
+                  },
+                ]
+              : [
+                  {
+                    kind: 'category',
+                    id: '0193a1b2-0000-7000-8000-000000000020',
+                    name: 'Dairy',
+                    amount: '1140.25',
+                    share: '1.0000',
+                    itemCount: 19,
+                  },
+                ],
+        },
+        {
+          currency: 'EUR',
+          total: '18.50',
+          groups: [
+            {
+              kind: groupBy === 'store' ? 'store' : 'category',
+              id:
+                groupBy === 'store'
+                  ? '0193a1b2-0000-7000-8000-000000000011'
+                  : '0193a1b2-0000-7000-8000-000000000021',
+              name: groupBy === 'store' ? 'Corner Shop' : 'Bakery',
+              amount: '18.50',
+              share: '1.0000',
+              itemCount: 2,
+            },
+          ],
+        },
+      ],
+      excludedReceipts: 0,
+    };
+  }
+
+  if (month === '2026-07') {
+    return {
+      month,
+      groupBy,
+      currencies: [
+        {
+          currency: 'TRY',
+          total: '765.00',
+          groups: [
+            {
+              kind: groupBy === 'store' ? 'store' : 'category',
+              id:
+                groupBy === 'store'
+                  ? '0193a1b2-0000-7000-8000-000000000010'
+                  : '0193a1b2-0000-7000-8000-000000000020',
+              name: groupBy === 'store' ? 'Example Market' : 'Dairy',
+              amount: '765.00',
+              share: '1.0000',
+              itemCount: 11,
+            },
+          ],
+        },
+      ],
+      excludedReceipts: 0,
+    };
+  }
+
+  if (month !== '2026-11') {
+    return {
+      month,
+      groupBy,
+      currencies: [],
+      excludedReceipts: 0,
+    };
+  }
+
+  return {
+    month,
+    groupBy,
+    currencies:
+      groupBy === 'store'
+        ? [
+            {
+              currency: 'TRY',
+              total: '1294.00',
+              groups: [
+                {
+                  kind: 'store',
+                  id: '0193a1b2-0000-7000-8000-000000000010',
+                  name: 'Example Market',
+                  amount: '890.00',
+                  share: '0.6878',
+                  itemCount: 26,
+                },
+                {
+                  kind: 'store',
+                  id: '0193a1b2-0000-7000-8000-000000000011',
+                  name: 'Corner Shop',
+                  amount: '391.50',
+                  share: '0.3026',
+                  itemCount: 12,
+                },
+                {
+                  kind: 'unallocated',
+                  id: null,
+                  name: 'Unallocated',
+                  amount: '12.50',
+                  share: '0.0097',
+                  itemCount: 0,
+                },
+              ],
+            },
+            {
+              currency: 'EUR',
+              total: '23.80',
+              groups: [
+                {
+                  kind: 'store',
+                  id: '0193a1b2-0000-7000-8000-000000000011',
+                  name: 'Corner Shop',
+                  amount: '23.80',
+                  share: '1.0000',
+                  itemCount: 2,
+                },
+              ],
+            },
+          ]
+        : [
+            ...mockMonthBreakdown.currencies,
+            {
+              currency: 'EUR',
+              total: '23.80',
+              groups: [
+                {
+                  kind: 'category',
+                  id: '0193a1b2-0000-7000-8000-000000000021',
+                  name: 'Bakery',
+                  amount: '23.80',
+                  share: '1.0000',
+                  itemCount: 2,
+                },
+              ],
+            },
+          ],
+    excludedReceipts: mockMonthBreakdown.excludedReceipts,
+  };
+}
