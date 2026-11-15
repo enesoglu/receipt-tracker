@@ -53,7 +53,7 @@ func newUploadServer(t *testing.T) uploadServer {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	service := ingest.New(pool, store, "local", ingest.NewHEICConverter(logger), notifier{}, logger, time.Now)
-	server := httpapi.New(":0", logger, http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{Uploads: service})
+	server := httpapi.New(":0", logger, http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{Uploads: service}, nil)
 	s := uploadServer{t: t, server: server, alice: alice, bob: bob}
 	s.call = func(user uuid.UUID, body io.Reader, contentType string) *httptest.ResponseRecorder {
 		t.Helper()
