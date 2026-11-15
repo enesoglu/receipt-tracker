@@ -1,0 +1,184 @@
+{
+  "storeName": {
+    "value": "Synthetic Market",
+    "found": true,
+    "confidence": 0.99
+  },
+  "date": {
+    "value": "2026-11-15T00:00:00Z",
+    "found": true,
+    "confidence": 0.99
+  },
+  "total": {
+    "value": "95.00",
+    "found": true,
+    "confidence": 0.99
+  },
+  "lines": [
+    {
+      "name": {
+        "value": "BREAD%01",
+        "found": true,
+        "confidence": 0.99
+      },
+      "quantity": {
+        "value": "1",
+        "found": true,
+        "confidence": 0.99
+      },
+      "unitPrice": {
+        "value": "10",
+        "found": true,
+        "confidence": 0.99
+      },
+      "total": {
+        "value": "10",
+        "found": true,
+        "confidence": 0.99
+      },
+      "productCode": {
+        "value": "1234567",
+        "found": true,
+        "confidence": 0.99
+      },
+      "confidence": 0.99,
+      "unit": {
+        "value": "ad",
+        "found": true,
+        "confidence": 0.99
+      }
+    },
+    {
+      "name": {
+        "value": "TOMATO",
+        "found": true,
+        "confidence": 0.99
+      },
+      "quantity": {
+        "value": "0.5",
+        "found": true,
+        "confidence": 0.99
+      },
+      "unitPrice": {
+        "value": "40",
+        "found": true,
+        "confidence": 0.99
+      },
+      "total": {
+        "value": "20",
+        "found": true,
+        "confidence": 0.99
+      },
+      "productCode": {
+        "value": "",
+        "found": true,
+        "confidence": 0.99
+      },
+      "confidence": 0.79,
+      "unit": {
+        "value": "kg",
+        "found": true,
+        "confidence": 0.99
+      }
+    },
+    {
+      "name": {
+        "value": "SOAP",
+        "found": true,
+        "confidence": 0.99
+      },
+      "quantity": {
+        "value": "2",
+        "found": true,
+        "confidence": 0.99
+      },
+      "unitPrice": {
+        "value": "10",
+        "found": true,
+        "confidence": 0.99
+      },
+      "total": {
+        "value": "30",
+        "found": true,
+        "confidence": 0.99
+      },
+      "productCode": {
+        "value": "",
+        "found": true,
+        "confidence": 0.99
+      },
+      "confidence": 0.99,
+      "unit": {
+        "value": "ad",
+        "found": true,
+        "confidence": 0.99
+      }
+    },
+    {
+      "name": {
+        "value": "APPLE JUICE 1 L",
+        "found": true,
+        "confidence": 0.99
+      },
+      "quantity": {
+        "value": "1",
+        "found": true,
+        "confidence": 0.99
+      },
+      "unitPrice": {
+        "value": "40",
+        "found": true,
+        "confidence": 0.99
+      },
+      "total": {
+        "value": "40",
+        "found": true,
+        "confidence": 0.99
+      },
+      "productCode": {
+        "value": "7654321",
+        "found": true,
+        "confidence": 0.99
+      },
+      "confidence": 0.99,
+      "unit": {
+        "value": "ad",
+        "found": true,
+        "confidence": 0.99
+      }
+    },
+    {
+      "name": {
+        "value": "DISCOUNT",
+        "found": true,
+        "confidence": 0.99
+      },
+      "quantity": {
+        "value": "1",
+        "found": true,
+        "confidence": 0.99
+      },
+      "unitPrice": {
+        "value": "-5",
+        "found": true,
+        "confidence": 0.99
+      },
+      "total": {
+        "value": "-5",
+        "found": true,
+        "confidence": 0.99
+      },
+      "productCode": {
+        "value": "",
+        "found": true,
+        "confidence": 0.99
+      },
+      "confidence": 0.99,
+      "unit": {
+        "value": "ad",
+        "found": true,
+        "confidence": 0.99
+      }
+    }
+  ]
+}
