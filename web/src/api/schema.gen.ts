@@ -588,9 +588,10 @@ export interface paths {
      *
      *     With `groupBy=category`, line totals are summed by the category of the
      *     line's product. Lines without a product, and products without a
-     *     category, form the `uncategorised` group. When the lines of a receipt
-     *     do not add up to its total, the difference goes to the `unallocated`
-     *     group, so the groups always add up to the month's total.
+     *     category, form the `uncategorised` group. Lines with a negative total
+     *     form the `discounts` group. When the lines of a receipt do not add up
+     *     to its total, the difference goes to the `unallocated` group, so the
+     *     groups always add up to the month's total.
      *
      *     With `groupBy=store`, receipt totals are summed by store. Receipts
      *     without a store form the `uncategorised` group.
@@ -808,6 +809,14 @@ export interface components {
      * @example 0.6530
      */
     Ratio: string;
+    /**
+     * @description A group's amount divided by the total, as a decimal string with four
+     *     places. It is negative for `discounts` and can exceed 1 for a category
+     *     when discounts lower the total; the shares of a currency add up to 1.
+     *     It is `0.0000` when the total is zero.
+     * @example 0.6530
+     */
+    Share: string;
     /**
      * @description ISO 4217 currency code.
      * @example TRY
@@ -1559,9 +1568,12 @@ export interface components {
      * @description - `category`, `store`: a real category or store, named by `id`.
      *     - `uncategorised`: spending without a category (or, by store, without a store).
      *     - `unallocated`: the part of receipt totals that the lines do not account for.
+     *     - `discounts`: every line with a negative total, whatever its category.
+     *       Only the category grouping has it; its amount is negative.
      * @enum {string}
      */
-    BreakdownGroupKind: 'category' | 'store' | 'uncategorised' | 'unallocated';
+    BreakdownGroupKind:
+      'category' | 'store' | 'uncategorised' | 'unallocated' | 'discounts';
     BreakdownGroup: {
       kind: components['schemas']['BreakdownGroupKind'];
       /**
@@ -1573,7 +1585,7 @@ export interface components {
       name: string;
       amount: components['schemas']['Money'];
       /** @description Part of the currency's total. */
-      share: components['schemas']['Ratio'];
+      share: components['schemas']['Share'];
       /** @description Number of line items in the group, or of receipts when grouping by store. */
       itemCount: number;
     };

@@ -1047,9 +1047,10 @@ paths:
 
         With `groupBy=category`, line totals are summed by the category of the
         line's product. Lines without a product, and products without a
-        category, form the `uncategorised` group. When the lines of a receipt
-        do not add up to its total, the difference goes to the `unallocated`
-        group, so the groups always add up to the month's total.
+        category, form the `uncategorised` group. Lines with a negative total
+        form the `discounts` group. When the lines of a receipt do not add up
+        to its total, the difference goes to the `unallocated` group, so the
+        groups always add up to the month's total.
 
         With `groupBy=store`, receipt totals are summed by store. Receipts
         without a store form the `uncategorised` group.
@@ -1506,6 +1507,15 @@ components:
       type: string
       description: A share between 0 and 1 as a decimal string with four places.
       pattern: '^(0\.\d{4}|1\.0000)$'
+      example: "0.6530"
+    Share:
+      type: string
+      description: |
+        A group's amount divided by the total, as a decimal string with four
+        places. It is negative for `discounts` and can exceed 1 for a category
+        when discounts lower the total; the shares of a currency add up to 1.
+        It is `0.0000` when the total is zero.
+      pattern: '^-?\d{1,3}\.\d{4}$'
       example: "0.6530"
     Currency:
       type: string
@@ -2747,7 +2757,9 @@ components:
         - `category`, `store`: a real category or store, named by `id`.
         - `uncategorised`: spending without a category (or, by store, without a store).
         - `unallocated`: the part of receipt totals that the lines do not account for.
-      enum: [category, store, uncategorised, unallocated]
+        - `discounts`: every line with a negative total, whatever its category.
+          Only the category grouping has it; its amount is negative.
+      enum: [category, store, uncategorised, unallocated, discounts]
     BreakdownGroup:
       type: object
       required: [kind, id, name, amount, share, itemCount]
@@ -2767,7 +2779,7 @@ components:
         share:
           description: Part of the currency's total.
           allOf:
-            - $ref: "#/components/schemas/Ratio"
+            - $ref: "#/components/schemas/Share"
         itemCount:
           type: integer
           description: Number of line items in the group, or of receipts when grouping by store.

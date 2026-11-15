@@ -58,6 +58,7 @@ func (e BackupDestination) Valid() bool {
 // Defines values for BreakdownGroupKind.
 const (
 	BreakdownGroupKindCategory      BreakdownGroupKind = "category"
+	BreakdownGroupKindDiscounts     BreakdownGroupKind = "discounts"
 	BreakdownGroupKindStore         BreakdownGroupKind = "store"
 	BreakdownGroupKindUnallocated   BreakdownGroupKind = "unallocated"
 	BreakdownGroupKindUncategorised BreakdownGroupKind = "uncategorised"
@@ -67,6 +68,8 @@ const (
 func (e BreakdownGroupKind) Valid() bool {
 	switch e {
 	case BreakdownGroupKindCategory:
+		return true
+	case BreakdownGroupKindDiscounts:
 		return true
 	case BreakdownGroupKindStore:
 		return true
@@ -669,18 +672,22 @@ type BreakdownGroup struct {
 	// Kind - `category`, `store`: a real category or store, named by `id`.
 	// - `uncategorised`: spending without a category (or, by store, without a store).
 	// - `unallocated`: the part of receipt totals that the lines do not account for.
+	// - `discounts`: every line with a negative total, whatever its category.
+	//   Only the category grouping has it; its amount is negative.
 	Kind BreakdownGroupKind `json:"kind"`
 
 	// Name Display name of the group.
 	Name string `json:"name"`
 
 	// Share Part of the currency's total.
-	Share Ratio `json:"share"`
+	Share Share `json:"share"`
 }
 
 // BreakdownGroupKind - `category`, `store`: a real category or store, named by `id`.
-// - `uncategorised`: spending without a category (or, by store, without a store).
-// - `unallocated`: the part of receipt totals that the lines do not account for.
+//   - `uncategorised`: spending without a category (or, by store, without a store).
+//   - `unallocated`: the part of receipt totals that the lines do not account for.
+//   - `discounts`: every line with a negative total, whatever its category.
+//     Only the category grouping has it; its amount is negative.
 type BreakdownGroupKind string
 
 // BreakdownGrouping defines model for BreakdownGrouping.
@@ -1334,11 +1341,6 @@ type ProductUpdate struct {
 // Example: 1.250
 type Quantity = string
 
-// Ratio A share between 0 and 1 as a decimal string with four places.
-//
-// Example: 0.6530
-type Ratio = string
-
 // Receipt A receipt with everything on it.
 type Receipt struct {
 	// CreatedAt When the receipt was uploaded.
@@ -1564,6 +1566,14 @@ type Settings struct {
 	// DefaultReceiptTitle Title given to an uploaded receipt.
 	DefaultReceiptTitle string `json:"defaultReceiptTitle"`
 }
+
+// Share A group's amount divided by the total, as a decimal string with four
+// places. It is negative for `discounts` and can exceed 1 for a category
+// when discounts lower the total; the shares of a currency add up to 1.
+// It is `0.0000` when the total is zero.
+//
+// Example: 0.6530
+type Share = string
 
 // SplitProductRequest defines model for SplitProductRequest.
 type SplitProductRequest struct {
