@@ -209,6 +209,26 @@ WHERE user_id = @user_id AND product_id = @source_id::uuid
   AND (cardinality(@line_ids::uuid[]) = 0 OR id = ANY(@line_ids::uuid[]))
 RETURNING id;
 
+-- name: ListProductLines :many
+-- ListProductLines returns the lines linked to a product with the store of
+-- their receipt, which is the store their name and code were seen at.
+SELECT l.id, l.name, l.product_code, r.store_id
+FROM line_items l
+JOIN receipts r ON r.user_id = l.user_id AND r.id = l.receipt_id
+WHERE l.user_id = @user_id AND r.user_id = @user_id AND l.product_id = @product_id::uuid
+ORDER BY l.id;
+
+-- name: CreateSplitProduct :one
+INSERT INTO products (user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at)
+VALUES (@user_id, @canonical_name, sqlc.narg(category_id), sqlc.narg(size_value), sqlc.narg(size_unit), @now, @now)
+RETURNING *;
+
+-- name: RejectName :exec
+-- RejectName records that a name is not a product, at any store.
+INSERT INTO match_rejections (user_id, product_id, normalized_name, store_id, created_at)
+VALUES (@user_id, @product_id, @normalized_name, NULL, @now)
+ON CONFLICT (product_id, normalized_name, store_id) DO NOTHING;
+
 -- name: TouchProduct :exec
 UPDATE products SET updated_at = @now WHERE user_id = @user_id AND id = @product_id;
 

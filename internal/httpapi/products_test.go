@@ -302,3 +302,43 @@ func TestProducts_IsolatesMerge(t *testing.T) {
 		}
 	}
 }
+
+func TestProducts_SplitFollowsTheContract(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	alias := s.id(`INSERT INTO product_aliases (user_id, product_id, raw_name, normalized_name) VALUES ($1, $2, 'SUT 2L', 'sut 2000 ml') RETURNING id`, s.alice, milk)
+
+	product := decodeAs[httpapi.Product](t, s.call(s.alice, http.MethodPost, "/products/"+milk.String()+"/split", `{"aliasIds":["`+alias.String()+`"],"canonicalName":"Süt 2 L"}`), http.StatusCreated, "Product")
+	if product.Id == milk || product.CanonicalName != "Süt 2 L" || len(product.Aliases) != 1 || product.Aliases[0].Id != alias {
+		t.Errorf("product = %+v", product)
+	}
+
+	for name, body := range map[string]string{
+		"no aliases":    `{"aliasIds":[],"canonicalName":"New"}`,
+		"foreign alias": `{"aliasIds":["` + uuid.NewString() + `"],"canonicalName":"New"}`,
+		"blank name":    `{"aliasIds":["` + alias.String() + `"],"canonicalName":" "}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := s.call(s.alice, http.MethodPost, "/products/"+milk.String()+"/split", body)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+			}
+			decodeProblem(t, response)
+		})
+	}
+}
+
+func TestProducts_IsolatesSplit(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	alias := s.id(`INSERT INTO product_aliases (user_id, product_id, raw_name, normalized_name) VALUES ($1, $2, 'SUT 2L', 'sut 2000 ml') RETURNING id`, s.alice, milk)
+	response := s.call(s.bob, http.MethodPost, "/products/"+milk.String()+"/split", `{"aliasIds":["`+alias.String()+`"],"canonicalName":"Taken"}`)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	decodeProblem(t, response)
+	product := decodeAs[httpapi.Product](t, s.get(s.alice, "/products/"+milk.String()), http.StatusOK, "Product")
+	if len(product.Aliases) != 2 {
+		t.Errorf("aliases = %d, want 2", len(product.Aliases))
+	}
+}

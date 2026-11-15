@@ -56,6 +56,44 @@ func (q *Queries) CombineMergedCodes(ctx context.Context, arg CombineMergedCodes
 	return err
 }
 
+const createSplitProduct = `-- name: CreateSplitProduct :one
+INSERT INTO products (user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $6)
+RETURNING id, user_id, canonical_name, category_id, size_value, size_unit, created_at, updated_at
+`
+
+type CreateSplitProductParams struct {
+	UserID        uuid.UUID
+	CanonicalName string
+	CategoryID    uuid.NullUUID
+	SizeValue     decimal.NullDecimal
+	SizeUnit      *string
+	Now           time.Time
+}
+
+func (q *Queries) CreateSplitProduct(ctx context.Context, arg CreateSplitProductParams) (Product, error) {
+	row := q.db.QueryRow(ctx, createSplitProduct,
+		arg.UserID,
+		arg.CanonicalName,
+		arg.CategoryID,
+		arg.SizeValue,
+		arg.SizeUnit,
+		arg.Now,
+	)
+	var i Product
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CanonicalName,
+		&i.CategoryID,
+		&i.SizeValue,
+		&i.SizeUnit,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const deleteCombinedAliases = `-- name: DeleteCombinedAliases :exec
 DELETE FROM product_aliases s
 WHERE s.user_id = $1 AND s.product_id = $2
@@ -301,6 +339,53 @@ func (q *Queries) ListProductCodes(ctx context.Context, arg ListProductCodesPara
 			&i.ProductCode.SeenCount,
 			&i.ProductCode.CreatedAt,
 			&i.StoreName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProductLines = `-- name: ListProductLines :many
+SELECT l.id, l.name, l.product_code, r.store_id
+FROM line_items l
+JOIN receipts r ON r.user_id = l.user_id AND r.id = l.receipt_id
+WHERE l.user_id = $1 AND r.user_id = $1 AND l.product_id = $2::uuid
+ORDER BY l.id
+`
+
+type ListProductLinesParams struct {
+	UserID    uuid.UUID
+	ProductID uuid.UUID
+}
+
+type ListProductLinesRow struct {
+	ID          uuid.UUID
+	Name        string
+	ProductCode *string
+	StoreID     uuid.NullUUID
+}
+
+// ListProductLines returns the lines linked to a product with the store of
+// their receipt, which is the store their name and code were seen at.
+func (q *Queries) ListProductLines(ctx context.Context, arg ListProductLinesParams) ([]ListProductLinesRow, error) {
+	rows, err := q.db.Query(ctx, listProductLines, arg.UserID, arg.ProductID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProductLinesRow{}
+	for rows.Next() {
+		var i ListProductLinesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ProductCode,
+			&i.StoreID,
 		); err != nil {
 			return nil, err
 		}
@@ -736,6 +821,30 @@ func (q *Queries) ProductCategoryExists(ctx context.Context, arg ProductCategory
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const rejectName = `-- name: RejectName :exec
+INSERT INTO match_rejections (user_id, product_id, normalized_name, store_id, created_at)
+VALUES ($1, $2, $3, NULL, $4)
+ON CONFLICT (product_id, normalized_name, store_id) DO NOTHING
+`
+
+type RejectNameParams struct {
+	UserID         uuid.UUID
+	ProductID      uuid.UUID
+	NormalizedName string
+	Now            time.Time
+}
+
+// RejectName records that a name is not a product, at any store.
+func (q *Queries) RejectName(ctx context.Context, arg RejectNameParams) error {
+	_, err := q.db.Exec(ctx, rejectName,
+		arg.UserID,
+		arg.ProductID,
+		arg.NormalizedName,
+		arg.Now,
+	)
+	return err
 }
 
 const touchProduct = `-- name: TouchProduct :exec
