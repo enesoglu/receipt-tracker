@@ -884,6 +884,14 @@
       ],
       "line": {"name": "PEYNIR 1KG"},
       "want": {"outcome": "create_new", "rule": 10, "reason": "no_match", "candidates": ["mama"]}
+    },
+    {
+      "name": "seven-digit weighed-goods code links at its store",
+      "products": [
+        {"id": "bonfile", "aliases": [{"name": "DANA BONFILE KG"}], "codes": [{"code": "2345678", "kind": "store", "store": "bim"}]}
+      ],
+      "line": {"name": "DANA BONFİLE KG", "code": "2345678", "store": "bim"},
+      "want": {"outcome": "auto_link", "rule": 6, "reason": "code_match", "product": "bonfile", "candidates": ["bonfile"]}
     }
   ]
 }
