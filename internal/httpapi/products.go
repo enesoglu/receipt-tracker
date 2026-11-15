@@ -121,8 +121,19 @@ func (h productsHandlers) MergeProducts(ctx context.Context, request MergeProduc
 }
 
 // SplitProduct moves chosen names of a product to a new product.
-func (productsHandlers) SplitProduct(_ context.Context, _ SplitProductRequestObject) (SplitProductResponseObject, error) {
-	return nil, notImplemented()
+func (h productsHandlers) SplitProduct(ctx context.Context, request SplitProductRequestObject) (SplitProductResponseObject, error) {
+	userID, err := h.identity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if request.Body == nil {
+		return nil, apperr.New(apperr.Invalid, "split body is required")
+	}
+	d, err := h.products.Split(ctx, userID, request.ProductId, request.Body.AliasIds, request.Body.CanonicalName)
+	if err != nil {
+		return nil, err
+	}
+	return SplitProduct201JSONResponse(productResponse(d)), nil
 }
 
 // GetProductPriceHistory returns the purchases of a product and a summary per store.
