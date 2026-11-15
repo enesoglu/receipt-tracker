@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/enesoglu/receipt-tracker/internal/auth"
+	"github.com/enesoglu/receipt-tracker/internal/products"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
 	"github.com/enesoglu/receipt-tracker/internal/reports"
 	"github.com/enesoglu/receipt-tracker/internal/storage/drive"
@@ -29,7 +30,7 @@ type Server struct {
 // New builds the router: health checks, the REST API under /api/v1, the
 // prefixes reserved for sign-in, OAuth and MCP, and the single-page app for
 // everything else.
-func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager, storage *drive.Service, ingestion Ingestion, reportService *reports.Service, receiptServices ...*receipts.Service) *Server {
+func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Service, sessions *scs.SessionManager, storage *drive.Service, ingestion Ingestion, reportService *reports.Service, productService *products.Service, receiptServices ...*receipts.Service) *Server {
 	var receiptService *receipts.Service
 	if len(receiptServices) > 0 {
 		receiptService = receiptServices[0]
@@ -96,7 +97,7 @@ func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Serv
 				v1.Use(sessions.LoadAndSave)
 			}
 			v1.Use(RequireUser(users, sessions, problems.write), validateDriveQuery(problems))
-			mountAPI(v1, problems, authentication, storageHandlers{storage: storage}, ingestion, reportService, receiptService)
+			mountAPI(v1, problems, authentication, storageHandlers{storage: storage}, ingestion, reportService, productService, receiptService)
 		})
 	})
 	authentication.mount(router, problems)

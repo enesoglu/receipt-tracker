@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/enesoglu/receipt-tracker/internal/apperr"
+	"github.com/enesoglu/receipt-tracker/internal/products"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
 	"github.com/enesoglu/receipt-tracker/internal/reports"
 )
@@ -39,11 +40,12 @@ func notImplemented() error {
 // only returns a response object or an error. All three ways a request can
 // fail end in the problem writer: a parameter that cannot be bound, a body
 // that cannot be decoded, and an error from the handler.
-func mountAPI(router chi.Router, problems problemWriter, authentication authHandlers, storage storageHandlers, ingestion Ingestion, reportService *reports.Service, receiptService *receipts.Service) {
+func mountAPI(router chi.Router, problems problemWriter, authentication authHandlers, storage storageHandlers, ingestion Ingestion, reportService *reports.Service, productService *products.Service, receiptService *receipts.Service) {
 	all := handlers{
 		authHandlers: authentication, storageHandlers: storage,
 		receiptsHandlers: receiptsHandlers{receipts: receiptService}, reportsHandlers: reportsHandlers{reports: reportService},
-		uploadsHandlers: uploadsHandlers{uploads: ingestion.Uploads}, usageHandlers: usageHandlers{usage: ingestion.Usage},
+		productsHandlers: productsHandlers{products: productService},
+		uploadsHandlers:  uploadsHandlers{uploads: ingestion.Uploads}, usageHandlers: usageHandlers{usage: ingestion.Usage},
 	}
 	strict := NewStrictHandlerWithOptions(all, []StrictMiddlewareFunc{uploadDeadlines}, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
