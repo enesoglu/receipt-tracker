@@ -22,7 +22,32 @@ single-use state bound to the administrator. The callback redirects to
 
 Connecting again replaces the encrypted token and reuses an existing visible
 root folder. Duplicate matching roots fail with `storage_duplicate_folder`
-rather than choosing a potentially incomplete recovery tree. Keep the same
+rather than choosing a potentially incomplete recovery tree.
+
+## Keep the root folder inside another Drive folder
+
+The app first creates its root at the top of My Drive. To keep it elsewhere:
+
+1. Connect once, so the app creates the folder. Move that folder in the
+   Drive web UI into the folder you want; renaming it is allowed. Do not
+   create a folder by hand: under `drive.file` the app cannot see it.
+2. Open the moved folder and copy its id, the part of the address after
+   `/folders/`. Use the moved app folder's id, not the id of its new parent.
+3. Set `DRIVE_ROOT_FOLDER_ID` to that id and restart. No reconnect is
+   needed; the next check verifies the folder and records it as the root.
+4. Run `storage probe --write`, then `storage probe --list` (through
+   `task server --` locally): the root's subfolders are listed and the probe
+   file is `readable`. Delete the probe file in the Drive web UI afterwards.
+   Open an earlier receipt's image in the app to confirm older files.
+
+Keep the variable in the host's secrets backup. A new connection without it,
+such as recovery onto a fresh host, searches My Drive by name and creates a
+new empty root there. With the id set, a missing, invisible, trashed,
+non-folder or read-only root fails with `storage_root_not_found`,
+`storage_root_trashed`, `storage_root_not_folder` or
+`storage_root_not_writable`, and nothing is created; the storage status stays
+`ok` because the grant is fine. Restore the folder from the trash or correct
+the id, then restart. Images and backups use the same root. Keep the same
 Google Cloud project and client ID for recovery; rotate only the client secret.
 
 `GET /api/v1/storage` exposes operational state to signed-in users and

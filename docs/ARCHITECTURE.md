@@ -290,6 +290,24 @@ Google, because revoking may hide files created earlier (§5.7). Revoking is a
 manual step in the owner's Google account settings. Files go under an
 app-created folder, `receipt-tracker/<user_id>/<receipt_id>/`.
 
+**Root folder.** By default the adapter finds or creates the folder by name
+(`DRIVE_ROOT_FOLDER`) at the top of My Drive. The owner may move it inside
+another Drive folder and rename it; `drive.file` access stays with the file,
+so the move needs no new consent. `DRIVE_ROOT_FOLDER_ID` then names it by id,
+and the name and location no longer matter. With the id set, connecting uses
+that folder and never searches or creates one, and every activation of the
+connection (startup and the 15-minute check) verifies that the folder is
+visible to this OAuth client, is a folder, is not trashed and accepts new
+children. A failure stops writes with a `storage_root_*` code and is not a
+lost grant: the status stays `ok`, and fixing the variable and restarting is
+enough. The id must belong to a folder this client created; the parent
+folder is invisible to the app. The connection's `root_folder_ref` records
+the root in use: a configured id that differs replaces it at the next
+activation, and with the id empty the stored root keeps serving the running
+connection while a new connection falls back to the name lookup. Image and
+backup files are addressed by file id, so a later change of root leaves
+earlier files readable. Backups use the same root (§5.7).
+
 ### 5.6 MCP
 
 `/mcp` speaks Streamable HTTP and exposes read-only tools, each annotated
@@ -319,8 +337,8 @@ works without signing in again. Write tools later need real per-tool scopes.
 
 A scheduler runs `pg_dump -Fc` daily, streams it to a `backup.Destination`
 (`Put`, `List`, `Open`, `Delete`) and applies retention (7 daily, 4 weekly).
-The `drive` destination uploads to `receipt-tracker/backups/` in the owner's
-Drive through the same connection and `drive.file` grant as image storage; the
+The `drive` destination uploads to `backups/` inside the storage root
+(§5.5; `receipt-tracker/backups/` by default) through the same connection and `drive.file` grant as image storage; the
 `local` destination writes to a directory and is used in development and
 tests. Another destination can be added without touching the scheduler.
 `docs/OPERATIONS.md` documents the restore, including downloading a dump from
@@ -336,9 +354,10 @@ with an empty database, re-authorize Google Drive, then restore the database
 from the newest dump. This only works if a new authorization can read files
 created under the previous one. `drive.file` access belongs to the app and
 the user rather than to one token, but that is not taken on trust: on
-connect, the Drive adapter looks for the existing app-created
-`receipt-tracker` folder and reuses it instead of creating a second one, and
-the owner proves the behaviour against the real account before go-live.
+connect, the Drive adapter reuses the existing app-created root instead of
+creating a second one (by `DRIVE_ROOT_FOLDER_ID` when set, otherwise by name
+in My Drive, so a moved root needs the id in the restored secrets), and the
+owner proves the behaviour against the real account before go-live.
 `drive.file` access is tied to the OAuth client that created the files,
 identified by its client id. This is supported by community evidence (an
 rclone maintainer's statement, confirmed by a user's test), not by official
