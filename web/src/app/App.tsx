@@ -12,6 +12,7 @@ import { isForbiddenError } from '../api/errors';
 import { QueryProvider } from '../api/QueryProvider';
 import { Spinner } from '../components/ui/Spinner';
 import { SignInPage } from '../features/auth/SignInPage';
+import { CategoriesPage } from '../features/categories/CategoriesPage';
 import { UiPreviewPage } from '../features/dev/UiPreviewPage';
 import { PlaceholderPage } from '../features/placeholders/PlaceholderPage';
 import { ProductDetailPage } from '../features/products/ProductDetailPage';
@@ -79,18 +80,7 @@ export function AppRouterContent({ queryClient }: AppRouterContentProps) {
           <Route path="/products" element={<ProductsListPage />} />
           <Route path="/products/:productId" element={<ProductDetailPage />} />
           <Route path="/spending" element={<SpendingPage />} />
-          <Route
-            path="/categories"
-            element={
-              <PlaceholderPage
-                eyebrow="Organization"
-                title="Categories"
-                description="Create, rename, and remove spending categories applied across your products."
-                emptyTitle="Category management coming next"
-                emptyDescription="Category CRUD controls and usage counts will appear here."
-              />
-            }
-          />
+          <Route path="/categories" element={<CategoriesPage />} />
           <Route
             path="/settings"
             element={

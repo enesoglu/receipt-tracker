@@ -656,6 +656,10 @@ let mockProductsState: components['schemas']['Product'][] = [
   structuredClone(mockSecondProduct),
 ];
 let nextMockSplitIndex = 499;
+let mockCategoriesState: components['schemas']['Category'][] = structuredClone(
+  mockCategoryPage.items,
+);
+let nextMockCategoryIndex = 29;
 
 /** Clears runtime mock state created during uploads and reviews so tests stay isolated. */
 export function resetMockState(): void {
@@ -667,6 +671,8 @@ export function resetMockState(): void {
     structuredClone(mockSecondProduct),
   ];
   nextMockSplitIndex = 499;
+  mockCategoriesState = structuredClone(mockCategoryPage.items);
+  nextMockCategoryIndex = 29;
 }
 
 function hasAllowedUploadType(file: { name: string; type: string }): boolean {
@@ -1088,8 +1094,7 @@ export function updateMockProduct(
   const existing = mockProductsState[index];
   const resolvedCategory =
     body.categoryId != null
-      ? (mockCategoryPage.items.find((cat) => cat.id === body.categoryId) ??
-        null)
+      ? (mockCategoriesState.find((cat) => cat.id === body.categoryId) ?? null)
       : null;
 
   const updated: components['schemas']['Product'] = {
@@ -1612,4 +1617,116 @@ export function queryMockMonthBreakdown(
           ],
     excludedReceipts: mockMonthBreakdown.excludedReceipts,
   };
+}
+
+/** Filters and cursor-paginates stateful mock categories ordered by name. */
+export function queryMockCategories(
+  searchParams: URLSearchParams,
+): components['schemas']['CategoryPage'] {
+  const sorted = [...mockCategoriesState].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+
+  const rawLimit = Number.parseInt(searchParams.get('limit') ?? '50', 10);
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit >= 1 && rawLimit <= 100
+      ? rawLimit
+      : 50;
+  const rawOffset = Number.parseInt(searchParams.get('cursor') ?? '0', 10);
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+
+  const items = sorted.slice(offset, offset + limit);
+  const nextOffset = offset + items.length;
+  const nextCursor = nextOffset < sorted.length ? String(nextOffset) : null;
+
+  return { items, nextCursor };
+}
+
+/** Creates a mock category if its name is valid and unique case-insensitively. */
+export function createMockCategory(
+  body: components['schemas']['CategoryInput'],
+):
+  | { ok: true; category: components['schemas']['Category'] }
+  | { ok: false; reason: 'invalid' | 'conflict' } {
+  const trimmed = body.name.trim();
+  if (trimmed.length === 0 || trimmed.length > 100) {
+    return { ok: false, reason: 'invalid' };
+  }
+  const normalized = trimmed.toLowerCase();
+  if (
+    mockCategoriesState.some(
+      (category) => category.name.trim().toLowerCase() === normalized,
+    )
+  ) {
+    return { ok: false, reason: 'conflict' };
+  }
+
+  const seq = nextMockCategoryIndex++;
+  const created: components['schemas']['Category'] = {
+    id: `0193a1b2-0000-7000-8000-${String(seq).padStart(12, '0')}`,
+    name: trimmed,
+    productCount: 0,
+  };
+  mockCategoriesState.push(created);
+  return { ok: true, category: created };
+}
+
+/** Renames a mock category if found, valid, and not conflicting case-insensitively. */
+export function updateMockCategory(
+  categoryId: string,
+  body: components['schemas']['CategoryInput'],
+):
+  | { ok: true; category: components['schemas']['Category'] }
+  | { ok: false; reason: 'invalid' | 'not_found' | 'conflict' } {
+  const trimmed = body.name.trim();
+  if (trimmed.length === 0 || trimmed.length > 100) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  const index = mockCategoriesState.findIndex(
+    (category) => category.id === categoryId,
+  );
+  if (index === -1) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (
+    mockCategoriesState.some(
+      (category) =>
+        category.id !== categoryId &&
+        category.name.trim().toLowerCase() === normalized,
+    )
+  ) {
+    return { ok: false, reason: 'conflict' };
+  }
+
+  const updated: components['schemas']['Category'] = {
+    ...mockCategoriesState[index],
+    name: trimmed,
+  };
+  mockCategoriesState[index] = updated;
+  mockProductsState = mockProductsState.map((product) =>
+    product.category?.id === categoryId
+      ? { ...product, category: { id: updated.id, name: updated.name } }
+      : product,
+  );
+  return { ok: true, category: updated };
+}
+
+/** Deletes a mock category and clears references from mock products. */
+export function deleteMockCategory(categoryId: string): boolean {
+  const index = mockCategoriesState.findIndex(
+    (category) => category.id === categoryId,
+  );
+  if (index === -1) {
+    return false;
+  }
+  mockCategoriesState.splice(index, 1);
+  mockProductsState = mockProductsState.map((product) =>
+    product.category?.id === categoryId
+      ? { ...product, category: null }
+      : product,
+  );
+  return true;
 }
