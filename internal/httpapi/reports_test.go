@@ -131,3 +131,83 @@ func TestGetMonthlySpending_IsolatesUsers(t *testing.T) {
 		t.Errorf("user B saw user A's data: %+v", got)
 	}
 }
+
+// breakdownFixture gives Alice one March receipt with a categorised line, a
+// discount and a part the lines do not explain, and returns the receipt id.
+func (s *reportServer) breakdownFixture() {
+	s.t.Helper()
+	s.exec(`WITH c AS (INSERT INTO categories (user_id, name) VALUES ($1, 'Dairy') RETURNING id),
+	             p AS (INSERT INTO products (user_id, canonical_name, category_id) SELECT $1, 'Milk', id FROM c RETURNING id),
+	             st AS (INSERT INTO stores (user_id, name, normalized_name) VALUES ($1, 'Market', 'market') RETURNING id),
+	             r AS (INSERT INTO receipts (user_id, title, purchased_on, total, currency, status, store_id)
+	                   SELECT $1, 'Synthetic receipt', '2026-03-10', 100.00, 'TRY', 'ready', id FROM st RETURNING id)
+	        INSERT INTO line_items (user_id, receipt_id, position, raw_name, name, line_total, product_id, match_status)
+	        SELECT $1, r.id, v.position, 'ITEM', 'Item', v.total, CASE WHEN v.total > 0 THEN p.id END,
+	               CASE WHEN v.total > 0 THEN 'confirmed' ELSE 'unmatched' END
+	        FROM r, p, (VALUES (0, 80.00), (1, -10.00)) AS v(position, total)`, s.alice)
+}
+
+func TestGetMonthBreakdown_ByCategoryAddsUpToTheTotal(t *testing.T) {
+	s := newReportServer(t)
+	s.breakdownFixture()
+
+	got := decodeReport[httpapi.MonthBreakdown](t, s.get(s.alice, "/reports/month-breakdown?month=2026-03&groupBy=category"), "MonthBreakdown")
+
+	if len(got.Currencies) != 1 || got.Currencies[0].Total != "100.00" {
+		t.Fatalf("currencies = %+v", got.Currencies)
+	}
+	type row struct{ Kind, Name, Amount, Share string }
+	var rows []row
+	for _, g := range got.Currencies[0].Groups {
+		rows = append(rows, row{string(g.Kind), g.Name, g.Amount, g.Share})
+	}
+	want := []row{
+		{"category", "Dairy", "80.00", "0.8000"},
+		{"unallocated", "Unallocated", "30.00", "0.3000"},
+		{"discounts", "Discounts", "-10.00", "-0.1000"},
+	}
+	if diff := cmp.Diff(want, rows); diff != "" {
+		t.Errorf("groups mismatch (-want +got):\n%s", diff)
+	}
+	if got.Currencies[0].Groups[0].Id == nil {
+		t.Error("category group has no id")
+	}
+}
+
+func TestGetMonthBreakdown_ByStore(t *testing.T) {
+	s := newReportServer(t)
+	s.breakdownFixture()
+
+	got := decodeReport[httpapi.MonthBreakdown](t, s.get(s.alice, "/reports/month-breakdown?month=2026-03&groupBy=store"), "MonthBreakdown")
+
+	groups := got.Currencies[0].Groups
+	if len(groups) != 1 || groups[0].Kind != httpapi.BreakdownGroupKind("store") || groups[0].Name != "Market" || groups[0].ItemCount != 1 || groups[0].Share != "1.0000" {
+		t.Errorf("groups = %+v", groups)
+	}
+}
+
+func TestGetMonthBreakdown_RejectsBadInput(t *testing.T) {
+	s := newReportServer(t)
+	for name, path := range map[string]string{
+		"malformed month":  "/reports/month-breakdown?month=2026-13&groupBy=store",
+		"unknown grouping": "/reports/month-breakdown?month=2026-03&groupBy=colour",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if r := s.get(s.alice, path); r.Code != http.StatusBadRequest {
+				t.Errorf("status=%d want 400: %s", r.Code, r.Body.String())
+			}
+		})
+	}
+}
+
+func TestGetMonthBreakdown_IsolatesUsers(t *testing.T) {
+	s := newReportServer(t)
+	s.breakdownFixture()
+
+	for _, by := range []string{"category", "store"} {
+		got := decodeReport[httpapi.MonthBreakdown](t, s.get(s.bob, "/reports/month-breakdown?month=2026-03&groupBy="+by), "MonthBreakdown")
+		if len(got.Currencies) != 0 || got.ExcludedReceipts != 0 {
+			t.Errorf("%s: user B saw user A's data: %+v", by, got)
+		}
+	}
+}

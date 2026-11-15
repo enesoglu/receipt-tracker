@@ -47,6 +47,35 @@ func (h reportsHandlers) GetMonthlySpending(ctx context.Context, request GetMont
 }
 
 // GetMonthBreakdown returns the spending of one month by category or store.
-func (reportsHandlers) GetMonthBreakdown(_ context.Context, _ GetMonthBreakdownRequestObject) (GetMonthBreakdownResponseObject, error) {
-	return nil, notImplemented()
+func (h reportsHandlers) GetMonthBreakdown(ctx context.Context, request GetMonthBreakdownRequestObject) (GetMonthBreakdownResponseObject, error) {
+	if h.reports == nil {
+		return nil, notImplemented()
+	}
+	userID, ok := UserID(ctx)
+	if !ok {
+		return nil, unauthenticated()
+	}
+	month, err := reports.ParseMonth(request.Params.Month)
+	if err != nil {
+		return nil, err
+	}
+	breakdown, err := h.reports.MonthBreakdown(ctx, userID, month, reports.Grouping(request.Params.GroupBy))
+	if err != nil {
+		return nil, err
+	}
+	response := GetMonthBreakdown200JSONResponse{
+		Month: breakdown.Month.String(), GroupBy: BreakdownGrouping(breakdown.GroupBy),
+		Currencies: make([]CurrencyBreakdown, 0, len(breakdown.Currencies)), ExcludedReceipts: breakdown.ExcludedReceipts,
+	}
+	for _, c := range breakdown.Currencies {
+		item := CurrencyBreakdown{Currency: c.Currency, Total: c.Total.StringFixed(2), Groups: make([]BreakdownGroup, 0, len(c.Groups))}
+		for _, g := range c.Groups {
+			item.Groups = append(item.Groups, BreakdownGroup{
+				Kind: BreakdownGroupKind(g.Kind), Id: g.ID, Name: g.Name,
+				Amount: g.Amount.StringFixed(2), Share: g.Share.StringFixed(4), ItemCount: g.ItemCount,
+			})
+		}
+		response.Currencies = append(response.Currencies, item)
+	}
+	return response, nil
 }
