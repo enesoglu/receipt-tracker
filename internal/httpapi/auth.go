@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+
+	"github.com/google/uuid"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
@@ -17,6 +20,9 @@ import (
 type authHandlers struct {
 	users    *auth.Service
 	sessions *scs.SessionManager
+	oauth    interface {
+		RevokeUser(context.Context, uuid.UUID) error
+	}
 }
 
 // GetMe returns the user who owns the session.
@@ -34,8 +40,14 @@ func (h authHandlers) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeRes
 
 // Logout destroys the session before the response is sent.
 func (h authHandlers) Logout(ctx context.Context, _ LogoutRequestObject) (LogoutResponseObject, error) {
-	if _, ok := UserID(ctx); !ok {
+	userID, ok := UserID(ctx)
+	if !ok {
 		return nil, unauthenticated()
+	}
+	if h.oauth != nil {
+		if err := h.oauth.RevokeUser(ctx, userID); err != nil {
+			return nil, err
+		}
 	}
 	if err := h.sessions.Destroy(ctx); err != nil {
 		return nil, errors.New("destroy session failed")
@@ -96,6 +108,7 @@ func (h authHandlers) mount(router chi.Router, problems problemWriter) {
 }
 
 func (h authHandlers) signIn(w http.ResponseWriter, r *http.Request, problems problemWriter, userID string) {
+	returnTo := h.sessions.GetString(r.Context(), "oauth_return")
 	if err := h.sessions.RenewToken(r.Context()); err != nil {
 		problems.write(w, r, errors.New("renew session failed"))
 		return
@@ -105,7 +118,12 @@ func (h authHandlers) signIn(w http.ResponseWriter, r *http.Request, problems pr
 		return
 	}
 	h.sessions.Put(r.Context(), "user_id", userID)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	target := "/"
+	// Only an internally saved authorize request can survive the session reset.
+	if u, err := url.Parse(returnTo); err == nil && !u.IsAbs() && u.Host == "" && u.Path == "/oauth/authorize" && u.RawQuery != "" {
+		target = u.String()
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func (h authHandlers) bindingCookie(w http.ResponseWriter, binding string, maxAge int) {
