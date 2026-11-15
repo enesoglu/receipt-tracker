@@ -1,0 +1,24 @@
+name: receipt-tracker-backup-test
+services:
+  db:
+    image: postgres:18.4-alpine3.23
+    environment:
+      POSTGRES_USER: backup_test
+      POSTGRES_PASSWORD: synthetic_test_password
+      POSTGRES_DB: backup_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U backup_test -d backup_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+    tmpfs:
+      - /var/lib/postgresql
+  tests:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backup-test
+    environment:
+      TEST_DATABASE_URL: postgres://backup_test:synthetic_test_password@db:5432/backup_test?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy

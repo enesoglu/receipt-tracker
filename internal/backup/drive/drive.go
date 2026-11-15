@@ -37,6 +37,15 @@ func (s *Store) access(ctx context.Context) (*gdrive.Service, string, error) {
 	defer s.mu.Unlock()
 	api, root, err := s.connection.Access(ctx)
 	if err != nil {
+		var classified *apperr.Error
+		if errors.As(err, &classified) {
+			switch classified.Code {
+			case "storage_not_connected":
+				return nil, "", apperr.New(apperr.Unavailable, "Google Drive is not connected; connect Drive in settings").WithCode(classified.Code)
+			case "storage_reconnect_needed":
+				return nil, "", apperr.New(apperr.Unavailable, "Google Drive needs reconnecting; reconnect Drive in settings").WithCode(classified.Code)
+			}
+		}
 		return nil, "", err
 	}
 	query := "trashed = false and mimeType = '" + folderType + "' and name = 'backups' and '" + escape(root) + "' in parents"

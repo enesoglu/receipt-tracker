@@ -108,11 +108,11 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) bool {
 		if r.Form.Get("grant_type") == "authorization_code" {
 			f.generation++
 		}
-		refresh := "synthetic-refresh-token"
+		refresh := fmt.Sprintf("synthetic-refresh-token-%d", f.generation)
 		if f.missingRefresh {
 			refresh = ""
 		}
-		writeJSON(w, map[string]interface{}{"access_token": "synthetic-access-token", "refresh_token": refresh, "token_type": "Bearer", "expires_in": 3600})
+		writeJSON(w, map[string]interface{}{"access_token": fmt.Sprintf("synthetic-access-token-%d", f.generation), "refresh_token": refresh, "token_type": "Bearer", "expires_in": 3600})
 		return true
 	case r.Method == http.MethodGet && r.URL.Path == "/drive/v3/files":
 		result := []*gdrive.File{}

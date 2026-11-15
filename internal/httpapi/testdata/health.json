@@ -1,0 +1,8 @@
+{
+  "live": "{\"status\":\"ok\"}\n",
+  "ok": "{\"status\":\"ok\",\"database\":\"ok\",\"drive\":\"ok\"}\n",
+  "not_required": "{\"status\":\"ok\",\"database\":\"ok\",\"drive\":\"not_required\"}\n",
+  "not_connected": "{\"status\":\"unavailable\",\"database\":\"ok\",\"drive\":\"not_connected\"}\n",
+  "reconnect_needed": "{\"status\":\"unavailable\",\"database\":\"ok\",\"drive\":\"reconnect_needed\"}\n",
+  "database_down": "{\"status\":\"unavailable\",\"database\":\"unavailable\",\"drive\":\"ok\"}\n"
+}

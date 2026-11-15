@@ -276,3 +276,35 @@ user with another allowed dev email for resource-isolation assertions. The helpe
 is for tests only and never enables a runtime authentication bypass.
 
 Google Drive setup and connection recovery are documented in [Storage operations](docs/OPERATIONS.md).
+
+## Database backups
+
+Set `BACKUP_DESTINATION=drive` to stream daily PostgreSQL custom-format dumps
+into `backups/` beneath the connected Drive root, or `local` with
+`BACKUP_LOCAL_DIR` for development. `BACKUP_SCHEDULE` is `HH:MM` UTC.
+`none` disables the scheduler and logs a startup warning. Drive backups work
+with either image-storage backend; connect Drive as administrator first.
+Optional `BACKUP_HEARTBEAT_URL` receives one success GET or one `/fail` GET;
+heartbeat outages are warnings and do not fail a dump.
+
+```text
+task server -- backup run
+task server -- backup list
+task server -- backup restore <object> --target-db receipt_recovery
+task server -- backup restore ./downloaded.dump --target-db receipt_recovery
+```
+
+Create the recovery database on the configured server first. Restore refuses
+the application database and a nonempty target; `--force` permits replacing
+objects in the recovery target within one transaction. Database credentials
+come from configuration, never CLI arguments. Keep `APP_ENCRYPTION_KEY`
+separately: a database dump cannot replace that secret.
+
+Retention keeps the newest dump on each of seven distinct UTC days and the
+newest dump in each of four distinct ISO weeks (overlaps count once).
+Future-dated and unrecognized files are untouched. `task backup:test` runs
+real dump/restore and fresh-connection Drive recovery against disposable
+PostgreSQL and a synthetic Drive server, then removes its test containers.
+Health monitoring reads database reachability and the persisted Drive state;
+the background grant check runs at most once per fifteen minutes. Transient
+provider failures preserve that state and log sanitized warnings.

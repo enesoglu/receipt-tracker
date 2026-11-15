@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -41,6 +42,8 @@ type Options struct {
 	OAuth    oauth2.Config
 	Client   *http.Client
 	Endpoint string
+	// Logger receives sanitized background-check warnings.
+	Logger *slog.Logger
 }
 
 // Status exposes only stable state and reason codes, never provider error text.
@@ -70,6 +73,8 @@ type Service struct {
 	encrypted string
 	store     *Store
 	folders   sync.Mutex
+	checkMu   sync.Mutex
+	nextCheck time.Time
 }
 
 // New binds instance configuration to persistence and an injected clock.
@@ -80,6 +85,9 @@ func New(repo Repository, users Users, options Options, now func() time.Time) (*
 	}
 	if options.Client == nil {
 		options.Client = &http.Client{Timeout: 30 * time.Second}
+	}
+	if options.Logger == nil {
+		options.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	options.OAuth.Scopes = []string{gdrive.DriveFileScope}
 	return &Service{repo: repo, users: users, options: options, cipher: c, now: now, pending: make(map[[32]byte]pendingGrant)}, nil
@@ -347,6 +355,23 @@ func (s *Service) Check(ctx context.Context) error {
 	return err
 }
 
+// CheckDue refreshes at most once per fifteen-minute clock interval. Provider
+// failures never reach logs; persisted grant state changes only in the existing connection code.
+func (s *Service) CheckDue(ctx context.Context) error {
+	s.checkMu.Lock()
+	defer s.checkMu.Unlock()
+	now := s.now().UTC()
+	if now.Before(s.nextCheck) {
+		return nil
+	}
+	s.nextCheck = now.Add(15 * time.Minute)
+	err := s.Check(ctx)
+	if err != nil && ctx.Err() == nil {
+		s.options.Logger.Warn("drive connection check failed")
+	}
+	return err
+}
+
 // Run checks immediately and then every fifteen minutes until shutdown.
 func (s *Service) Run(ctx context.Context) {
 	if s.options.Config.Storage.Backend != config.StorageDrive && s.options.Config.Backup.Destination != config.BackupDrive {
@@ -356,7 +381,7 @@ func (s *Service) Run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		// State is persisted only for definitive failures; no sensitive provider error is logged.
-		_ = s.Check(ctx)
+		_ = s.CheckDue(ctx)
 		select {
 		case <-ctx.Done():
 			return

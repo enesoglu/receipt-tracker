@@ -52,6 +52,11 @@ tasks:
       - npm --prefix web run build
       - node web/scripts/tasks.mjs embed
       - go build -trimpath -ldflags="-s -w" -o bin/ ./cmd/server
+  backup:test:
+    desc: Test dump and restore against isolated PostgreSQL with real client tools
+    cmds:
+      - defer: docker compose -f deploy/compose.backup-test.yaml down --volumes
+      - docker compose -f deploy/compose.backup-test.yaml run --build --rm tests
   check:
     desc: Check generated drift, lint, test, and build
     cmds:

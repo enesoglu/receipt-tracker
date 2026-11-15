@@ -32,7 +32,7 @@ func TestHandler_ServesHealthAndSPA(t *testing.T) {
 		path, accept, body string
 		status             int
 	}{
-		{"/healthz", "", `{"status":"ok"}`, http.StatusOK},
+		{"/healthz", "", `{"status":"ok","database":"ok","drive":"not_required"}`, http.StatusOK},
 		{"/livez", "", `{"status":"ok"}`, http.StatusOK},
 		{"/", "text/html", "Receipt tracker", http.StatusOK},
 		{"/receipts/unknown", "text/html", "Receipt tracker", http.StatusOK},

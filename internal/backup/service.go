@@ -78,8 +78,6 @@ func (s *Service) Run(ctx context.Context) (result error) {
 		s.mu.Unlock()
 		if result == nil {
 			s.logger.Info("backup completed", "backup_name", run.Name, "size_bytes", run.Size)
-		} else {
-			s.logger.Error("backup failed", "backup_name", run.Name, "error", result)
 		}
 		s.heartbeat(ctx, result == nil)
 	}()
@@ -262,6 +260,8 @@ func (s *Service) Schedule(ctx context.Context, hour, minute int) {
 			return
 		case <-timer.C:
 		}
-		_ = s.Run(ctx) // Run records the outcome and logs the failure once.
+		if err := s.Run(ctx); err != nil && ctx.Err() == nil {
+			s.logger.Error("scheduled backup failed", "error", err)
+		}
 	}
 }

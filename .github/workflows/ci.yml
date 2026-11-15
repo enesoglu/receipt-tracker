@@ -43,6 +43,20 @@ jobs:
           fi
       - name: Validate development Compose
         run: docker compose -f deploy/compose.dev.yaml config --quiet
+  backup:
+    name: Database backup and restore
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.11"
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.54.0
+      - run: task backup:test
+      - name: Remove isolated test containers
+        if: always()
+        run: docker compose -f deploy/compose.backup-test.yaml down --volumes
   windows:
     name: Go and web checks (PowerShell)
     runs-on: windows-2025
@@ -161,7 +175,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [checks, windows, docker, policy, commits]
+    needs: [checks, backup, windows, docker, policy, commits]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every applicable check
