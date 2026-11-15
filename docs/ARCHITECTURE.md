@@ -266,7 +266,10 @@ Flags are created only for suspicious data:
 
 The review screen lists open flags; each resolution (edit, confirm, pick a
 product, accept as is) closes the flag. Editing a line name re-runs matching
-for that line.
+for that line. Unchanged flags keep their identity during reprocessing.
+An edit that removes a flag's cause closes it as `superseded`; a cause that
+returns raises a new flag. User edits and resolutions record before/after
+values in `audit_events` in the same database transaction.
 
 ### 5.4 Sign-in and isolation
 

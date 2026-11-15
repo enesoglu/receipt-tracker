@@ -12,6 +12,28 @@ import (
 	"github.com/google/uuid"
 )
 
+const closeReviewFlag = `-- name: CloseReviewFlag :exec
+UPDATE review_flags SET resolved_at = $1, resolution = $2
+WHERE user_id = $3 AND id = $4 AND resolved_at IS NULL
+`
+
+type CloseReviewFlagParams struct {
+	Now        *time.Time
+	Resolution *string
+	UserID     uuid.UUID
+	FlagID     uuid.UUID
+}
+
+func (q *Queries) CloseReviewFlag(ctx context.Context, arg CloseReviewFlagParams) error {
+	_, err := q.db.Exec(ctx, closeReviewFlag,
+		arg.Now,
+		arg.Resolution,
+		arg.UserID,
+		arg.FlagID,
+	)
+	return err
+}
+
 const deleteReceiptFlags = `-- name: DeleteReceiptFlags :exec
 DELETE FROM review_flags WHERE user_id = $1 AND receipt_id = $2
 `
@@ -87,6 +109,38 @@ func (q *Queries) InsertReviewFlag(ctx context.Context, arg InsertReviewFlagPara
 		arg.Kind,
 		arg.Detail,
 		arg.Now,
+	)
+	return err
+}
+
+const restoreReviewFlag = `-- name: RestoreReviewFlag :exec
+INSERT INTO review_flags (id,user_id,receipt_id,line_item_id,kind,detail,created_at,resolved_at,resolution)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+`
+
+type RestoreReviewFlagParams struct {
+	ID         uuid.UUID
+	UserID     uuid.UUID
+	ReceiptID  uuid.UUID
+	LineItemID uuid.NullUUID
+	Kind       string
+	Detail     []byte
+	CreatedAt  time.Time
+	ResolvedAt *time.Time
+	Resolution *string
+}
+
+func (q *Queries) RestoreReviewFlag(ctx context.Context, arg RestoreReviewFlagParams) error {
+	_, err := q.db.Exec(ctx, restoreReviewFlag,
+		arg.ID,
+		arg.UserID,
+		arg.ReceiptID,
+		arg.LineItemID,
+		arg.Kind,
+		arg.Detail,
+		arg.CreatedAt,
+		arg.ResolvedAt,
+		arg.Resolution,
 	)
 	return err
 }

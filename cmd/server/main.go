@@ -99,8 +99,9 @@ func run(logger *slog.Logger) error {
 			return fmt.Errorf("configure extraction: %w", err)
 		}
 	}
+	receiptService := receipts.New(pool, time.Now, receipts.Options{Images: images, Parsers: map[string]receipts.ResultParser{extract.ProviderAzure: &azure.Client{}, extract.ProviderFake: fake.New(nil)}})
 	// Handlers are registered before the worker starts reading them.
-	worker.Register(jobs.KindExtractReceipt, extract.NewJob(pool, images, extractor, usage, receipts.New(pool, time.Now), logger, time.Now))
+	worker.Register(jobs.KindExtractReceipt, extract.NewJob(pool, images, extractor, usage, receiptService, logger, time.Now))
 	workerDone := make(chan error, 1)
 	go func() {
 		err := worker.Run(ctx)
@@ -111,7 +112,7 @@ func run(logger *slog.Logger) error {
 		workerDone <- err
 	}()
 	uploads := ingest.New(pool, images, string(cfg.Storage.Backend), ingest.NewHEICConverter(logger), worker, logger, time.Now)
-	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage, httpapi.Ingestion{Uploads: uploads, Usage: usage}).Run(ctx)
+	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage, httpapi.Ingestion{Uploads: uploads, Usage: usage}, receiptService).Run(ctx)
 	// The worker finishes its current job before the pool is closed.
 	stop()
 	return errors.Join(serveErr, <-workerDone)

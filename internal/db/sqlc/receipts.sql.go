@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/shopspring/decimal"
 )
 
@@ -46,6 +47,49 @@ func (q *Queries) CreateReviewProduct(ctx context.Context, arg CreateReviewProdu
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteReceiptData = `-- name: DeleteReceiptData :exec
+DELETE FROM receipts WHERE user_id = $1 AND id = $2
+`
+
+type DeleteReceiptDataParams struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+}
+
+func (q *Queries) DeleteReceiptData(ctx context.Context, arg DeleteReceiptDataParams) error {
+	_, err := q.db.Exec(ctx, deleteReceiptData, arg.UserID, arg.ReceiptID)
+	return err
+}
+
+const deleteReceiptJobs = `-- name: DeleteReceiptJobs :exec
+DELETE FROM jobs WHERE kind = 'extract_receipt' AND payload->>'user_id' = $1::text AND payload->>'receipt_id' = $2::text
+`
+
+type DeleteReceiptJobsParams struct {
+	UserID    string
+	ReceiptID string
+}
+
+func (q *Queries) DeleteReceiptJobs(ctx context.Context, arg DeleteReceiptJobsParams) error {
+	_, err := q.db.Exec(ctx, deleteReceiptJobs, arg.UserID, arg.ReceiptID)
+	return err
+}
+
+const deleteReviewLine = `-- name: DeleteReviewLine :exec
+DELETE FROM line_items WHERE user_id = $1 AND receipt_id = $2 AND id = $3
+`
+
+type DeleteReviewLineParams struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+	LineID    uuid.UUID
+}
+
+func (q *Queries) DeleteReviewLine(ctx context.Context, arg DeleteReviewLineParams) error {
+	_, err := q.db.Exec(ctx, deleteReviewLine, arg.UserID, arg.ReceiptID, arg.LineID)
+	return err
 }
 
 const findDuplicateReceipts = `-- name: FindDuplicateReceipts :many
@@ -85,6 +129,60 @@ func (q *Queries) FindDuplicateReceipts(ctx context.Context, arg FindDuplicateRe
 		return nil, err
 	}
 	return items, nil
+}
+
+const getOwnedReceiptImage = `-- name: GetOwnedReceiptImage :one
+SELECT id, user_id, receipt_id, position, sha256, content_type, size_bytes, storage_backend, storage_ref, original_ref, original_content_type, original_size_bytes, created_at FROM receipt_images WHERE user_id = $1 AND receipt_id = $2 AND id = $3
+`
+
+type GetOwnedReceiptImageParams struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+	ImageID   uuid.UUID
+}
+
+func (q *Queries) GetOwnedReceiptImage(ctx context.Context, arg GetOwnedReceiptImageParams) (ReceiptImage, error) {
+	row := q.db.QueryRow(ctx, getOwnedReceiptImage, arg.UserID, arg.ReceiptID, arg.ImageID)
+	var i ReceiptImage
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.Position,
+		&i.Sha256,
+		&i.ContentType,
+		&i.SizeBytes,
+		&i.StorageBackend,
+		&i.StorageRef,
+		&i.OriginalRef,
+		&i.OriginalContentType,
+		&i.OriginalSizeBytes,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getReceiptStore = `-- name: GetReceiptStore :one
+SELECT id, user_id, name, normalized_name, created_at, updated_at FROM stores WHERE user_id = $1 AND id = $2
+`
+
+type GetReceiptStoreParams struct {
+	UserID  uuid.UUID
+	StoreID uuid.UUID
+}
+
+func (q *Queries) GetReceiptStore(ctx context.Context, arg GetReceiptStoreParams) (Store, error) {
+	row := q.db.QueryRow(ctx, getReceiptStore, arg.UserID, arg.StoreID)
+	var i Store
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.NormalizedName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getReviewProduct = `-- name: GetReviewProduct :one
@@ -208,6 +306,49 @@ func (q *Queries) InsertReviewLine(ctx context.Context, arg InsertReviewLinePara
 	return i, err
 }
 
+const listReceiptImages = `-- name: ListReceiptImages :many
+SELECT id, user_id, receipt_id, position, sha256, content_type, size_bytes, storage_backend, storage_ref, original_ref, original_content_type, original_size_bytes, created_at FROM receipt_images WHERE user_id = $1 AND receipt_id = $2 ORDER BY position
+`
+
+type ListReceiptImagesParams struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+}
+
+func (q *Queries) ListReceiptImages(ctx context.Context, arg ListReceiptImagesParams) ([]ReceiptImage, error) {
+	rows, err := q.db.Query(ctx, listReceiptImages, arg.UserID, arg.ReceiptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ReceiptImage{}
+	for rows.Next() {
+		var i ReceiptImage
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ReceiptID,
+			&i.Position,
+			&i.Sha256,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.StorageBackend,
+			&i.StorageRef,
+			&i.OriginalRef,
+			&i.OriginalContentType,
+			&i.OriginalSizeBytes,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReceiptLines = `-- name: ListReceiptLines :many
 SELECT id, user_id, receipt_id, position, raw_name, name, quantity, quantity_unit, unit_price, line_total, product_code, confidence, product_id, match_status, match_score, match_method, created_at, updated_at FROM line_items WHERE user_id = $1 AND receipt_id = $2 ORDER BY position
 `
@@ -286,6 +427,69 @@ func (q *Queries) LockReviewReceipt(ctx context.Context, arg LockReviewReceiptPa
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const pageReceiptIDs = `-- name: PageReceiptIDs :many
+SELECT r.id FROM receipts r
+LEFT JOIN stores s ON s.user_id = $1 AND s.id = r.store_id
+WHERE r.user_id = $1
+ AND (cardinality($2::uuid[]) = 0 OR r.id = ANY($2::uuid[]))
+ AND ($3::text = '' OR r.status = $3)
+ AND ($4::uuid IS NULL OR r.store_id = $4)
+ AND ($5::date IS NULL OR (r.purchased_on >= $5 AND r.purchased_on < $6))
+ AND ($7::text = '' OR strpos(lower(r.title),lower($7)) > 0 OR strpos(lower(s.name),lower($7)) > 0
+  OR EXISTS (SELECT 1 FROM line_items l WHERE l.user_id = $1 AND l.receipt_id = r.id AND strpos(lower(l.name),lower($7)) > 0))
+ AND (NOT $8::boolean OR (COALESCE(r.purchased_on,'infinity'::date),r.created_at,r.id)
+  < (COALESCE($9::date,'infinity'::date),$10::timestamptz,$11::uuid))
+ORDER BY r.purchased_on DESC NULLS FIRST,r.created_at DESC,r.id DESC LIMIT $12
+`
+
+type PageReceiptIDsParams struct {
+	UserID       uuid.UUID
+	Ids          []uuid.UUID
+	Status       string
+	StoreID      uuid.NullUUID
+	MonthStart   *time.Time
+	MonthEnd     *time.Time
+	Search       string
+	HasAfter     bool
+	AfterDate    *time.Time
+	AfterCreated time.Time
+	AfterID      uuid.UUID
+	PageLimit    int32
+}
+
+func (q *Queries) PageReceiptIDs(ctx context.Context, arg PageReceiptIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, pageReceiptIDs,
+		arg.UserID,
+		arg.Ids,
+		arg.Status,
+		arg.StoreID,
+		arg.MonthStart,
+		arg.MonthEnd,
+		arg.Search,
+		arg.HasAfter,
+		arg.AfterDate,
+		arg.AfterCreated,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const refreshReviewStatus = `-- name: RefreshReviewStatus :exec
@@ -385,6 +589,127 @@ func (q *Queries) SetLineMatch(ctx context.Context, arg SetLineMatchParams) erro
 		arg.Now,
 		arg.UserID,
 		arg.LineID,
+	)
+	return err
+}
+
+const updateReviewLine = `-- name: UpdateReviewLine :one
+UPDATE line_items SET name = $1, quantity = $2, quantity_unit = $3,
+ unit_price = $4, line_total = $5, product_code = $6,
+ confidence = NULL, updated_at = $7
+WHERE user_id = $8 AND receipt_id = $9 AND id = $10 RETURNING id, user_id, receipt_id, position, raw_name, name, quantity, quantity_unit, unit_price, line_total, product_code, confidence, product_id, match_status, match_score, match_method, created_at, updated_at
+`
+
+type UpdateReviewLineParams struct {
+	Name         string
+	Quantity     decimal.NullDecimal
+	QuantityUnit *string
+	UnitPrice    decimal.NullDecimal
+	LineTotal    decimal.NullDecimal
+	ProductCode  *string
+	Now          time.Time
+	UserID       uuid.UUID
+	ReceiptID    uuid.UUID
+	LineID       uuid.UUID
+}
+
+func (q *Queries) UpdateReviewLine(ctx context.Context, arg UpdateReviewLineParams) (LineItem, error) {
+	row := q.db.QueryRow(ctx, updateReviewLine,
+		arg.Name,
+		arg.Quantity,
+		arg.QuantityUnit,
+		arg.UnitPrice,
+		arg.LineTotal,
+		arg.ProductCode,
+		arg.Now,
+		arg.UserID,
+		arg.ReceiptID,
+		arg.LineID,
+	)
+	var i LineItem
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.Position,
+		&i.RawName,
+		&i.Name,
+		&i.Quantity,
+		&i.QuantityUnit,
+		&i.UnitPrice,
+		&i.LineTotal,
+		&i.ProductCode,
+		&i.Confidence,
+		&i.ProductID,
+		&i.MatchStatus,
+		&i.MatchScore,
+		&i.MatchMethod,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateReviewReceipt = `-- name: UpdateReviewReceipt :exec
+UPDATE receipts SET title = $1, store_id = $2, purchased_on = $3,
+ purchased_time = $4, currency = $5, subtotal = $6,
+ tax_total = $7, total = $8, updated_at = $9
+WHERE user_id = $10 AND id = $11
+`
+
+type UpdateReviewReceiptParams struct {
+	Title         string
+	StoreID       uuid.NullUUID
+	PurchasedOn   *time.Time
+	PurchasedTime pgtype.Time
+	Currency      string
+	Subtotal      decimal.NullDecimal
+	TaxTotal      decimal.NullDecimal
+	Total         decimal.NullDecimal
+	Now           time.Time
+	UserID        uuid.UUID
+	ReceiptID     uuid.UUID
+}
+
+func (q *Queries) UpdateReviewReceipt(ctx context.Context, arg UpdateReviewReceiptParams) error {
+	_, err := q.db.Exec(ctx, updateReviewReceipt,
+		arg.Title,
+		arg.StoreID,
+		arg.PurchasedOn,
+		arg.PurchasedTime,
+		arg.Currency,
+		arg.Subtotal,
+		arg.TaxTotal,
+		arg.Total,
+		arg.Now,
+		arg.UserID,
+		arg.ReceiptID,
+	)
+	return err
+}
+
+const writeReceiptAudit = `-- name: WriteReceiptAudit :exec
+INSERT INTO audit_events (user_id,entity,entity_id,action,detail,created_at)
+VALUES ($1,$2,$3,$4,$5,$6)
+`
+
+type WriteReceiptAuditParams struct {
+	UserID   uuid.UUID
+	Entity   string
+	EntityID uuid.UUID
+	Action   string
+	Detail   []byte
+	Now      time.Time
+}
+
+func (q *Queries) WriteReceiptAudit(ctx context.Context, arg WriteReceiptAuditParams) error {
+	_, err := q.db.Exec(ctx, writeReceiptAudit,
+		arg.UserID,
+		arg.Entity,
+		arg.EntityID,
+		arg.Action,
+		arg.Detail,
+		arg.Now,
 	)
 	return err
 }
