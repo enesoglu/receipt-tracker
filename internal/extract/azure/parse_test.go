@@ -185,3 +185,53 @@ func TestParse_DiscountKeepsPrintedMinus(t *testing.T) {
 		})
 	}
 }
+
+func TestParse_MissingUnitReadFromUnitPrice(t *testing.T) {
+	tests := []struct {
+		name string
+		item string
+		want extract.Field[string]
+	}{
+		{
+			name: "kilogram price fills a missing unit",
+			item: `{"type":"object","valueObject":{"Quantity":{"type":"number","valueNumber":0.75},"Price":{"type":"currency","valueCurrency":{"amount":40},"content":"x40,00 TL/kg","confidence":0.9}}}`,
+			want: wantText("KG", 0.9),
+		},
+		{
+			name: "litre price with spaces",
+			item: `{"type":"object","valueObject":{"Quantity":{"type":"number","valueNumber":2},"Price":{"type":"currency","valueCurrency":{"amount":5},"content":"5,00 TL / LT","confidence":0.7}}}`,
+			want: wantText("L", 0.7),
+		},
+		{
+			name: "a unit the service found is kept",
+			item: `{"type":"object","valueObject":{"Quantity":{"type":"number","valueNumber":2},"QuantityUnit":{"type":"string","valueString":"AD","confidence":0.8},"Price":{"type":"currency","valueCurrency":{"amount":5},"content":"5,00 TL/KG"}}}`,
+			want: wantText("AD", 0.8),
+		},
+		{
+			name: "no quantity, no unit",
+			item: `{"type":"object","valueObject":{"Price":{"type":"currency","valueCurrency":{"amount":5},"content":"5,00 TL/KG"}}}`,
+		},
+		{
+			name: "price without a denominator",
+			item: `{"type":"object","valueObject":{"Quantity":{"type":"number","valueNumber":2},"Price":{"type":"currency","valueCurrency":{"amount":5},"content":"5,00-B"}}}`,
+		},
+		{
+			name: "package size in the name is not a unit",
+			item: `{"type":"object","valueObject":{"Description":{"type":"string","valueString":"BEZELYE 680 GR"},"Quantity":{"type":"number","valueNumber":1},"Price":{"type":"currency","valueCurrency":{"amount":5},"content":"5,00"}}}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parse([]byte(item(tt.item)))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if len(got.Lines) != 1 {
+				t.Fatalf("lines = %+v, want one", got.Lines)
+			}
+			if diff := cmp.Diff(tt.want, got.Lines[0].Unit); diff != "" {
+				t.Errorf("unit mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
