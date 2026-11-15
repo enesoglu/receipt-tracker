@@ -126,7 +126,8 @@ never the value.
 | `GOOGLE_CLIENT_SECRET`   | yes, except as noted below       | Its secret                                                |
 | `STORAGE_BACKEND`        | yes                              | `local` or `drive`                                        |
 | `STORAGE_LOCAL_DIR`      | when `STORAGE_BACKEND=local`     | Directory for images                                      |
-| `DRIVE_ROOT_FOLDER`      | no, default `receipt-tracker`    | Folder name in Drive                                      |
+| `DRIVE_ROOT_FOLDER`      | no, default `receipt-tracker`    | Folder name in My Drive, used when no folder id is set    |
+| `DRIVE_ROOT_FOLDER_ID`   | no                               | Id of the app-created folder, wherever it now lives       |
 | `EXTRACTOR`              | yes                              | `azure` or `fake`                                         |
 | `AZURE_DI_ENDPOINT`      | when `EXTRACTOR=azure`           | `https` endpoint of the Document Intelligence resource    |
 | `AZURE_DI_KEY`           | when `EXTRACTOR=azure`           | Its key                                                   |

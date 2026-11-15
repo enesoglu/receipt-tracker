@@ -26,6 +26,7 @@ type entry struct {
 	size       int64
 	ready      bool
 	generation int
+	readOnly   bool
 }
 
 // Fake persists synthetic streams on disk to keep upload allocation measurements meaningful.
@@ -79,6 +80,35 @@ func (f *Fake) OmitRefresh() { f.mu.Lock(); defer f.mu.Unlock(); f.missingRefres
 
 // Unreadable simulates a listed object that cannot be downloaded.
 func (f *Fake) Unreadable() { f.mu.Lock(); defer f.mu.Unlock(); f.unreadable = true }
+
+// Folder creates a ready app-visible folder, as an earlier connection would have.
+func (f *Fake) Folder(name, parent string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	value := f.create(gdrive.File{Name: name, MimeType: "application/vnd.google-apps.folder", Parents: []string{parent}})
+	value.ready = true
+	return value.file.Id
+}
+
+// Move renames a file and gives it a new parent, as the owner does in the Drive web UI.
+func (f *Fake) Move(id, parent, name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.files[id].file.Parents, f.files[id].file.Name = []string{parent}, name
+}
+
+// Trash marks a file as trashed; Drive keeps it readable by id.
+func (f *Fake) Trash(id string) { f.mu.Lock(); defer f.mu.Unlock(); f.files[id].file.Trashed = true }
+
+// ReadOnly removes the capability to add children to a folder.
+func (f *Fake) ReadOnly(id string) { f.mu.Lock(); defer f.mu.Unlock(); f.files[id].readOnly = true }
+
+// Parent returns a file's first parent.
+func (f *Fake) Parent(id string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.files[id].file.Parents[0]
+}
 
 // FolderCount counts all folders, even those hidden from a later grant.
 func (f *Fake) FolderCount(name string) int {
@@ -226,6 +256,12 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) bool {
 			defer func() { _ = file.Close() }()
 			w.Header().Set("Content-Type", "application/octet-stream")
 			_, _ = io.CopyBuffer(w, struct{ io.Reader }{file}, f.buffer[:])
+			return true
+		}
+		if r.Method == http.MethodGet {
+			metadata := value.file
+			metadata.Capabilities = &gdrive.FileCapabilities{CanAddChildren: !value.readOnly}
+			writeJSON(w, &metadata)
 			return true
 		}
 	}

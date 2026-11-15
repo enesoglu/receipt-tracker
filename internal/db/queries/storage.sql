@@ -15,3 +15,7 @@ WHERE backend = 'drive' AND encrypted_refresh_token = $3;
 
 -- name: DeleteDriveConnection :exec
 DELETE FROM storage_connections WHERE backend = 'drive';
+
+-- name: SetDriveRoot :exec
+UPDATE storage_connections SET root_folder_ref = $1, updated_at = $2
+WHERE backend = 'drive' AND encrypted_refresh_token = $3;

@@ -339,6 +339,16 @@ func TestNew_ReportsProblems(t *testing.T) {
 			want: []string{"DRIVE_ROOT_FOLDER must be a folder name, not a path"},
 		},
 		{
+			name: "Drive folder id given as a link",
+			env:  with(productionEnv(), map[string]string{"DRIVE_ROOT_FOLDER_ID": "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOp"}),
+			want: []string{"DRIVE_ROOT_FOLDER_ID must be a Google Drive folder id (the part after /folders/ in the folder's address), not a name or a link"},
+		},
+		{
+			name: "Drive folder id given as a name",
+			env:  with(productionEnv(), map[string]string{"DRIVE_ROOT_FOLDER_ID": "receipts"}),
+			want: []string{"DRIVE_ROOT_FOLDER_ID must be a Google Drive folder id (the part after /folders/ in the folder's address), not a name or a link"},
+		},
+		{
 			name: "unknown extractor",
 			env:  with(productionEnv(), map[string]string{"EXTRACTOR": "tesseract"}),
 			want: []string{"EXTRACTOR must be one of: azure, fake"},
@@ -421,6 +431,7 @@ func TestNew_AcceptsOptionalAndOverriddenValues(t *testing.T) {
 	setEnv(t, with(developmentEnv(), map[string]string{
 		"APP_LISTEN_ADDR":        "127.0.0.1:9090",
 		"DRIVE_ROOT_FOLDER":      "receipt-tracker-test",
+		"DRIVE_ROOT_FOLDER_ID":   " 1AbC-dEf_GhIjKlMnOp ",
 		"AZURE_DI_MONTHLY_PAGES": "20",
 		"BACKUP_DESTINATION":     "local",
 		"BACKUP_LOCAL_DIR":       "data/backups",
@@ -430,7 +441,7 @@ func TestNew_AcceptsOptionalAndOverriddenValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if got.ListenAddr != "127.0.0.1:9090" || got.Storage.DriveRootFolder != "receipt-tracker-test" || got.Extraction.MonthlyPages != 20 {
+	if got.ListenAddr != "127.0.0.1:9090" || got.Storage.DriveRootFolder != "receipt-tracker-test" || got.Storage.DriveRootFolderID != "1AbC-dEf_GhIjKlMnOp" || got.Extraction.MonthlyPages != 20 {
 		t.Errorf("overrides not applied: %+v", got)
 	}
 	want := config.Backup{Destination: config.BackupLocal, LocalDir: "data/backups", Schedule: config.TimeOfDay{Hour: 23, Minute: 59}}
@@ -490,8 +501,8 @@ func TestVariables_MatchTheExampleFile(t *testing.T) {
 			t.Errorf("%s is read by the loader but missing from .env.example", name)
 		}
 	}
-	if len(listed) != 21 {
-		t.Errorf(".env.example lists %d variables, want the 21 of ARCHITECTURE §6", len(listed))
+	if len(listed) != 22 {
+		t.Errorf(".env.example lists %d variables, want the 22 of ARCHITECTURE §6", len(listed))
 	}
 }
 

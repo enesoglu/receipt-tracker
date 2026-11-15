@@ -102,6 +102,30 @@ func findFolder(ctx context.Context, api *gdrive.Service, parent, name string) (
 	return folder.Id, nil
 }
 
+// configuredRoot verifies the folder the owner named by id. It never creates
+// a folder: a wrong id must fail loudly instead of starting an empty tree.
+// Under drive.file a folder the app did not create, or created under another
+// OAuth client, is invisible and reported as not found.
+func configuredRoot(ctx context.Context, api *gdrive.Service, id string) (string, error) {
+	folder, err := api.Files.Get(id).Fields("id,mimeType,trashed,capabilities(canAddChildren)").Context(ctx).Do()
+	var response *googleapi.Error
+	if errors.As(err, &response) && response.Code == 404 {
+		return "", unavailable("storage_root_not_found")
+	}
+	if err != nil {
+		return "", operationError(err)
+	}
+	switch {
+	case folder.MimeType != folderType:
+		return "", unavailable("storage_root_not_folder")
+	case folder.Trashed:
+		return "", unavailable("storage_root_trashed")
+	case folder.Capabilities == nil || !folder.Capabilities.CanAddChildren:
+		return "", unavailable("storage_root_not_writable")
+	}
+	return folder.Id, nil
+}
+
 func escape(value string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), "'", `\'`)
 }
