@@ -1,0 +1,71 @@
+{
+  "measuredUtc": "2026-11-16T02:48:06.744Z",
+  "sourceRevision": "7f949da3dd2d0c2cd700a9772c9b64149c0ee145",
+  "dimensions": [
+    4032,
+    3024
+  ],
+  "filesPerBatch": 10,
+  "extractor": "fake",
+  "imageStorage": "local disk volume",
+  "limitsBytes": {
+    "app": 536870912,
+    "database": 268435456,
+    "temporary": 67108864
+  },
+  "samplingIntervalMs": 200,
+  "dockerVersion": "29.9.3",
+  "storageDriver": "overlayfs",
+  "imageBytes": 60878822,
+  "imageId": "sha256:b9bd880c49f6064de019f0a3ec8f7a372573b76e46168f807d699a82b90f0716",
+  "idle": {
+    "app": {
+      "current": 8589312,
+      "anon": 5750784,
+      "workingSet": 8585216
+    },
+    "database": {
+      "current": 81944576,
+      "anon": 9236480,
+      "workingSet": 39501824
+    }
+  },
+  "jpeg": {
+    "inputBytes": 5580674,
+    "peak": {
+      "app": {
+        "current": 84287488,
+        "anon": 34213888,
+        "workingSet": 42508288
+      },
+      "database": {
+        "current": 88117248,
+        "anon": 14012416,
+        "workingSet": 45473792
+      }
+    }
+  },
+  "heic": {
+    "inputBytes": 10989558,
+    "peak": {
+      "app": {
+        "current": 379121664,
+        "anon": 180330496,
+        "workingSet": 189521920
+      },
+      "database": {
+        "current": 89346048,
+        "anon": 14598144,
+        "workingSet": 46694400
+      }
+    }
+  },
+  "cgroupPeak": {
+    "app": 382500864,
+    "database": 93351936
+  },
+  "oomKilled": {
+    "app": false,
+    "database": false
+  }
+}

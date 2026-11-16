@@ -6,25 +6,41 @@ application; PostgreSQL is the only companion service. The project is MIT
 licensed; the notices of the third-party components compiled into the server
 are in [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES).
 
-## Status
+## What it does
 
-The repository provides the server, embedded placeholder page, design tokens,
-development database, reproducible tooling, containers, and CI, plus the
-complete v1 database schema, validated configuration, Google sign-in and
-server-side sessions. Receipt photos can be uploaded (JPEG, PNG, and HEIC/HEIF
-converted to JPEG); each becomes a queued receipt that the background worker
-reads with Azure Document Intelligence (or synthetic results with
-`EXTRACTOR=fake`), within the monthly page allowance, storing the fields and
-line items as extracted. Matching, review rules, reports and backups are
-planned in later work packages. The v1 API is fully specified in `api/openapi.yaml`. API
-requests require a session; authenticated operations answer with a `501`
-problem document until their behaviour is built, except for the implemented
-signed-in user, logout, storage, upload and usage operations.
+- Upload up to 20 JPEG, PNG or HEIC/HEIF photos at once, at most 15 MiB each.
+  HEIC converts to browser-ready JPEG while retaining the untouched original.
+- Extract receipt fields with Azure Document Intelligence, then review flagged
+  values and edit receipts or line items. Saved raw results can be reprocessed.
+- Match products across receipts using names, sizes, stores and codes. Confirm
+  uncertain matches, merge duplicates or split products that were joined wrongly.
+- Compare product price history and monthly spending, with currencies kept separate.
+- Sign in with an allow-listed Google account; store images locally or in Google
+  Drive. The current administrator manages the shared Drive connection.
+- Read receipts and reports from seven MCP tools, authorized through the built-in
+  OAuth server. Schedule database backups and restore them through the CLI.
 
-The server validates its configuration, connects to PostgreSQL and applies
-the embedded migrations before it accepts requests. `/livez` and `/healthz`
-currently report process health. Database and Drive readiness monitoring
-arrives with those integrations.
+All REST operations are implemented and specified in [OpenAPI](api/openapi.yaml).
+The server validates configuration and applies embedded migrations before serving.
+`/livez` checks process liveness; `/healthz` checks database/required Drive readiness.
+Local development can use synthetic extraction and a development sign-in without
+Google or Azure credentials.
+
+## Screenshots
+
+Built application with synthetic data:
+
+![Receipt list with month filtering](docs/screenshots/receipts.jpg)
+
+![Monthly spending chart and totals](docs/screenshots/spending.jpg)
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md): design, ownership, matching and integrations.
+- [Operations](docs/OPERATIONS.md): production deployment, Google setup, MCP and recovery.
+- [Hardening review](docs/HARDENING.md) and [isolation audit](docs/ISOLATION-AUDIT.md).
+- [Resource measurements and final memory limits](docs/RESOURCES.md).
+- [Changelog](CHANGELOG.md) and [configuration names](.env.example).
 
 ## Prerequisites
 
@@ -99,6 +115,8 @@ persists until explicitly removed.
 | `task test`     | Build embedded assets, then run Go and web tests                                  |
 | `task build`    | Produce `bin/server.exe` on Windows or `bin/server` on Linux                      |
 | `task check`    | Check generated drift, lint, test, and build                                      |
+| `task e2e` | Exercise the compiled server, two-user isolation and every REST response contract |
+| `task backup:test` | Run a real PostgreSQL dump/restore and synthetic Drive recovery round trip |
 | `task resources` | Measure isolated container memory with ten synthetic 12 MP JPEG and HEIC uploads |
 | `task audit` | Run Go and production npm vulnerability scans |
 
@@ -234,7 +252,8 @@ pre-tooling bootstrap commits are exempt from executable checks.
 
 Go formatting uses gofumpt and goimports. Application Go checks target
 `cmd/` and `internal/` so Go examples shipped in frontend dependencies are
-not treated as application packages. UI policy rejects component hex
+not treated as application packages. UI policy rejects multiple named React
+components in one file, component hex
 colours, Tailwind arbitrary values/properties, and CSS motion; use the tokens
 in `web/src/styles/tokens.css`. A pinned minimatch override supplies the
 security fix required by the lint toolchain.
@@ -274,8 +293,9 @@ rejected by the existing CSRF middleware.
 
 For local development, open `/auth/dev/login` when `APP_ENV=dev` and
 `DEV_LOGIN_EMAIL` is set to an allowed address. This creates a separate development
-identity; it does not impersonate an existing Google subject. The route is absent
-in production and when the variable is unset. There is no authentication UI yet.
+identity; it does not impersonate an existing Google subject. The sign-in screen
+offers the development route only when enabled; it is absent in production and
+when the variable is unset.
 
 For later isolation tests, `internal/testutil` documents `NewUser` and `Request`.
 Create a migrated database with `dbtest.New(t)`, build `auth.New` with a dev login
