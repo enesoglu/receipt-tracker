@@ -29,6 +29,20 @@ const (
 	maxUploadBody = maxUploadFiles*maxUploadFileBytes + 1<<20
 )
 
+// securityHeaders applies to successful responses and errors on every route.
+// Recharts and image previews need inline styles and blob images; scripts
+// remain limited to the bundled files. OAuth consent replaces this policy
+// with its stricter default-src 'none' policy before writing its response.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // requestLog writes one structured line per request when it completes. It
 // logs the path but never the query string, which can carry search text and
 // OAuth codes. Health checks arrive every few seconds and are not logged.

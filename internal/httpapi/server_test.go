@@ -56,6 +56,37 @@ func TestHandler_ServesHealthAndSPA(t *testing.T) {
 	}
 }
 
+func TestHandler_SetsSecurityHeadersOnEveryResponse(t *testing.T) {
+	spa := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = io.WriteString(w, "<!doctype html><title>Synthetic application</title>")
+	})
+	mcp := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, "{}")
+	})
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa, nil, nil, nil, httpapi.Ingestion{}, nil, nil, nil, mcp)
+	for _, path := range []string{"/", "/receipts", "/livez", "/healthz", "/api/v1/me", "/auth/missing", "/oauth/missing", "/.well-known/missing", "/mcp"} {
+		t.Run(path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			server.Handler().ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+			for name, want := range map[string]string{
+				"X-Content-Type-Options":  "nosniff",
+				"X-Frame-Options":         "DENY",
+				"Referrer-Policy":         "no-referrer",
+				"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+			} {
+				if got := response.Header().Get(name); got != want {
+					t.Errorf("%s = %q, want %q", name, got, want)
+				}
+			}
+			if response.Header().Get("Access-Control-Allow-Origin") != "" {
+				t.Fatal("security headers enabled cross-origin data access")
+			}
+		})
+	}
+}
+
 type authenticatedServer struct {
 	server *httpapi.Server
 	cookie *http.Cookie
