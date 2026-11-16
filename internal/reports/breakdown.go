@@ -73,13 +73,6 @@ type breakdownRow struct {
 	Share     decimal.Decimal
 }
 
-// Display names of the groups that are not a category or store.
-var groupNames = map[GroupKind]string{
-	KindUncategorised: "Uncategorised",
-	KindUnallocated:   "Unallocated",
-	KindDiscounts:     "Discounts",
-}
-
 // MonthBreakdown splits the spending of one month by category or store.
 func (s *Service) MonthBreakdown(ctx context.Context, userID uuid.UUID, month Month, by Grouping) (MonthBreakdown, error) {
 	var rows []breakdownRow
@@ -117,8 +110,13 @@ func (s *Service) MonthBreakdown(ctx context.Context, userID uuid.UUID, month Mo
 			continue // a currency whose receipts produced no group
 		}
 		group := Group{Kind: GroupKind(r.Kind), Name: r.GroupName, Amount: r.Amount, Share: r.Share, ItemCount: int(r.ItemCount)}
-		if name, ok := groupNames[group.Kind]; ok {
-			group.Name = name
+		switch group.Kind {
+		case KindUncategorised:
+			group.Name = "Uncategorised"
+		case KindUnallocated:
+			group.Name = "Unallocated"
+		case KindDiscounts:
+			group.Name = "Discounts"
 		}
 		if r.GroupID != uuid.Nil {
 			id := r.GroupID

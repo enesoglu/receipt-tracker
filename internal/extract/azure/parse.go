@@ -118,13 +118,6 @@ func parse(raw json.RawMessage) (extract.Result, error) {
 	return extract.CompleteTotal(result), nil
 }
 
-// priceDenominator finds the unit at the end of a unit price such as
-// "x114,90 TL/kg".
-var priceDenominator = regexp.MustCompile(`(?i)/\s*(kg|kgr|g|gr|lt|l|adet|ad)\s*$`)
-
-// priceUnits maps a denominator to the unit spelling the service uses.
-var priceUnits = map[string]string{"kg": "KG", "kgr": "KG", "g": "G", "gr": "G", "l": "L", "lt": "L", "ad": "AD", "adet": "AD"}
-
 // unit reads an item's QuantityUnit. When the service found a quantity but
 // no unit, the unit printed in the unit price ("114,90 TL/kg") stands in;
 // it belongs to the same printed block. A package size in the name
@@ -138,11 +131,23 @@ func unit(values map[string]field) extract.Field[string] {
 	if price.Content == nil {
 		return found
 	}
+	priceDenominator := regexp.MustCompile(`(?i)/\s*(kg|kgr|g|gr|lt|l|adet|ad)\s*$`)
 	match := priceDenominator.FindStringSubmatch(*price.Content)
 	if match == nil {
 		return found
 	}
-	return extract.Field[string]{Value: priceUnits[strings.ToLower(match[1])], Confidence: confidence(price), Found: true}
+	var value string
+	switch strings.ToLower(match[1]) {
+	case "kg", "kgr":
+		value = "KG"
+	case "g", "gr":
+		value = "G"
+	case "l", "lt":
+		value = "L"
+	case "ad", "adet":
+		value = "AD"
+	}
+	return extract.Field[string]{Value: value, Confidence: confidence(price), Found: true}
 }
 
 // lineTotal reads an item's TotalPrice and keeps the minus sign that the
