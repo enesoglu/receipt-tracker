@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,7 +66,7 @@ func decodeCursor(value, scope string) (pageCursor, error) {
 		return c, apperr.New(apperr.Invalid, "invalid cursor")
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil || json.Unmarshal(raw, &c) != nil || c.Version != 1 || c.Scope != scope || c.ID == uuid.Nil || c.Created.IsZero() {
+	if err != nil || json.Unmarshal(raw, &c) != nil || c.Version != 1 || c.Scope != scope || c.ID == uuid.Nil || c.Created.IsZero() || strings.ContainsRune(c.Name, 0) {
 		return pageCursor{}, apperr.New(apperr.Invalid, "invalid cursor for these filters")
 	}
 	return c, nil

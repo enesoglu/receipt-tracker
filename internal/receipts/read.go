@@ -119,7 +119,7 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID, f Filter) (Page, e
 	if err != nil {
 		return Page{}, err
 	}
-	if len(f.IDs) > 100 || utf8.RuneCountInString(f.Search) > 100 {
+	if len(f.IDs) > 100 || utf8.RuneCountInString(f.Search) > 100 || strings.ContainsRune(f.Search, 0) {
 		return Page{}, apperr.New(apperr.Invalid, "invalid receipt filters")
 	}
 	if f.Status != "" && !validStatus(f.Status) {

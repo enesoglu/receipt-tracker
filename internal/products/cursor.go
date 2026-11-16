@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -62,7 +63,7 @@ func decodeCursor(value, scope string) (pageCursor, error) {
 		return pageCursor{}, invalid
 	}
 	var c pageCursor
-	if json.Unmarshal(raw, &c) != nil || c.Version != 1 || c.Scope != scope || c.ID == uuid.Nil {
+	if json.Unmarshal(raw, &c) != nil || c.Version != 1 || c.Scope != scope || c.ID == uuid.Nil || strings.ContainsRune(c.Name, 0) {
 		return pageCursor{}, invalid
 	}
 	return c, nil

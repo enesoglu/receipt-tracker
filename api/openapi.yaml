@@ -224,6 +224,7 @@ paths:
             type: string
             minLength: 1
             maxLength: 100
+            pattern: '^[^\x00]*$'
           example: ayran
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
@@ -608,6 +609,7 @@ paths:
             type: string
             minLength: 1
             maxLength: 100
+            pattern: '^[^\x00]*$'
           example: ayran
         - name: categoryId
           in: query
@@ -1806,11 +1808,13 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+          pattern: '^[^\x00]*$'
         storeName:
           type: string
           nullable: true
           minLength: 1
           maxLength: 200
+          pattern: '^[^\x00]*$'
           description: |
             Name of the store. The store with that name is used, compared
             without case, accents or punctuation; one is created when the user
@@ -1956,6 +1960,7 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+          pattern: '^[^\x00]*$'
         quantity:
           nullable: true
           allOf:
@@ -1965,6 +1970,7 @@ components:
           nullable: true
           minLength: 1
           maxLength: 20
+          pattern: '^[^\x00]*$'
         unitPrice:
           nullable: true
           allOf:
@@ -1976,6 +1982,7 @@ components:
           nullable: true
           minLength: 1
           maxLength: 64
+          pattern: '^[^\x00]*$'
     ReviewFlagKind:
       type: string
       description: |
@@ -2350,6 +2357,7 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+          pattern: '^[^\x00]*$'
           description: Name of the new product. Defaults to the line's name.
     AcceptResolution:
       type: object
@@ -2533,6 +2541,7 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+          pattern: '^[^\x00]*$'
         categoryId:
           type: string
           format: uuid
@@ -2548,6 +2557,7 @@ components:
           nullable: true
           minLength: 1
           maxLength: 20
+          pattern: '^[^\x00]*$'
         priceBasis:
           description: |
             How prices are compared; `item` when left out. With `kg` or `l`
@@ -2578,6 +2588,7 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+          pattern: '^[^\x00]*$'
           description: Name of the new product.
     ProductPage:
       type: object
@@ -2707,6 +2718,7 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+          pattern: '^[^\x00]*$'
     StorePage:
       type: object
       required: [items, nextCursor]
@@ -2740,6 +2752,7 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+          pattern: '^[^\x00]*$'
     CategoryPage:
       type: object
       required: [items, nextCursor]
@@ -2872,6 +2885,7 @@ components:
           description: Title given to an uploaded receipt.
           minLength: 1
           maxLength: 200
+          pattern: '^[^\x00]*$'
     ExtractionProvider:
       type: string
       description: What reads receipt images on this instance.

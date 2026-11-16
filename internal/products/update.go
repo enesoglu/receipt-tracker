@@ -100,7 +100,7 @@ func validUpdate(u Update) (Update, error) {
 		return u, apperr.New(apperr.Invalid, "invalid price basis").WithField("priceBasis", "must be item, kg or l")
 	}
 	u.CanonicalName = strings.TrimSpace(u.CanonicalName)
-	if u.CanonicalName == "" || utf8.RuneCountInString(u.CanonicalName) > maxNameLength {
+	if u.CanonicalName == "" || utf8.RuneCountInString(u.CanonicalName) > maxNameLength || strings.ContainsRune(u.CanonicalName, 0) {
 		return u, apperr.New(apperr.Invalid, "invalid product name").WithField("canonicalName", "must be 1 to 200 characters")
 	}
 	if u.SizeUnit != nil {
@@ -115,7 +115,7 @@ func validUpdate(u Update) (Update, error) {
 		if !v.IsPositive() || v.GreaterThanOrEqual(maxSize()) || !v.Equal(v.Round(3)) {
 			return u, apperr.New(apperr.Invalid, "invalid size").WithField("sizeValue", "must be positive with at most three decimal places")
 		}
-		if *u.SizeUnit == "" || utf8.RuneCountInString(*u.SizeUnit) > maxUnitLength {
+		if *u.SizeUnit == "" || utf8.RuneCountInString(*u.SizeUnit) > maxUnitLength || strings.ContainsRune(*u.SizeUnit, 0) {
 			return u, apperr.New(apperr.Invalid, "invalid size unit").WithField("sizeUnit", "must be 1 to 20 characters")
 		}
 	}
