@@ -307,6 +307,24 @@ func TestSession_RenewsOnSignInAndLogoutDestroysToken(t *testing.T) {
 	safeSecrets(t, f.logged.String(), old.Value, current.Value, state, code, binding.Value, "other@example.com")
 }
 
+func TestLogout_PreservesAnotherUsersSession(t *testing.T) {
+	f := newAuthFixture(t)
+	alice := f.login(t)
+	state, code, binding := f.start(t, func(c *tokenCase) {
+		c.email, c.subject = "other@example.com", "other-subject"
+	})
+	response := f.request(t, http.MethodGet, callbackTarget(state, code), binding)
+	statusBody(t, response, http.StatusSeeOther)
+	bob := cookieNamed(response, "session")
+	before := readMe(t, f.request(t, http.MethodGet, "/api/v1/me", bob))
+	statusBody(t, f.request(t, http.MethodPost, "/api/v1/auth/logout", alice), http.StatusNoContent)
+	statusBody(t, f.request(t, http.MethodGet, "/api/v1/me", alice), http.StatusUnauthorized)
+	after := readMe(t, f.request(t, http.MethodGet, "/api/v1/me", bob))
+	if diff := cmp.Diff(before, after); diff != "" {
+		t.Fatalf("logout altered another user's session (-want +got): %s", diff)
+	}
+}
+
 func TestSession_RejectsExpiredForgedAndDeletedUsers(t *testing.T) {
 	f := newAuthFixture(t)
 	cookie := f.login(t)
