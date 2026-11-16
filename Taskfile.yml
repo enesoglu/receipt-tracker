@@ -58,6 +58,16 @@ tasks:
     cmds:
       - defer: docker compose -f deploy/compose.backup-test.yaml down --volumes
       - docker compose -f deploy/compose.backup-test.yaml run --build --rm tests
+  resources:
+    desc: Measure isolated container memory with ten synthetic 12 MP JPEG and HEIC uploads
+    cmds:
+      - docker build -f deploy/Dockerfile -t receipt-tracker:resources .
+      - node web/scripts/measure-resources.mjs
+  audit:
+    desc: Scan Go and production web dependencies for vulnerabilities
+    cmds:
+      - go run golang.org/x/vuln/cmd/govulncheck@latest -show verbose ./...
+      - npm --prefix web audit --omit=dev
   e2e:
     desc: Exercise the real server over HTTP and validate every API response
     env:
