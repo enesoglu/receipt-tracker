@@ -156,8 +156,13 @@ per receipt later without a schema change.
    request/s, 4 MB per document, 500 pages/month; accepted image formats are
    JPEG, PNG, BMP, TIFF and HEIF. The worker spaces submissions
    at least 1 s apart, polls no faster than every 2 s honouring `Retry-After`,
-   and backs off exponentially on `429`. A file over 4 MB is downscaled to a
-   temporary JPEG for Azure only; the stored original is untouched.
+   and backs off exponentially on `429`. The client downsizes a file over
+   4 MiB to a request-only JPEG in memory; the stored image is untouched.
+   Before decoding for this resize it refuses more than 26 million pixels,
+   including 16-bit PNGs that need eight bytes per source pixel while the
+   RGBA target is also live. This keeps 24 MP images supported within the
+   app memory budget. A larger image fails processing permanently without
+   contacting Azure or consuming quota; the stored image remains available.
 5. The raw result is saved in `extractions`, mapped to receipt fields and line
    items, then matching (5.2) and review rules (5.3) run in one transaction.
 

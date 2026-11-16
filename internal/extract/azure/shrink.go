@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	// maxShrinkPixels refuses images whose decoded pixels would not fit
-	// the memory budget of the app container.
-	maxShrinkPixels = 50_000_000
+	// A 16-bit PNG needs eight bytes per pixel while its RGBA resize target
+	// is also live. Match the HEIC pixel budget to leave heap headroom under
+	// the app's 512 MiB limit, including for these wide-color images.
+	maxShrinkPixels = 26_000_000
 	shrinkQuality   = 85
 )
 

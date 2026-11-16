@@ -118,6 +118,12 @@ credentials belong in test fixtures or command output.
 
 ## Production deployment
 
+OCR resizing of JPEG/PNG images above 4 MiB admits at most 26 million decoded
+pixels. Larger images fail processing before provider submission; their stored
+images remain available. HEIC conversion has the same pixel cap. A 24 MP
+16-bit PNG completes the capped-container probe; a 49 MP input is refused
+before decoding. See the release hardening report for the recorded evidence.
+
 The target is Debian 13, Docker Engine 29.9.3, Compose v5.7.0 and host Caddy
 v2.11.4. Deploy manually with `sudo docker compose`; CI publishes images and
 does not access the VPS. Check `timedatectl status` before deployment and

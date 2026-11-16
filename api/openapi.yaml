@@ -137,6 +137,10 @@ paths:
         A HEIC/HEIF photo is converted to JPEG once; the untouched upload stays
         available as the image's `original`.
 
+        HEIC conversion and JPEG/PNG resizing for OCR admit at most 26 million
+        decoded pixels. A JPEG/PNG needing resizing above that limit becomes
+        `failed` during background extraction; its stored image is retained.
+
         Files are judged one by one, so the answer is `200` with one result per
         file, in request order, even when some or all files are refused. A file
         whose bytes this user uploaded before is reported as `duplicate` with
