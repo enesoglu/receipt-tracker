@@ -1,5 +1,17 @@
 # Operations
 
+## Browser response policy
+
+The application sends a Content Security Policy on every route, including
+errors. Scripts, connections and forms are limited to the same origin;
+objects and framing are denied. Images may also use blob/data URLs for local
+previews, and inline styles support the chart library. OAuth consent uses a
+stricter policy with `default-src 'none'`. `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: DENY` and `Referrer-Policy: no-referrer` apply globally.
+Authenticated REST responses use `Cache-Control: no-store`, except owned
+image responses with an explicit private cache lifetime. Caddy supplies HSTS
+at the HTTPS boundary; local HTTP development does not set it.
+
 ## Connect Google Drive
 
 Use the existing Google OAuth web client, with Drive API enabled and these
@@ -309,7 +321,7 @@ downloaded copy when no longer needed.
 `APP_ENCRYPTION_KEY` is not in the dump. Keep it, database credentials, Google
 client secret, allowed/admin accounts and pinned root id in the encrypted
 host configuration backup. Also retain a monthly dump and configuration copy
-outside Google, as recorded in ARCHITECTURE ง8. Never delete or recreate the
+outside Google, as recorded in ARCHITECTURE ยง8. Never delete or recreate the
 Google Cloud project or Drive OAuth client: keep the same `GOOGLE_CLIENT_ID`.
 Only the client secret may be rotated; update app.env and recreate app.
 
@@ -365,12 +377,12 @@ the fake-Drive recovery test.
 The app never revokes Drive access. Manual Google-account revocation may hide
 earlier files after reconnecting; the successful 2026-11-15 exercise is not a
 guarantee of future provider behavior. The Picker-based re-grant flow in
-ARCHITECTURE ง5.7 is **planned and unbuilt**, intended for selecting a small
+ARCHITECTURE ยง5.7 is **planned and unbuilt**, intended for selecting a small
 set of dumps; it is not an available recovery button or a proven solution
 for thousands of images.
 
 Drive policy restricts app-content backups without Google's written consent.
-The owner accepted this risk for personal use (ARCHITECTURE ง8); revisit
+The owner accepted this risk for personal use (ARCHITECTURE ยง8); revisit
 before public launch. The destination interface allows replacing Drive
 without changing retention or scheduling. Images are not copied by this
 backup service: Drive is their durable home.

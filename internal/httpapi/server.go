@@ -49,7 +49,7 @@ func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Serv
 	router := chi.NewRouter()
 	// Outermost first: the id exists before anything is logged, and the log
 	// line sees the status that panic recovery wrote.
-	router.Use(requestID, requestLog(logger), recoverer(problems))
+	router.Use(securityHeaders, requestID, requestLog(logger), recoverer(problems))
 	health := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if _, err := w.Write([]byte("{\"status\":\"ok\"}\n")); err != nil {
