@@ -23,7 +23,7 @@ const (
 
 // statusError is a failure that is born in the transport layer and has no
 // apperr kind: an unknown route, a wrong method, a rejected origin, a body
-// over the limit, an operation that is not built yet.
+// over the limit.
 type statusError struct {
 	status int
 	detail string

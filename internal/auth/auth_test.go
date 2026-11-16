@@ -513,15 +513,15 @@ func TestLogin_ReturningSubjectUpdatesProfileWithoutReseeding(t *testing.T) {
 	}
 }
 
-func TestSession_StubEndpointsRequireARealSession(t *testing.T) {
+func TestSession_UnavailableEndpointsRequireARealSession(t *testing.T) {
 	f := newAuthFixture(t)
 	cookie := f.login(t)
 	for _, target := range []string{"/api/v1/receipts", "/api/v1/products", "/api/v1/categories", "/api/v1/settings"} {
 		statusBody(t, f.request(t, http.MethodGet, target), http.StatusUnauthorized)
 		response := f.request(t, http.MethodGet, target, cookie)
-		statusBody(t, response, http.StatusNotImplemented)
+		statusBody(t, response, http.StatusServiceUnavailable)
 		if response.Header().Get("Content-Type") != "application/problem+json" {
-			t.Error("stub failure is not a problem document")
+			t.Error("unavailable service failure is not a problem document")
 		}
 	}
 }

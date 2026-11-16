@@ -1432,15 +1432,13 @@ components:
     Error:
       description: |
         Any other failure, as a problem document: `403` for a cross-origin
-        request, `500` for an unexpected error, `501` for an operation that is
-        not implemented yet.
+        request, `500` for an unexpected error, or `503` when a required
+        service is unavailable.
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
           examples:
-            notImplemented:
-              $ref: "#/components/examples/ProblemNotImplemented"
             internal:
               $ref: "#/components/examples/ProblemInternal"
   schemas:
@@ -3591,14 +3589,6 @@ components:
         status: 503
         detail: image storage needs to be reconnected
         code: storage_reconnect_needed
-        requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
-    ProblemNotImplemented:
-      summary: An operation that is not built yet
-      value:
-        type: about:blank
-        title: Not Implemented
-        status: 501
-        detail: this operation is not implemented yet
         requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
     ProblemInternal:
       summary: An unexpected error

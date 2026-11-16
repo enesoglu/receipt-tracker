@@ -1763,8 +1763,8 @@ export interface components {
     };
     /**
      * @description Any other failure, as a problem document: `403` for a cross-origin
-     *     request, `500` for an unexpected error, `501` for an operation that is
-     *     not implemented yet.
+     *     request, `500` for an unexpected error, or `503` when a required
+     *     service is unavailable.
      */
     Error: {
       headers: {

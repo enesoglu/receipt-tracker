@@ -15,7 +15,7 @@ import (
 )
 
 // Ingestion holds the services behind receipt submission. A nil field
-// leaves its operations answering 501, as before they were built.
+// leaves its operations answering with a service-unavailable problem.
 type Ingestion struct {
 	Uploads Uploader
 	Usage   UsageReporter
@@ -45,7 +45,7 @@ const uploadTimeout = 10 * time.Minute
 // receipts stay, and the web client never sends more than twenty files.
 func (h uploadsHandlers) UploadReceipts(ctx context.Context, request UploadReceiptsRequestObject) (UploadReceiptsResponseObject, error) {
 	if h.uploads == nil {
-		return nil, notImplemented()
+		return nil, serviceUnavailable()
 	}
 	userID, ok := UserID(ctx)
 	if !ok {

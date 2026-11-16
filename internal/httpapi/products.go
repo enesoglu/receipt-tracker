@@ -17,7 +17,7 @@ type productsHandlers struct{ products *products.Service }
 
 func (h productsHandlers) identity(ctx context.Context) (uuid.UUID, error) {
 	if h.products == nil {
-		return uuid.Nil, notImplemented()
+		return uuid.Nil, serviceUnavailable()
 	}
 	id, ok := UserID(ctx)
 	if !ok {

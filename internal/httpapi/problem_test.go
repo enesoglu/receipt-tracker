@@ -211,7 +211,7 @@ func TestProblemWriter_WritesTheDocumentAndLogsServerFailuresOnce(t *testing.T) 
 		wantLevel string
 	}{
 		{name: "client mistake is not logged", err: apperr.New(apperr.NotFound, "receipt not found"), status: 404},
-		{name: "not implemented is not logged", err: &statusError{status: http.StatusNotImplemented, detail: "not built"}, status: 501},
+		{name: "forbidden origin is not logged", err: &statusError{status: http.StatusForbidden, detail: "origin is not allowed"}, status: 403},
 		{name: "unknown error is logged as an error", err: cause, status: 500, wantLevel: "ERROR"},
 		{name: "unavailable dependency is logged as a warning", err: apperr.Wrap(apperr.Unavailable, "storage is down", cause), status: 503, wantLevel: "WARN"},
 	}

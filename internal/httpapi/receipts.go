@@ -23,7 +23,7 @@ func (h receiptsHandlers) identity(ctx context.Context) (uuid.UUID, error) {
 
 func receiptUser(ctx context.Context, service *receipts.Service) (uuid.UUID, error) {
 	if service == nil {
-		return uuid.Nil, notImplemented()
+		return uuid.Nil, serviceUnavailable()
 	}
 	id, ok := UserID(ctx)
 	if !ok {

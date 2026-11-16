@@ -14,7 +14,7 @@ type storageHandlers struct{ storage *drive.Service }
 // GetStorageStatus returns safe instance-wide state and this user's management rights.
 func (h storageHandlers) GetStorageStatus(ctx context.Context, _ GetStorageStatusRequestObject) (GetStorageStatusResponseObject, error) {
 	if h.storage == nil {
-		return nil, notImplemented()
+		return nil, serviceUnavailable()
 	}
 	userID, ok := UserID(ctx)
 	if !ok {
@@ -30,7 +30,7 @@ func (h storageHandlers) GetStorageStatus(ctx context.Context, _ GetStorageStatu
 // DisconnectStorage deletes the stored connection without revoking Google's grant.
 func (h storageHandlers) DisconnectStorage(ctx context.Context, _ DisconnectStorageRequestObject) (DisconnectStorageResponseObject, error) {
 	if h.storage == nil {
-		return nil, notImplemented()
+		return nil, serviceUnavailable()
 	}
 	userID, ok := UserID(ctx)
 	if !ok {
@@ -45,7 +45,7 @@ func (h storageHandlers) DisconnectStorage(ctx context.Context, _ DisconnectStor
 // ConnectDrive starts single-use consent for the authenticated admin.
 func (h storageHandlers) ConnectDrive(ctx context.Context, _ ConnectDriveRequestObject) (ConnectDriveResponseObject, error) {
 	if h.storage == nil {
-		return nil, notImplemented()
+		return nil, serviceUnavailable()
 	}
 	userID, ok := UserID(ctx)
 	if !ok {
@@ -61,7 +61,7 @@ func (h storageHandlers) ConnectDrive(ctx context.Context, _ ConnectDriveRequest
 // CompleteDrive finishes consent and redirects to settings after storing the grant.
 func (h storageHandlers) CompleteDrive(ctx context.Context, request CompleteDriveRequestObject) (CompleteDriveResponseObject, error) {
 	if h.storage == nil {
-		return nil, notImplemented()
+		return nil, serviceUnavailable()
 	}
 	userID, ok := UserID(ctx)
 	if !ok {

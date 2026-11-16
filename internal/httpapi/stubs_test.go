@@ -67,7 +67,7 @@ func exampleRequests(t *testing.T, op operation) map[string]*http.Request {
 		if err != nil {
 			t.Fatalf("create form file: %v", err)
 		}
-		// The first bytes of a JPEG; the stub never reads them.
+		// The first bytes of a JPEG; the unavailable service never reads them.
 		if _, err := part.Write([]byte{0xff, 0xd8, 0xff, 0xe0}); err != nil {
 			t.Fatalf("write form file: %v", err)
 		}
@@ -111,7 +111,7 @@ func exampleText(t *testing.T, parameter *openapi3.Parameter) string {
 	}
 }
 
-func TestAPI_EveryRemainingOperationAnswersNotImplemented(t *testing.T) {
+func TestAPI_MissingServicesReturnUnavailable(t *testing.T) {
 	doc := loadContract(t)
 	server := newTestServer(t)
 	problemSchema := doc.Components.Schemas["Problem"].Value
@@ -127,8 +127,8 @@ func TestAPI_EveryRemainingOperationAnswersNotImplemented(t *testing.T) {
 			for _, name := range slices.Sorted(maps.Keys(requests)) {
 				response := httptest.NewRecorder()
 				server.Handler().ServeHTTP(response, requests[name])
-				if response.Code != http.StatusNotImplemented {
-					t.Fatalf("%s: status = %d, want 501; body: %s", name, response.Code, response.Body.String())
+				if response.Code != http.StatusServiceUnavailable {
+					t.Fatalf("%s: status = %d, want 503; body: %s", name, response.Code, response.Body.String())
 				}
 
 				// The body must be a document the contract's own schema accepts.
@@ -141,8 +141,8 @@ func TestAPI_EveryRemainingOperationAnswersNotImplemented(t *testing.T) {
 				}
 
 				problem := decodeProblem(t, response)
-				if problem.Detail == nil || *problem.Detail != "this operation is not implemented yet" {
-					t.Errorf("%s: detail = %v, want the not-implemented message", name, problem.Detail)
+				if problem.Detail == nil || *problem.Detail != "service is unavailable" {
+					t.Errorf("%s: detail = %v, want the unavailable message", name, problem.Detail)
 				}
 				if problem.Code != nil || problem.Errors != nil {
 					t.Errorf("%s: unexpected members in %+v", name, problem)
