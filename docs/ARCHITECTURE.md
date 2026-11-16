@@ -284,6 +284,11 @@ explicitly to every service call, and every query on a user-owned table filters
 by it. Accessing another user's row returns 404. Each endpoint has a test that
 proves this.
 
+Admission and administrator rights follow the current startup configuration
+on every session or MCP-token request. Changing `ALLOWED_EMAILS` or
+`ADMIN_EMAIL` and restarting takes effect for existing sessions too; a stored
+profile's admin flag cannot preserve the former administrator's privileges.
+
 ### 5.5 Image storage
 
 `storage.Store` has `Put`, `Open` and `Delete`. Images are always served

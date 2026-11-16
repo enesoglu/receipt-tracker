@@ -156,6 +156,8 @@ func (s *Service) User(ctx context.Context, userID uuid.UUID) (sqlc.User, error)
 	if !s.allowed[strings.ToLower(user.Email)] {
 		return sqlc.User{}, apperr.New(apperr.NotFound, "user not found")
 	}
+	// A stored profile must not preserve privileges after administrator rotation.
+	user.IsAdmin = strings.ToLower(user.Email) == s.admin
 	return user, nil
 }
 

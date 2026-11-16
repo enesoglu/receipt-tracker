@@ -839,7 +839,7 @@ export interface components {
       email: string;
       /** @description Display name from the Google account; may be empty. */
       name: string;
-      /** @description Whether the user may manage the instance, such as the Drive connection. */
+      /** @description Whether the user may manage the instance, such as the Drive connection. Evaluated against the current ADMIN_EMAIL on every authenticated request. */
       isAdmin: boolean;
     };
     UploadRequest: {

@@ -14,6 +14,12 @@ at the HTTPS boundary; local HTTP development does not set it.
 
 ## Connect Google Drive
 
+To rotate the instance administrator, change `ADMIN_EMAIL` to another
+allow-listed address and restart the application. Existing sessions immediately
+use the new configuration: the former administrator loses storage management
+rights and the new administrator gains them without another sign-in. This
+does not disconnect Drive or revoke its Google grant.
+
 Use the existing Google OAuth web client, with Drive API enabled and these
 redirect URIs registered for the origins you use:
 

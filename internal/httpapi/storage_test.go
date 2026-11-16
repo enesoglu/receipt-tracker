@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/oauth2"
 
 	"github.com/enesoglu/receipt-tracker/internal/auth"
@@ -23,6 +25,57 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/storage/drivetest"
 	"github.com/enesoglu/receipt-tracker/internal/testutil"
 )
+
+func TestStorage_AdminRotationRechecksExistingSessions(t *testing.T) {
+	pool := dbtest.New(t)
+	cfg := config.Config{Environment: config.EnvDev, AllowedEmails: []string{"admin@example.com", "other@example.com"}, AdminEmail: "admin@example.com", DevLoginEmail: "admin@example.com", Storage: config.Storage{Backend: config.StorageLocal}, Backup: config.Backup{Destination: config.BackupNone}}
+	users := auth.New(pool, cfg, nil, time.Now)
+	former := testutil.NewUser(t, users)
+	cfg.DevLoginEmail = "other@example.com"
+	current := testutil.NewUser(t, auth.New(pool, cfg, nil, time.Now))
+	sessions, stop := auth.NewSessions(pool, false)
+	t.Cleanup(stop)
+	// Both cookies and stored profile flags predate the configuration change.
+	formerRequest := testutil.Request(t, sessions, former.ID, http.MethodDelete, "/api/v1/storage/connection", nil)
+	currentRequest := testutil.Request(t, sessions, current.ID, http.MethodDelete, "/api/v1/storage/connection", nil)
+	q := sqlc.New(pool)
+	if err := q.SaveDriveConnection(t.Context(), sqlc.SaveDriveConnectionParams{ConnectedBy: uuid.NullUUID{UUID: former.ID, Valid: true}, EncryptedRefreshToken: "synthetic-encrypted-grant", RootFolderRef: "synthetic-root", UpdatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	cfg.AdminEmail = "other@example.com"
+	users = auth.New(pool, cfg, nil, time.Now)
+	storage, err := drive.New(q, users, drive.Options{Config: cfg}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), http.NotFoundHandler(), users, sessions, storage, httpapi.Ingestion{}, nil, nil, nil, nil)
+	denied := httptest.NewRecorder()
+	server.Handler().ServeHTTP(denied, formerRequest)
+	if denied.Code != http.StatusNotFound {
+		t.Fatalf("former administrator retained management access: %d %s", denied.Code, denied.Body)
+	}
+	decodeProblem(t, denied)
+	if _, err := q.GetDriveConnection(t.Context()); err != nil {
+		t.Fatalf("denied request changed the instance connection: %v", err)
+	}
+	for _, tc := range []struct {
+		user  uuid.UUID
+		admin bool
+	}{{former.ID, false}, {current.ID, true}} {
+		profile, err := users.User(t.Context(), tc.user)
+		if err != nil || profile.IsAdmin != tc.admin {
+			t.Fatalf("current role = %v, error %v, want %v", profile.IsAdmin, err, tc.admin)
+		}
+	}
+	allowed := httptest.NewRecorder()
+	server.Handler().ServeHTTP(allowed, currentRequest)
+	if allowed.Code != http.StatusNoContent {
+		t.Fatalf("current administrator could not manage storage: %d %s", allowed.Code, allowed.Body)
+	}
+	if _, err := q.GetDriveConnection(t.Context()); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("current administrator did not disconnect: %v", err)
+	}
+}
 
 func TestStorage_AdminConsentIsolationAndHealth(t *testing.T) {
 	pool := dbtest.New(t)
