@@ -20,7 +20,7 @@ type usageHandlers struct{ usage UsageReporter }
 // GetUsage returns the extraction pages used this month and the limit.
 func (h usageHandlers) GetUsage(ctx context.Context, _ GetUsageRequestObject) (GetUsageResponseObject, error) {
 	if h.usage == nil {
-		return nil, notImplemented()
+		return nil, serviceUnavailable()
 	}
 	if _, ok := UserID(ctx); !ok {
 		return nil, unauthenticated()

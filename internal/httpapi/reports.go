@@ -14,7 +14,7 @@ type reportsHandlers struct{ reports *reports.Service }
 // GetMonthlySpending returns the spending of every month in a range.
 func (h reportsHandlers) GetMonthlySpending(ctx context.Context, request GetMonthlySpendingRequestObject) (GetMonthlySpendingResponseObject, error) {
 	if h.reports == nil {
-		return nil, notImplemented()
+		return nil, serviceUnavailable()
 	}
 	userID, ok := UserID(ctx)
 	if !ok {
@@ -49,7 +49,7 @@ func (h reportsHandlers) GetMonthlySpending(ctx context.Context, request GetMont
 // GetMonthBreakdown returns the spending of one month by category or store.
 func (h reportsHandlers) GetMonthBreakdown(ctx context.Context, request GetMonthBreakdownRequestObject) (GetMonthBreakdownResponseObject, error) {
 	if h.reports == nil {
-		return nil, notImplemented()
+		return nil, serviceUnavailable()
 	}
 	userID, ok := UserID(ctx)
 	if !ok {

@@ -128,8 +128,8 @@ describe('unwrap', () => {
   it('falls back to the title when a problem has no detail', async () => {
     const { client } = clientAnswering(() =>
       json(
-        501,
-        { type: 'about:blank', title: 'Not Implemented', status: 501 },
+        503,
+        { type: 'about:blank', title: 'Service Unavailable', status: 503 },
         'application/problem+json',
       ),
     );
@@ -138,7 +138,7 @@ describe('unwrap', () => {
       (error: unknown) => error,
     );
 
-    expect((failure as ApiError).message).toBe('Not Implemented');
+    expect((failure as ApiError).message).toBe('Service Unavailable');
     expect((failure as ApiError).fieldMessage('anything')).toBeUndefined();
   });
 

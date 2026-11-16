@@ -29,11 +29,9 @@ type handlers struct {
 	storageHandlers
 }
 
-// notImplemented is what an operation returns until its handler is built.
-// The contract already describes the operation, so clients can be developed
-// against it; the server answers 501 until the behaviour exists.
-func notImplemented() error {
-	return &statusError{status: http.StatusNotImplemented, detail: "this operation is not implemented yet"}
+// serviceUnavailable classifies a required service missing from the wiring.
+func serviceUnavailable() error {
+	return apperr.New(apperr.Unavailable, "service is unavailable")
 }
 
 // mountAPI registers every operation of the contract on router. A handler
