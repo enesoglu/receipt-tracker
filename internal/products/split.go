@@ -38,7 +38,7 @@ type nameAt struct {
 // basis of the original, and an item product the size printed in its name. At least one alias must stay.
 func (s *Service) Split(ctx context.Context, userID, productID uuid.UUID, aliasIDs []uuid.UUID, newName string) (Detail, error) {
 	newName = strings.TrimSpace(newName)
-	if newName == "" || utf8.RuneCountInString(newName) > maxNameLength {
+	if newName == "" || utf8.RuneCountInString(newName) > maxNameLength || strings.ContainsRune(newName, 0) {
 		return Detail{}, apperr.New(apperr.Invalid, "invalid product name").WithField("canonicalName", "must be 1 to 200 characters")
 	}
 	chosen := slices.Clone(aliasIDs)

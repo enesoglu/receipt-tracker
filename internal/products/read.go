@@ -73,6 +73,9 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID, f Filter) (Page, e
 		return Page{}, err
 	}
 	search := strings.TrimSpace(f.Search)
+	if strings.ContainsRune(search, 0) {
+		return Page{}, apperr.New(apperr.Invalid, "invalid search").WithField("q", "must not contain null bytes")
+	}
 	if utf8.RuneCountInString(search) > maxSearch {
 		return Page{}, apperr.New(apperr.Invalid, "search is too long").WithField("q", "must be at most 100 characters")
 	}

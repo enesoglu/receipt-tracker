@@ -40,7 +40,7 @@ type (
 )
 
 func validText(value string, maxLength int) bool {
-	return strings.TrimSpace(value) != "" && utf8.RuneCountInString(value) <= maxLength
+	return strings.TrimSpace(value) != "" && utf8.RuneCountInString(value) <= maxLength && !strings.ContainsRune(value, 0)
 }
 
 func validAmount(value decimal.NullDecimal, places int32) bool {
