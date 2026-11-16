@@ -44,7 +44,8 @@ tasks:
     cmds:
       - npm --prefix web run build
       - node web/scripts/tasks.mjs embed
-      - go test ./cmd/... ./internal/...
+      # Bound simultaneous pools below the development database's 20 connections.
+      - go test -p 2 ./cmd/... ./internal/...
       - npm --prefix web test
   build:
     desc: Build the embedded web application and server binary
@@ -57,6 +58,13 @@ tasks:
     cmds:
       - defer: docker compose -f deploy/compose.backup-test.yaml down --volumes
       - docker compose -f deploy/compose.backup-test.yaml run --build --rm tests
+  e2e:
+    desc: Exercise the real server over HTTP and validate every API response
+    env:
+      TEST_DATABASE_URL: "{{.TEST_DATABASE_URL}}"
+    cmds:
+      - task: build
+      - go test -tags=e2e -count=1 -timeout=5m ./cmd/server
   check:
     desc: Check generated drift, lint, test, and build
     cmds:

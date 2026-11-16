@@ -43,6 +43,24 @@ jobs:
           fi
       - name: Validate development Compose
         run: docker compose -f deploy/compose.dev.yaml config --quiet
+  e2e:
+    name: End-to-end workflow and response contract
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.3"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.54.0
+      - run: task setup
+      - run: task db:up
+      - run: task e2e
   backup:
     name: Database backup and restore
     runs-on: ubuntu-24.04
@@ -175,7 +193,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [checks, backup, windows, docker, policy, commits]
+    needs: [checks, e2e, backup, windows, docker, policy, commits]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every applicable check

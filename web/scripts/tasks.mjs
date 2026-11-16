@@ -185,9 +185,13 @@ else if (command === 'embed') embed();
 else if (command === 'generate') generate();
 else if (command === 'drift') drift();
 else if (command === 'lint-go') {
-  const formatted = spawnSync(lintBinary, ['fmt', '--diff'], {
-    encoding: 'utf8',
-  });
+  const formatted = spawnSync(
+    lintBinary,
+    ['fmt', '--diff', './cmd/...', './internal/...'],
+    {
+      encoding: 'utf8',
+    },
+  );
   if (formatted.status !== 0 || formatted.stdout.trim())
     throw new Error(
       'Go formatting differs:\n' + formatted.stdout + formatted.stderr,
