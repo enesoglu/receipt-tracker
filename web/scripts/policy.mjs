@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 function* walk(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -13,6 +14,25 @@ const failures = [];
 for (const path of walk('src')) {
   const source = readFileSync(path, 'utf8');
   if (path.endsWith('.tsx')) {
+    if (!path.endsWith('.test.tsx')) {
+      const file = ts.createSourceFile(
+        path,
+        source,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
+      );
+      const components = file.statements.filter(
+        (statement) =>
+          ts.isFunctionDeclaration(statement) &&
+          statement.name &&
+          /^[A-Z]/.test(statement.name.text),
+      );
+      if (components.length > 1)
+        failures.push(
+          `${path}: each React component needs its own file (${components.map((component) => component.name.text).join(', ')})`,
+        );
+    }
     if (/#[\da-f]{3,8}\b/i.test(source))
       failures.push(`${path}: hex colours must come from tokens`);
     if (/\b[\w-]+-\[[^\]]+\]|\[[\w-]+:[^\]]+\]|\b[\w-]+-\([^)]*\)/.test(source))

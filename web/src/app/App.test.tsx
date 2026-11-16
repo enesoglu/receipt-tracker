@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, api } from '../api/client';
 import { createAppQueryClient } from '../api/query-client';
-import { AppRouterContent } from './App';
+import { AppRouterContent } from './AppRouterContent';
 
 function makeProblem(status: number, title: string, detail?: string) {
   return new ApiError({

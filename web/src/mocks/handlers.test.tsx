@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ApiError, api, unwrap } from '../api/client';
 import { createAppQueryClient } from '../api/query-client';
-import { AppRouterContent } from '../app/App';
+import { AppRouterContent } from '../app/AppRouterContent';
 import { resetMockAuth, setMockAuthMode } from './data';
 import { server } from './server';
 
