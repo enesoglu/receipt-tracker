@@ -27,7 +27,7 @@ change through a dedicated `chore(deps)` PR.
 
 | Area | Choice | Why |
 | --- | --- | --- |
-| Language | Go 1.26 | Required; current stable line |
+| Language | Go 1.26 | Pinned project toolchain |
 | HTTP router | `go-chi/chi` v5 | Thin, stdlib `net/http` compatible, very widely used |
 | API contract | OpenAPI 3.0 in `api/openapi.yaml`; `oapi-codegen` v2 (strict server, chi) | Contract-first; backend and frontend generate from one file |
 | Database | PostgreSQL 18 (`postgres:18-alpine`) | Required; built-in `uuidv7()`; `pg_trgm` and `btree_gist` (both bundled) for candidate lookup |
@@ -97,6 +97,13 @@ All ids are `uuid` (`uuidv7()`), all timestamps `timestamptz` in UTC, all money
 `NUMERIC(12,2)`, quantities `NUMERIC(12,3)`. Every user-owned table carries
 `user_id` and every query filters on it.
 
+The pool decodes timestamps in UTC, including arrays, independently of the host
+timezone. Purchase dates and purchase times retain their calendar/wall-clock
+meaning. Instance-owned `jobs`, `provider_usage`, `storage_connections`,
+`oauth_clients` and `sessions` have worker, administrator or session boundaries;
+`users` is the verified identity table. OAuth codes/tokens carry `user_id` too.
+The [isolation audit](ISOLATION-AUDIT.md) records these boundaries and their tests.
+
 | Table | Purpose and key columns |
 | --- | --- |
 | `users` | `google_sub` (unique), `email`, `name`, `is_admin` |
@@ -130,8 +137,8 @@ per receipt later without a schema change.
 
 ### 5.1 Upload and extraction
 
-1. `POST /api/v1/receipts` accepts several files (JPEG, PNG or HEIC/HEIF, at
-   most 15 MB each). The handler calls
+1. `POST /api/v1/receipts` streams up to 20 files (JPEG, PNG or HEIC/HEIF, at
+   most 15 MiB each), holding one file at a time. The handler calls
    `ingest.Service.Submit(ctx, userID, source, files)`; any future channel
    (Telegram) calls the same function, so conversion below applies to all.
 2. Per file: reject duplicates by SHA-256 of the uploaded bytes, normalise
@@ -141,7 +148,7 @@ per receipt later without a schema change.
 
    **HEIC normalisation.** A HEIC/HEIF upload is decoded (primary image,
    orientation applied) and encoded once as JPEG (quality 85, longest side at
-   most 3000 px, no metadata). Both files are stored: the JPEG as
+   most 3000 px, no metadata), with a 26-million-pixel decode cap. Both files are stored: the JPEG as
    `storage_ref`, which extraction, the API and the UI use, and the untouched
    HEIC as `original_ref`. Everything after ingest sees only JPEG or PNG.
    Azure accepts HEIF directly (verified), but browsers do not display it and
@@ -332,6 +339,12 @@ earlier files readable. Backups use the same root (§5.7).
 Tools call the same domain services as the REST handlers, with the user id from
 the access token.
 
+Tool pages default to 20 items and allow at most 50. Serialized results are
+bounded to 64 KiB, request bodies to 16 KiB and individual calls to ten seconds;
+clients narrow the query or reduce the page size when a result is too large.
+HTTP sessions expire after 15 minutes of inactivity. Browser sessions confer
+no MCP authority, and the transport checks token admission on every request.
+
 The built-in authorization server implements what Claude's client requires
 (verified): `401` with `WWW-Authenticate: Bearer resource_metadata=…`, RFC 9728
 protected-resource metadata whose `resource` equals the connector URL exactly,
@@ -341,6 +354,13 @@ form-encoded token requests. The user authenticates with the normal Google
 session and sees a consent page naming the client and its redirect host.
 Tokens are opaque, stored hashed, bound to the MCP resource, and rejected by
 the REST API.
+
+Authorization codes last 60 seconds, access tokens at most one hour, and
+`offline_access` grants have a 30-day absolute lifetime. Refresh replaces the
+token; replay revokes the whole grant. Sign-out revokes that user's MCP grants
+and pending codes. Registration is bounded to ten attempts/hour/IP and 1,000
+clients; unused registrations expire after 24 hours. Operational details and
+the separate OAuth protocol contract are linked from [Operations](OPERATIONS.md).
 
 Connections are expected to drop: a reload of the host's Caddy closes
 long-lived connections, and a proxy in front may cut idle ones. Open streams
@@ -373,7 +393,9 @@ the user rather than to one token, but that is not taken on trust: on
 connect, the Drive adapter reuses the existing app-created root instead of
 creating a second one (by `DRIVE_ROOT_FOLDER_ID` when set, otherwise by name
 in My Drive, so a moved root needs the id in the restored secrets), and the
-owner proves the behaviour against the real account before go-live.
+owner recorded both real-account reauthorization cases on 2026-11-15. The
+deployment guide still requires a non-revoking dump/restore recheck; the
+moved-root exercise is separate and is not claimed verified.
 `drive.file` access is tied to the OAuth client that created the files,
 identified by its client id. This is supported by community evidence (an
 rclone maintainer's statement, confirmed by a user's test), not by official
@@ -384,19 +406,15 @@ not see the existing dumps and images. Recovery always uses the same
 
 A second, older report (2015, deprecated Android API) says files created
 before the user **revoked** the app became invisible after re-authorizing.
-The two cases are therefore tested separately, early, with the real client
-and account against a throwaway folder (`DRIVE_ROOT_FOLDER`), as soon as the
-storage package is merged: (a) a new token without revoking, which is what
-recovery onto a fresh host does, and (b) access removed in the Google account
-and then granted again. Independently of the result, the app never revokes:
-reconnecting replaces the token and disconnecting deletes it, and neither
-calls Google's revoke endpoint. Case (b) therefore only tells the owner how
-dangerous a manual revocation in their Google account is; if it fails, they
-must never remove the app's access there. If (a) fails,
-recovery by re-authorization does not work and the mitigation below is built
-before go-live.
+The owner tested the two cases separately with the same real client/account
+and a throwaway root: (a) a new token without revoking, and (b) manual Google
+revocation followed by consent. Both preserved the synthetic marker and reused
+the root, as recorded in [Operations](OPERATIONS.md#recovery-onto-a-fresh-host).
+That result is specific to the client, account and date; it is not a guarantee
+of future provider behavior. The app never revokes: reconnect replaces the
+token, disconnect deletes it, and neither calls Google's revoke endpoint.
 
-**Planned mitigation (not built unless the test fails).** `drive.file` also
+**Planned mitigation (unbuilt).** If access cannot be recovered, `drive.file` also
 covers files the user picks with the Google Picker (verified in the Drive
 scope documentation). A "re-grant access" step for the admin would open the
 Picker with a short-lived access token, let the owner select the dump files
@@ -448,8 +466,10 @@ root-only files under `/etc/receipt-tracker/` (`app.env`, `db.env`), which the
 host's existing encrypted config backup already covers; the compose file and
 the non-secret image tag live in `/opt/receipt-tracker/`. Containers use
 `restart: unless-stopped` and the Docker daemon's log settings. Memory limits
-start at 512 MB for `app` and 384 MB for `db` and are revisited after the
-measurements in the ingestion and hardening packages.
+are 512 MiB for `app` and 256 MiB for `db`. The latter replaces the starting
+384 MiB cap after the [resource measurements](RESOURCES.md); the app cap is
+retained for decode buffers and cache. These are measured starting capacity
+limits, not a guarantee for arbitrary concurrent traffic or future data growth.
 
 Two health endpoints. `/livez` answers 200 whenever the process serves
 requests; the container health check uses it. `/healthz` is for monitoring:
@@ -484,7 +504,7 @@ are sent by the app. Postgres runs with small memory settings (`shared_buffers=6
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | Drive API policy lists "backup of user or app content from a developer's app or project to Drive" as not allowed without Google's written consent, and database dumps go to Drive | Google could disable the OAuth project or its Drive access, which would stop backups and image storage together | **Accepted by the owner while the app is personal-use only. Revisit before any public launch**: switch `BACKUP_DESTINATION` to another adapter or obtain consent. The destination is behind an interface for this reason. Receipt images as primary content are not named by the policy (page last updated July 2022) |
-| Backups and images share one Drive grant | Losing the grant stops both | Restore is tested; a new grant must still see old files (tested before go-live, §5.7); dumps can be downloaded from the Drive web UI |
+| Backups and images share one Drive grant | Losing the grant stops both | Owner's reauthorization cases passed on 2026-11-15 (§5.7); repeat the deployment recovery recheck; dumps can be downloaded from the Drive web UI |
 | The HEIC decoder is young (first release 2026) | Some iPhone files fail to decode, or a malformed file crashes the decoder | Behind a converter interface; grid, 10-bit and rotation fixtures from an independent encoder; panics become per-file errors; fuzz test; one conversion at a time; peak memory measured |
 | Google OAuth app left in "Testing" | Drive refresh token expires every 7 days (sign-in scopes are exempt) | Publish the app to "In production"; `drive.file` is non-sensitive. Reconnect flow and a visible storage status exist anyway |
 | Refresh token revoked or unused for 6 months | Image reads and uploads fail | Storage status endpoint, clear UI error, reconnect button |
@@ -497,7 +517,7 @@ are sent by the app. Postgres runs with small memory settings (`shared_buffers=6
 | **Accepted by the owner:** the host's configuration backup, the database dumps and the receipt images all depend on one Google account | Losing or being locked out of that account loses all three | Two-step verification and recovery codes; a monthly copy of a dump and of the configuration backup kept outside Google; revisit before any public launch |
 | Docker and Caddy are not covered by unattended upgrades on the host | Security fixes arrive only when installed by hand | Monthly supervised update by the owner (decided) |
 | The Google Cloud project or the OAuth client used for Drive is deleted or recreated | A grant under a new client does not see files the old client created: backups and images become unreadable by the app (community evidence, not official) | Rule: never delete or recreate them; rotate only the client secret; recovery reuses the same client id; files remain downloadable by hand from the Drive web UI |
-| Revoking the app's Drive access in the Google account may hide files created before the revocation, even after re-authorizing (2015 report on a deprecated API; unverified today) | Images and dumps unreadable by the app | The app never revokes (disconnect only deletes the stored token); manual revocation is documented with a warning; the effect is tested early against a throwaway folder; Picker re-grant is the planned mitigation for dumps (§5.7) |
+| Manual Google-account revocation may hide older files after reauthorization; the owner's 2026-11-15 case passed but does not guarantee future provider behavior | Images and dumps unreadable by the app | The app never revokes; preserve the client id, keep the manual download/restore fallback, and treat Picker re-grant as planned and unbuilt (§5.7) |
 | Caddy access logs under `/var/log/caddy/` are not in the host backup | Logs are lost with the host | Accepted: logs are disposable |
 
 Not verified from official sources: the decoder's coverage of every HEIF

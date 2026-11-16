@@ -29,7 +29,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
     command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=20"]
-    mem_limit: 384m
+    mem_limit: 256m
     healthcheck:
       test: ["CMD-SHELL", 'pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s

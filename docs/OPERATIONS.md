@@ -159,7 +159,7 @@ after reboot.
    Always use `config --quiet`; the plain command prints resolved secrets.
    App runs with a read-only root and a 64 MiB `/tmp` tmpfs. Only loopback
    port 8087 is published. Postgres has no published port and persists in
-   `pgdata`. Limits start at 512 MiB app and 384 MiB db; Postgres uses
+   `pgdata`. Final limits are 512 MiB app and 256 MiB db; Postgres uses
    `shared_buffers=64MB`, `max_connections=20`, and the app pool is capped at
    five. Container logging inherits the host daemon's rotation settings.
 5. Append `deploy/Caddyfile.snippet` once to the existing host Caddyfile,
@@ -188,7 +188,9 @@ after reboot.
 The snippet follows the official [query-filter syntax](https://caddyserver.com/docs/caddyfile/directives/log#query),
 confirmed against the [Caddy v2.11.4 source](https://github.com/caddyserver/caddy/blob/v2.11.4/modules/logging/filters.go).
 Its `flush_interval -1` follows the official [streaming documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#streaming).
-Validation versions and local memory measurements are recorded in the deployment PR.
+Validation versions are recorded in the deployment PR. The final
+[resource report](RESOURCES.md) records the capped upload measurements and
+their limits; the [hardening report](HARDENING.md) records the release checks.
 
 ## Health, alerts and logs
 
