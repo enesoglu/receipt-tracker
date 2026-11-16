@@ -17,7 +17,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -43,6 +46,19 @@ func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 		return nil, errors.New("parse database url: not a valid connection string")
 	}
 	cfg.MaxConns = maxConns
+	cfg.AfterConnect = func(_ context.Context, conn *pgx.Conn) error {
+		// Database timestamps must not inherit the deployment host's timezone.
+		timestamp := &pgtype.Type{
+			Name: "timestamptz", OID: pgtype.TimestamptzOID,
+			Codec: &pgtype.TimestamptzCodec{ScanLocation: time.UTC},
+		}
+		conn.TypeMap().RegisterType(timestamp)
+		conn.TypeMap().RegisterType(&pgtype.Type{
+			Name: "_timestamptz", OID: pgtype.TimestamptzArrayOID,
+			Codec: &pgtype.ArrayCodec{ElementType: timestamp},
+		})
+		return nil
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("create database pool: %w", err)
