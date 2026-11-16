@@ -99,6 +99,15 @@ persists until explicitly removed.
 | `task test`     | Build embedded assets, then run Go and web tests                                  |
 | `task build`    | Produce `bin/server.exe` on Windows or `bin/server` on Linux                      |
 | `task check`    | Check generated drift, lint, test, and build                                      |
+| `task resources` | Measure isolated container memory with ten synthetic 12 MP JPEG and HEIC uploads |
+| `task audit` | Run Go and production npm vulnerability scans |
+
+`task resources` needs Docker with Linux containers and cgroup v2. It builds
+the image, generates synthetic fixtures outside the containers, and writes
+`bin/resource-report.json`. App uses a read-only root, a 64 MiB temporary
+filesystem and a disposable disk-backed image volume. Its 512 MiB app and
+256 MiB database probes use no external service. Only labeled resources from
+that run and its verified temporary fixture directory are removed afterwards.
 
 Run `task build`, then `./bin/server.exe` in PowerShell or `./bin/server` in
 bash to serve the built application and health endpoints on port 8080 without
