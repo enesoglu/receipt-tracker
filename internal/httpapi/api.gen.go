@@ -1935,7 +1935,7 @@ type User struct {
 	Email openapi_types.Email `json:"email"`
 	Id    openapi_types.UUID  `json:"id"`
 
-	// IsAdmin Whether the user may manage the instance, such as the Drive connection.
+	// IsAdmin Whether the user may manage the instance, such as the Drive connection. Evaluated against the current ADMIN_EMAIL on every authenticated request.
 	IsAdmin bool `json:"isAdmin"`
 
 	// Name Display name from the Google account; may be empty.

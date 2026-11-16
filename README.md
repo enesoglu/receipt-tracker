@@ -244,7 +244,8 @@ Register a Google web OAuth client with the redirect URI
 addresses in `ALLOWED_EMAILS` are admitted (case-insensitive); all others see
 `access is closed`. The first sign-in creates the user, default settings and
 eight grocery/household categories in one transaction. `ADMIN_EMAIL` determines
-the admin flag on each sign-in. Admission removal also invalidates existing
+administrator rights on every authenticated request. Changing it and restarting
+updates existing sessions too. Admission removal also invalidates existing
 sessions on their next API request.
 
 Sign-in requests use `openid email profile`, state, nonce and PKCE S256. A
