@@ -181,6 +181,7 @@ so every commit is held to the standard below.
   - Claude Code: `Co-Authored-By: Claude <model name> <noreply@anthropic.com>`
   - Codex: `Co-Authored-By: Codex <model name> <noreply@openai.com>`
   - Antigravity / Gemini: `Co-Authored-By: Gemini <model name> <noreply@google.com>`
+  - OpenCode: `Co-Authored-By: <Model name> (OpenCode) <noreply@opencode.ai>`
 - Correct a mistake in the commit that made it: record the correction with
   `git commit --fixup=<sha>` and fold it in before the PR. A branch offered
   for review contains no `wip`, `fixup!`, "fix lint", "address review" or

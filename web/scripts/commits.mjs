@@ -67,7 +67,7 @@ if (mode === 'pr') {
       sha,
     ]);
     if (
-      !/^(?:Codex|Claude|Gemini) .+ <noreply@(?:openai\.com|anthropic\.com|google\.com)>$/m.test(
+      !/^(?:(?:Codex|Claude|Gemini) .+ <noreply@(?:openai\.com|anthropic\.com|google\.com)>|.+ \(OpenCode\) <noreply@opencode\.ai>)$/m.test(
         message,
       )
     )
