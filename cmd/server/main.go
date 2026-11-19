@@ -33,6 +33,8 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/reports"
 	"github.com/enesoglu/receipt-tracker/internal/storage/backend"
 	"github.com/enesoglu/receipt-tracker/internal/storage/drive"
+	"github.com/enesoglu/receipt-tracker/internal/suggestions"
+	"github.com/enesoglu/receipt-tracker/internal/suggestions/llm"
 	"github.com/enesoglu/receipt-tracker/internal/web"
 )
 
@@ -138,7 +140,19 @@ func run(logger *slog.Logger) error {
 			return fmt.Errorf("configure extraction: %w", err)
 		}
 	}
-	receiptService := receipts.New(pool, time.Now, receipts.Options{Images: images, Parsers: map[string]receipts.ResultParser{extract.ProviderAzure: &azure.Client{}, extract.ProviderFake: fake.New(nil)}})
+	receiptOptions := receipts.Options{Images: images, Parsers: map[string]receipts.ResultParser{extract.ProviderAzure: &azure.Client{}, extract.ProviderFake: fake.New(nil)}}
+	if cfg.LLM.Configured() {
+		// The suggestion endpoint is optional: without it the feature is
+		// off for everyone, no enroller is wired and no job runs.
+		client, err := llm.New(llm.Options{Protocol: llm.Protocol(cfg.LLM.Protocol), BaseURL: cfg.LLM.BaseURL, Model: cfg.LLM.Model, APIKey: cfg.LLM.APIKey.Reveal(), Timeout: cfg.LLM.Timeout})
+		if err != nil {
+			return fmt.Errorf("configure llm suggestions: %w", err)
+		}
+		receiptOptions.Enroller = suggestions.NewSettingsEnroller(pool, logger)
+		// Handlers are registered before the worker starts reading them.
+		worker.Register(jobs.KindSuggestLines, suggestions.NewJob(pool, suggestions.NewSuggester(client), cfg.LLM.Model, cfg.LLM.Timeout, logger, time.Now))
+	}
+	receiptService := receipts.New(pool, time.Now, receiptOptions)
 	if len(os.Args) > 1 && os.Args[1] == "backfill-identity" {
 		summary, err := receiptService.BackfillIdentity(ctx)
 		if err != nil {
