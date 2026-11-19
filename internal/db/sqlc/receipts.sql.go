@@ -576,27 +576,53 @@ WHERE r.user_id = $1
  AND (cardinality($2::uuid[]) = 0 OR r.id = ANY($2::uuid[]))
  AND ($3::text = '' OR r.status = $3)
  AND ($4::uuid IS NULL OR r.store_id = $4)
- AND ($5::date IS NULL OR (r.purchased_on >= $5 AND r.purchased_on < $6))
- AND ($7::text = '' OR strpos(lower(r.title),lower($7)) > 0 OR strpos(lower(s.name),lower($7)) > 0
-  OR EXISTS (SELECT 1 FROM line_items l WHERE l.user_id = $1 AND l.receipt_id = r.id AND strpos(lower(l.name),lower($7)) > 0))
- AND (NOT $8::boolean OR (COALESCE(r.purchased_on,'infinity'::date),r.created_at,r.id)
-  < (COALESCE($9::date,'infinity'::date),$10::timestamptz,$11::uuid))
-ORDER BY r.purchased_on DESC NULLS FIRST,r.created_at DESC,r.id DESC LIMIT $12
+ AND ($5::uuid IS NULL OR EXISTS (
+   SELECT 1 FROM line_items li
+   JOIN products p ON p.user_id = li.user_id AND p.id = li.product_id
+   JOIN categories c ON c.user_id = p.user_id AND c.id = p.category_id
+   WHERE li.user_id = $1 AND li.receipt_id = r.id
+     AND li.line_total >= 0 AND c.id = $5::uuid))
+ AND (
+   $6::text IS NULL OR CASE $6::text
+     WHEN 'unallocated' THEN r.total IS NOT NULL AND r.total <> COALESCE((
+       SELECT sum(li.line_total) FROM line_items li
+       WHERE li.user_id = r.user_id AND li.receipt_id = r.id AND li.line_total IS NOT NULL), 0)
+     WHEN 'discounts' THEN EXISTS (
+       SELECT 1 FROM line_items li
+       WHERE li.user_id = r.user_id AND li.receipt_id = r.id AND li.line_total < 0)
+     WHEN 'uncategorised' THEN EXISTS (
+       SELECT 1 FROM line_items li
+       WHERE li.user_id = r.user_id AND li.receipt_id = r.id AND li.line_total >= 0
+         AND NOT EXISTS (
+           SELECT 1 FROM products p
+           JOIN categories c ON c.user_id = p.user_id AND c.id = p.category_id
+           WHERE p.user_id = li.user_id AND p.id = li.product_id))
+     WHEN 'no-store' THEN r.store_id IS NULL
+     ELSE FALSE
+   END)
+ AND ($7::date IS NULL OR (r.purchased_on >= $7 AND r.purchased_on < $8))
+ AND ($9::text = '' OR strpos(lower(r.title),lower($9)) > 0 OR strpos(lower(s.name),lower($9)) > 0
+  OR EXISTS (SELECT 1 FROM line_items l WHERE l.user_id = $1 AND l.receipt_id = r.id AND strpos(lower(l.name),lower($9)) > 0))
+ AND (NOT $10::boolean OR (COALESCE(r.purchased_on,'infinity'::date),r.created_at,r.id)
+  < (COALESCE($11::date,'infinity'::date),$12::timestamptz,$13::uuid))
+ORDER BY r.purchased_on DESC NULLS FIRST,r.created_at DESC,r.id DESC LIMIT $14
 `
 
 type PageReceiptIDsParams struct {
-	UserID       uuid.UUID
-	Ids          []uuid.UUID
-	Status       string
-	StoreID      uuid.NullUUID
-	MonthStart   *time.Time
-	MonthEnd     *time.Time
-	Search       string
-	HasAfter     bool
-	AfterDate    *time.Time
-	AfterCreated time.Time
-	AfterID      uuid.UUID
-	PageLimit    int32
+	UserID         uuid.UUID
+	Ids            []uuid.UUID
+	Status         string
+	StoreID        uuid.NullUUID
+	CategoryID     uuid.NullUUID
+	BreakdownGroup *string
+	MonthStart     *time.Time
+	MonthEnd       *time.Time
+	Search         string
+	HasAfter       bool
+	AfterDate      *time.Time
+	AfterCreated   time.Time
+	AfterID        uuid.UUID
+	PageLimit      int32
 }
 
 func (q *Queries) PageReceiptIDs(ctx context.Context, arg PageReceiptIDsParams) ([]uuid.UUID, error) {
@@ -605,6 +631,8 @@ func (q *Queries) PageReceiptIDs(ctx context.Context, arg PageReceiptIDsParams) 
 		arg.Ids,
 		arg.Status,
 		arg.StoreID,
+		arg.CategoryID,
+		arg.BreakdownGroup,
 		arg.MonthStart,
 		arg.MonthEnd,
 		arg.Search,

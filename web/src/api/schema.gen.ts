@@ -958,6 +958,12 @@ export interface components {
       | 'needs_review'
       | 'ready'
       | 'failed';
+    /**
+     * @description A synthetic spending-breakdown group used to filter receipts.
+     * @enum {string}
+     */
+    ReceiptFilterGroup:
+      'unallocated' | 'discounts' | 'uncategorised' | 'no-store';
     /** @description The stage of each receipt, in upload order. */
     PipelinePage: {
       /** @description One item per receipt, oldest upload first. */
@@ -2089,6 +2095,23 @@ export interface operations {
          * @example 0193a1b2-0000-7000-8000-000000000010
          */
         storeId?: string;
+        /**
+         * @description Only receipts with a priced line whose product belongs to this
+         *     category. Negative lines are discounts and do not count. An id that
+         *     is not one of your categories yields an empty page.
+         * @example 0193a1b2-0000-7000-8000-000000000020
+         */
+        categoryId?: string;
+        /**
+         * @description Only receipts that contribute to a synthetic group of a spending
+         *     breakdown in the selected month. `unallocated` matches receipts
+         *     whose total is not fully covered by their lines; `discounts` matches
+         *     receipts with a negative line; `uncategorised` matches receipts with
+         *     a line whose product has no category; `no-store` matches receipts
+         *     without a store (the store breakdown's `uncategorised` group).
+         * @example unallocated
+         */
+        group?: components['schemas']['ReceiptFilterGroup'];
         /**
          * @description Case-insensitive text search over the receipt title, the store name
          *     and the names of line items.

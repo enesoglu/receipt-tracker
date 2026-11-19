@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -487,6 +488,117 @@ func TestReceipts_PagesAndCombinesFilters(t *testing.T) {
 	}
 }
 
+func TestReceipts_FiltersByCategoryAndBreakdownGroup(t *testing.T) {
+	s := newReceiptServer(t)
+	insert := func(query string, args ...any) uuid.UUID {
+		t.Helper()
+		var id uuid.UUID
+		if err := s.pool.QueryRow(t.Context(), query, args...).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	exec := func(query string, args ...any) {
+		t.Helper()
+		if _, err := s.pool.Exec(t.Context(), query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dairy := insert(`INSERT INTO categories (user_id, name) VALUES ($1, 'QA Dairy') RETURNING id`, s.alice)
+	bakery := insert(`INSERT INTO categories (user_id, name) VALUES ($1, 'QA Bakery') RETURNING id`, s.alice)
+	deli := insert(`INSERT INTO categories (user_id, name) VALUES ($1, 'QA Deli') RETURNING id`, s.alice)
+	bobCategory := insert(`INSERT INTO categories (user_id, name) VALUES ($1, 'Bob QA Dairy') RETURNING id`, s.bob)
+	milk := insert(`INSERT INTO products (user_id, canonical_name, category_id) VALUES ($1, 'Milk', $2) RETURNING id`, s.alice, dairy)
+	bread := insert(`INSERT INTO products (user_id, canonical_name, category_id) VALUES ($1, 'Bread', $2) RETURNING id`, s.alice, bakery)
+	cheese := insert(`INSERT INTO products (user_id, canonical_name, category_id) VALUES ($1, 'Cheese', $2) RETURNING id`, s.alice, deli)
+	generic := insert(`INSERT INTO products (user_id, canonical_name) VALUES ($1, 'Generic') RETURNING id`, s.alice)
+	bobProduct := insert(`INSERT INTO products (user_id, canonical_name, category_id) VALUES ($1, 'Bob Milk', $2) RETURNING id`, s.bob, bobCategory)
+	store := insert(`INSERT INTO stores (user_id, name, normalized_name) VALUES ($1, 'Market', 'market') RETURNING id`, s.alice)
+
+	receipt := func(user uuid.UUID, date, total string, storeID any) uuid.UUID {
+		t.Helper()
+		return insert(`INSERT INTO receipts (user_id, title, purchased_on, total, currency, status, store_id)
+			VALUES ($1, 'Synthetic receipt', $2, $3, 'TRY', 'ready', $4::uuid) RETURNING id`, user, date, total, storeID)
+	}
+	line := func(user, receiptID uuid.UUID, position int, total string, productID any) {
+		t.Helper()
+		status := "confirmed"
+		if productID == nil {
+			status = "unmatched"
+		}
+		exec(`INSERT INTO line_items (user_id, receipt_id, position, raw_name, name, line_total, product_id, match_status)
+			VALUES ($1, $2, $3, 'ITEM', 'Item', $4, $5::uuid, $6)`, user, receiptID, position, total, productID, status)
+	}
+
+	dairyReceipt := receipt(s.alice, "2026-03-10", "100.00", store)
+	line(s.alice, dairyReceipt, 0, "100.00", milk)
+	bakeryReceipt := receipt(s.alice, "2026-03-11", "50.00", store)
+	line(s.alice, bakeryReceipt, 0, "50.00", bread)
+	discountReceipt := receipt(s.alice, "2026-03-12", "90.00", store)
+	line(s.alice, discountReceipt, 0, "100.00", cheese)
+	line(s.alice, discountReceipt, 1, "-10.00", nil)
+	uncategorisedReceipt := receipt(s.alice, "2026-03-13", "40.00", store)
+	line(s.alice, uncategorisedReceipt, 0, "40.00", generic)
+	unallocatedReceipt := receipt(s.alice, "2026-03-14", "60.00", store)
+	noStoreReceipt := receipt(s.alice, "2026-03-15", "30.00", nil)
+	oldDairyReceipt := receipt(s.alice, "2026-02-10", "10.00", store)
+	line(s.alice, oldDairyReceipt, 0, "10.00", milk)
+	bobReceipt := receipt(s.bob, "2026-03-10", "20.00", nil)
+	line(s.bob, bobReceipt, 0, "20.00", bobProduct)
+
+	listIDs := func(user uuid.UUID, path string) []uuid.UUID {
+		t.Helper()
+		r := s.call(user, "GET", path, "")
+		if r.Code != 200 {
+			t.Fatalf("GET %s status=%d: %s", path, r.Code, r.Body.String())
+		}
+		var page httpapi.ReceiptPage
+		if err := json.Unmarshal(r.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]uuid.UUID, 0, len(page.Items))
+		for _, item := range page.Items {
+			ids = append(ids, item.Id)
+		}
+		slices.SortFunc(ids, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+		return ids
+	}
+	assertIDs := func(name string, got, want []uuid.UUID) {
+		t.Helper()
+		slices.SortFunc(want, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("%s (-want +got):\n%s", name, diff)
+		}
+	}
+
+	assertIDs("category", listIDs(s.alice, "/receipts?month=2026-03&categoryId="+dairy.String()), []uuid.UUID{dairyReceipt})
+	assertIDs("second category", listIDs(s.alice, "/receipts?month=2026-03&categoryId="+bakery.String()), []uuid.UUID{bakeryReceipt})
+	assertIDs("discounts", listIDs(s.alice, "/receipts?month=2026-03&group=discounts"), []uuid.UUID{discountReceipt})
+	assertIDs("uncategorised", listIDs(s.alice, "/receipts?month=2026-03&group=uncategorised"), []uuid.UUID{uncategorisedReceipt})
+	assertIDs("unallocated", listIDs(s.alice, "/receipts?month=2026-03&group=unallocated"), []uuid.UUID{unallocatedReceipt, noStoreReceipt})
+	assertIDs("no-store", listIDs(s.alice, "/receipts?month=2026-03&group=no-store"), []uuid.UUID{noStoreReceipt})
+
+	// A cursor from one group must not be usable with another group's filters.
+	first := s.call(s.alice, "GET", "/receipts?limit=1&group=unallocated", "")
+	var page httpapi.ReceiptPage
+	if err := json.Unmarshal(first.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.NextCursor == nil {
+		t.Fatal("expected a cursor for the unallocated group")
+	}
+	r := s.call(s.alice, "GET", "/receipts?limit=1&group=no-store&cursor="+url.QueryEscape(*page.NextCursor), "")
+	if r.Code != 400 {
+		t.Fatalf("cross-filter cursor status=%d want 400: %s", r.Code, r.Body.String())
+	}
+
+	// The new filters never expose another user's receipts.
+	assertIDs("isolation by category", listIDs(s.bob, "/receipts?month=2026-03&categoryId="+dairy.String()), []uuid.UUID{})
+	assertIDs("own category", listIDs(s.bob, "/receipts?month=2026-03&categoryId="+bobCategory.String()), []uuid.UUID{bobReceipt})
+	assertIDs("isolation by group", listIDs(s.bob, "/receipts?month=2026-03&group=discounts"), []uuid.UUID{})
+}
+
 func TestReceipts_RejectsInvalidInputsAndMissingResources(t *testing.T) {
 	s := newReceiptServer(t)
 	id := s.seed(s.alice, cleanReceipt())
@@ -503,6 +615,8 @@ func TestReceipts_RejectsInvalidInputsAndMissingResources(t *testing.T) {
 		{"GET", "/receipts?limit=101", "", 400},
 		{"GET", "/receipts?month=2026-13", "", 400},
 		{"GET", "/receipts?status=unknown", "", 400},
+		{"GET", "/receipts?group=unknown", "", 400},
+		{"GET", "/receipts?categoryId=not-a-uuid", "", 400},
 		{"GET", "/receipts?cursor=invalid", "", 400},
 		{"PUT", base, `{"title":"","currency":"TRY"}`, 400},
 		{"PUT", base, `{"title":"A","currency":"try"}`, 400},

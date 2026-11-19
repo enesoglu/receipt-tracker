@@ -274,6 +274,28 @@ paths:
             type: string
             format: uuid
           example: 0193a1b2-0000-7000-8000-000000000010
+        - name: categoryId
+          in: query
+          description: |
+            Only receipts with a priced line whose product belongs to this
+            category. Negative lines are discounts and do not count. An id that
+            is not one of your categories yields an empty page.
+          schema:
+            type: string
+            format: uuid
+          example: 0193a1b2-0000-7000-8000-000000000020
+        - name: group
+          in: query
+          description: |
+            Only receipts that contribute to a synthetic group of a spending
+            breakdown in the selected month. `unallocated` matches receipts
+            whose total is not fully covered by their lines; `discounts` matches
+            receipts with a negative line; `uncategorised` matches receipts with
+            a line whose product has no category; `no-store` matches receipts
+            without a store (the store breakdown's `uncategorised` group).
+          schema:
+            $ref: "#/components/schemas/ReceiptFilterGroup"
+          example: unallocated
         - name: q
           in: query
           description: |
@@ -1717,6 +1739,10 @@ components:
         - `ready`: extracted, with no open review flag.
         - `failed`: extraction failed for good, see `failureReason`.
       enum: [queued, processing, waiting_quota, needs_review, ready, failed]
+    ReceiptFilterGroup:
+      type: string
+      description: A synthetic spending-breakdown group used to filter receipts.
+      enum: [unallocated, discounts, uncategorised, no-store]
     PipelinePage:
       type: object
       description: The stage of each receipt, in upload order.
