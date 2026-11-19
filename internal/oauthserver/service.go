@@ -252,6 +252,8 @@ func (s *Service) Exchange(ctx context.Context, input Exchange) (Tokens, error) 
 				return err
 			}
 			challenge := base64.RawURLEncoding.EncodeToString(digest(input.Verifier))
+			// Authorization always carries redirect_uri here, so RFC 6749 4.1.3
+			// makes it required at exchange and its bound value must match exactly.
 			if code.ClientID != input.ClientID || code.RedirectUri != input.RedirectURI || code.Resource != input.Resource || code.UsedAt != nil || !now.Before(code.ExpiresAt) || !validVerifier(input.Verifier) || subtle.ConstantTimeCompare([]byte(challenge), []byte(code.CodeChallenge)) != 1 {
 				return failure("invalid_grant")
 			}

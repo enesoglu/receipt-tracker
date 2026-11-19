@@ -70,10 +70,17 @@ paths:
                 client_id: {type: string, format: uuid}
                 resource: {type: string, format: uri}
                 code: {type: string}
-                redirect_uri: {type: string, format: uri}
+                redirect_uri: {type: string, format: uri, description: 'Required for authorization_code when the authorization request included it. This server always requires redirect_uri at authorization, so code exchange must include the exact bound value (RFC 6749 4.1.3). Omit for refresh_token.'}
                 code_verifier: {type: string, minLength: 43, maxLength: 128}
                 refresh_token: {type: string}
                 scope: {type: string}
+              oneOf:
+                - required: [code, redirect_uri, code_verifier]
+                  properties:
+                    grant_type: {enum: [authorization_code]}
+                - required: [refresh_token]
+                  properties:
+                    grant_type: {enum: [refresh_token]}
       responses:
         '200':
           description: Opaque access token (3600 seconds), optional rotating refresh token (30-day absolute grant lifetime). Cache-Control no-store.

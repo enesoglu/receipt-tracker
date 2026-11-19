@@ -445,6 +445,60 @@ func TestOAuth_MetadataMatchesClaudeRequirements(t *testing.T) {
 	}
 }
 
+func TestOAuth_TokenContractRequiresBoundRedirectURI(t *testing.T) {
+	doc, err := openapi3.NewLoader().LoadFromFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := doc.Paths.Find("/oauth/token").Post.RequestBody.Value.Content.Get("application/x-www-form-urlencoded").Schema.Value
+	required := func(grant string) bool {
+		for _, branch := range schema.OneOf {
+			value := branch.Value
+			enum := value.Properties["grant_type"].Value.Enum
+			if len(enum) == 0 || enum[0] != grant {
+				continue
+			}
+			for _, name := range value.Required {
+				if name == "redirect_uri" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !required("authorization_code") {
+		t.Fatal("token contract does not require the bound redirect_uri for code exchange")
+	}
+	if required("refresh_token") {
+		t.Fatal("token contract requires redirect_uri for refresh grants")
+	}
+}
+
+func TestOAuth_CodeExchangeKeepsRedirectURIBindingOnFailure(t *testing.T) {
+	f := setup(t)
+	client := f.register(t)
+	code := f.code(t, client, f.cookie)
+	for _, tc := range []struct{ name, value string }{
+		{"omitted", ""},
+		{"different", "https://attacker.example.test/callback"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := codeRequest(client, code)
+			if tc.value == "" {
+				p.Del("redirect_uri")
+			} else {
+				p.Set("redirect_uri", tc.value)
+			}
+			w := f.request(t, "POST", "/oauth/token", p.Encode(), "application/x-www-form-urlencoded", nil)
+			status(t, w, 400)
+			if !strings.Contains(w.Body.String(), `"invalid_grant"`) {
+				t.Fatalf("unexpected error: %s", w.Body.String())
+			}
+		})
+	}
+	f.token(t, codeRequest(client, code))
+}
+
 func TestOAuth_LogoutAdmissionExpiryAndClientRevocation(t *testing.T) {
 	f := setup(t)
 	client := f.register(t)
