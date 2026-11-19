@@ -9,6 +9,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/products"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
 	"github.com/enesoglu/receipt-tracker/internal/reports"
+	"github.com/enesoglu/receipt-tracker/internal/stores"
 )
 
 // handlers implements the generated StrictServerInterface by combining one
@@ -40,14 +41,14 @@ func serviceUnavailable() error {
 // only returns a response object or an error. All three ways a request can
 // fail end in the problem writer: a parameter that cannot be bound, a body
 // that cannot be decoded, and an error from the handler.
-func mountAPI(router chi.Router, problems problemWriter, authentication authHandlers, storage storageHandlers, ingestion Ingestion, reportService *reports.Service, productService *products.Service, receiptService *receipts.Service) {
+func mountAPI(router chi.Router, problems problemWriter, authentication authHandlers, storage storageHandlers, ingestion Ingestion, reportService *reports.Service, productService *products.Service, storeService *stores.Service, receiptService *receipts.Service) {
 	all := handlers{
 		authHandlers: authentication, storageHandlers: storage,
 		pipelineHandlers:    pipelineHandlers{receipts: receiptService},
 		receiptsHandlers:    receiptsHandlers{receipts: receiptService},
 		reviewHandlers:      reviewHandlers{receipts: receiptService},
 		suggestionsHandlers: suggestionsHandlers{receipts: receiptService},
-		storesHandlers:      storesHandlers{receipts: receiptService},
+		storesHandlers:      storesHandlers{stores: storeService},
 		categoriesHandlers:  categoriesHandlers{receipts: receiptService},
 		settingsHandlers:    settingsHandlers{receipts: receiptService},
 		reportsHandlers:     reportsHandlers{reports: reportService},

@@ -38,6 +38,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/products"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
 	"github.com/enesoglu/receipt-tracker/internal/reports"
+	"github.com/enesoglu/receipt-tracker/internal/stores"
 	"github.com/enesoglu/receipt-tracker/internal/testutil"
 )
 
@@ -69,6 +70,7 @@ type fixture struct {
 	logs                                           bytes.Buffer
 	receipts                                       *receipts.Service
 	products                                       *products.Service
+	stores                                         *stores.Service
 	reports                                        *reports.Service
 	user, other, receipt, product, store, category uuid.UUID
 	tokenClients                                   map[string]uuid.UUID
@@ -93,13 +95,14 @@ func setup(t *testing.T, options mcpserver.Options) *fixture {
 	f.logger = slog.New(slog.NewJSONHandler(&f.logs, nil))
 	f.receipts = receipts.New(f.pool, time.Now)
 	f.products = products.New(f.pool, time.Now)
+	f.stores = stores.New(f.pool, time.Now)
 	f.reports = reports.New(f.pool)
 	f.reset()
 	oauth, err := oauthserver.NewHandler(f.oauth, f.sessions, f.logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.server.Config.Handler = httpapi.New(":0", f.logger, http.NotFoundHandler(), users, f.sessions, nil, httpapi.Ingestion{}, f.reports, f.products, oauth, &f.gate, f.receipts).Handler()
+	f.server.Config.Handler = httpapi.New(":0", f.logger, http.NotFoundHandler(), users, f.sessions, nil, httpapi.Ingestion{}, f.reports, f.products, f.stores, oauth, &f.gate, f.receipts).Handler()
 	f.server.Config.WriteTimeout = 30 * time.Second
 	f.server.Start()
 	t.Cleanup(f.server.Close)
@@ -126,7 +129,7 @@ func setup(t *testing.T, options mcpserver.Options) *fixture {
 }
 
 func (f *fixture) reset() {
-	f.gate.set(mcpserver.New(f.oauth, f.receipts, f.products, f.reports, f.base, allowedBrowserOrigins, f.logger, f.options))
+	f.gate.set(mcpserver.New(f.oauth, f.receipts, f.products, f.stores, f.reports, f.base, allowedBrowserOrigins, f.logger, f.options))
 }
 
 type testResponse struct {
@@ -412,7 +415,7 @@ func TestMCP_BearerOnlyMetadataChallengeAndNoRESTAuthority(t *testing.T) {
 	read(t, f.request(t, "POST", "/mcp", "{}", "application/json", "", "", cookie), 401)
 	read(t, f.request(t, "GET", "/api/v1/me", "", "", tokens.AccessToken, "", nil), 401)
 	wrongResource := oauthserver.New(f.pool, auth.New(f.pool, config.Config{AllowedEmails: []string{"alice@example.test"}}, nil, time.Now), f.base+"/other", time.Now)
-	f.gate.set(mcpserver.New(wrongResource, f.receipts, f.products, f.reports, f.base, allowedBrowserOrigins, f.logger, mcpserver.Options{}))
+	f.gate.set(mcpserver.New(wrongResource, f.receipts, f.products, f.stores, f.reports, f.base, allowedBrowserOrigins, f.logger, mcpserver.Options{}))
 	read(t, f.request(t, "POST", "/mcp", "{}", "application/json", tokens.AccessToken, "", nil), 401)
 }
 
@@ -603,10 +606,6 @@ func (h hugeReceipts) ListCategories(context.Context, uuid.UUID, int, string) (r
 	return receipts.NamedPage{Items: []receipts.Named{{Name: h.big}}}, nil
 }
 
-func (h hugeReceipts) ListStores(context.Context, uuid.UUID, int, string) (receipts.NamedPage, error) {
-	return receipts.NamedPage{Items: []receipts.Named{{Name: h.big}}}, nil
-}
-
 type hugeProducts struct {
 	*products.Service
 	big string
@@ -620,6 +619,15 @@ func (h hugeProducts) PriceHistory(context.Context, uuid.UUID, uuid.UUID, produc
 	return products.History{Points: []products.PricePoint{{Currency: h.big, UnitPrice: decimal.NewFromInt(1)}}}, nil
 }
 
+type hugeStores struct {
+	*stores.Service
+	big string
+}
+
+func (h hugeStores) List(_ context.Context, _ uuid.UUID, _ int, _ string) (stores.Page, error) {
+	return stores.Page{Items: []stores.Store{{Name: h.big}}}, nil
+}
+
 type hugeReports struct{ big string }
 
 func (h hugeReports) MonthlySpending(_ context.Context, _ uuid.UUID, from, to reports.Month) (reports.MonthlySpending, error) {
@@ -629,7 +637,7 @@ func (h hugeReports) MonthlySpending(_ context.Context, _ uuid.UUID, from, to re
 func TestMCP_EveryToolBoundsItsSerializedOutput(t *testing.T) {
 	f := setup(t, mcpserver.Options{})
 	big := strings.Repeat("oversized synthetic data ", 10000)
-	f.gate.set(mcpserver.New(f.oauth, hugeReceipts{f.receipts, big}, hugeProducts{f.products, big}, hugeReports{big}, f.base, allowedBrowserOrigins, f.logger, mcpserver.Options{}))
+	f.gate.set(mcpserver.New(f.oauth, hugeReceipts{f.receipts, big}, hugeProducts{f.products, big}, hugeStores{f.stores, big}, hugeReports{big}, f.base, allowedBrowserOrigins, f.logger, mcpserver.Options{}))
 	tokens := f.tokens(t, f.user)
 	session := f.initialize(t, tokens.AccessToken)
 	for name, args := range tools(f) {
@@ -653,7 +661,7 @@ func (unavailableTokens) VerifyAccess(context.Context, string) (oauthserver.Prin
 
 func TestMCP_UnexpectedAuthFailureIsGenericAndProtocolContractIsValid(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := mcpserver.New(unavailableTokens{}, nil, nil, nil, "https://example.test", allowedBrowserOrigins, logger, mcpserver.Options{})
+	handler := mcpserver.New(unavailableTokens{}, nil, nil, nil, nil, "https://example.test", allowedBrowserOrigins, logger, mcpserver.Options{})
 	req := httptest.NewRequestWithContext(t.Context(), "POST", "https://example.test/mcp", strings.NewReader("{}"))
 	req.Header.Set("Authorization", "Bearer synthetic")
 	res := httptest.NewRecorder()
@@ -678,7 +686,7 @@ func (s scopeTokens) VerifyAccess(context.Context, string) (oauthserver.Principa
 
 func TestMCP_ReadScopeIsEnforcedWithoutNarrowingDiscovery(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := mcpserver.New(scopeTokens{"offline_access"}, nil, nil, nil, "https://example.test", allowedBrowserOrigins, logger, mcpserver.Options{})
+	handler := mcpserver.New(scopeTokens{"offline_access"}, nil, nil, nil, nil, "https://example.test", allowedBrowserOrigins, logger, mcpserver.Options{})
 	request := httptest.NewRequestWithContext(t.Context(), "POST", "https://example.test/mcp", strings.NewReader("{}"))
 	request.Header.Set("Authorization", "Bearer synthetic")
 	response := httptest.NewRecorder()
@@ -690,7 +698,7 @@ func TestMCP_ReadScopeIsEnforcedWithoutNarrowingDiscovery(t *testing.T) {
 
 func TestMCP_BrowserOriginPolicy(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := mcpserver.New(scopeTokens{"receipts:read"}, nil, nil, nil, "https://example.test", allowedBrowserOrigins, logger, mcpserver.Options{})
+	handler := mcpserver.New(scopeTokens{"receipts:read"}, nil, nil, nil, nil, "https://example.test", allowedBrowserOrigins, logger, mcpserver.Options{})
 	for _, tc := range []struct {
 		name   string
 		origin string

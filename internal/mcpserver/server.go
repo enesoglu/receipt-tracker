@@ -21,6 +21,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/products"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
 	"github.com/enesoglu/receipt-tracker/internal/reports"
+	"github.com/enesoglu/receipt-tracker/internal/stores"
 )
 
 // Receipts contains no mutation methods, including for catalogue reads.
@@ -28,13 +29,17 @@ type Receipts interface {
 	List(context.Context, uuid.UUID, receipts.Filter) (receipts.Page, error)
 	Get(context.Context, uuid.UUID, uuid.UUID) (receipts.Detail, error)
 	ListCategories(context.Context, uuid.UUID, int, string) (receipts.NamedPage, error)
-	ListStores(context.Context, uuid.UUID, int, string) (receipts.NamedPage, error)
 }
 
 // Products contains only catalogue and price-history reads.
 type Products interface {
 	List(context.Context, uuid.UUID, products.Filter) (products.Page, error)
 	PriceHistory(context.Context, uuid.UUID, uuid.UUID, products.HistoryFilter) (products.History, error)
+}
+
+// Stores contains only catalogue reads.
+type Stores interface {
+	List(context.Context, uuid.UUID, int, string) (stores.Page, error)
 }
 
 // Reports contains only spending aggregation.
@@ -60,13 +65,14 @@ type Handler struct {
 	logger   *slog.Logger
 	receipts Receipts
 	products Products
+	stores   Stores
 	reports  Reports
 }
 
 // New registers exactly seven read tools, binds each HTTP session to its user
 // and accepts browser requests only from baseURL or the given browser origins.
-func New(tokens Tokens, receiptService Receipts, productService Products, reportService Reports, baseURL string, browserOrigins []string, logger *slog.Logger, options Options) *Handler {
-	h := &Handler{logger: logger, receipts: receiptService, products: productService, reports: reportService}
+func New(tokens Tokens, receiptService Receipts, productService Products, storeService Stores, reportService Reports, baseURL string, browserOrigins []string, logger *slog.Logger, options Options) *Handler {
+	h := &Handler{logger: logger, receipts: receiptService, products: productService, stores: storeService, reports: reportService}
 	server := mcp.NewServer(&mcp.Implementation{Name: "receipt-tracker", Version: "1.0.0"}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{}, SupportedProtocolVersions: []string{"2025-11-25", "2025-06-18"}})
 	h.register(server)
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{JSONResponse: true, SessionTimeout: 15 * time.Minute, MaxRequestBodyBytes: 16 << 10})

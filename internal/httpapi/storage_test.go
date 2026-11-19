@@ -48,7 +48,7 @@ func TestStorage_AdminRotationRechecksExistingSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), http.NotFoundHandler(), users, sessions, storage, httpapi.Ingestion{}, nil, nil, nil, nil)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), http.NotFoundHandler(), users, sessions, storage, httpapi.Ingestion{}, nil, nil, nil, nil, nil)
 	denied := httptest.NewRecorder()
 	server.Handler().ServeHTTP(denied, formerRequest)
 	if denied.Code != http.StatusNotFound {
@@ -93,7 +93,7 @@ func TestStorage_AdminConsentIsolationAndHealth(t *testing.T) {
 		t.Fatal(err)
 	}
 	var logs bytes.Buffer
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(&logs, nil)), http.NotFoundHandler(), users, sessions, service, httpapi.Ingestion{}, nil, nil, nil, nil)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(&logs, nil)), http.NotFoundHandler(), users, sessions, service, httpapi.Ingestion{}, nil, nil, nil, nil, nil)
 	request := func(user uuid.UUID, method, path string) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRequestWithContext(t.Context(), method, path, nil)
