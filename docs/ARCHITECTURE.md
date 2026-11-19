@@ -49,6 +49,7 @@ change through a dedicated `chore(deps)` PR.
 | Lint/format | `golangci-lint` v2 (includes `gofumpt`, `goimports`) | One enforced config |
 | Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4 | Required; Tailwind v4 keeps tokens in CSS |
 | Frontend data | `openapi-typescript` + `openapi-fetch`, TanStack Query v5, React Router v7 | Typed client generated from the contract |
+| Background uploads | Service worker from a second Vite pass (`vite.sw.config.ts`) into `/sw.js`; Background Sync | Finishes queued uploads without the page; no dependency added |
 | Charts | Recharts v3, animations disabled | Widely used, enough for bar/line charts |
 | Frontend tests/lint | Vitest + Testing Library, ESLint, Prettier | Conventional |
 | Tasks | `Taskfile.yml` (go-task v3) | Same commands on PowerShell and Ubuntu |
@@ -81,7 +82,7 @@ internal/
   mcpserver/                read-only MCP tools
   backup/ (drive/, local/)  dump, destination interface, retention
   web/                      embeds the built SPA
-web/                        React app (src/api, src/components/ui, src/features/*, src/styles/tokens.css)
+web/                        React app (src/api, src/components/ui, src/features/*, src/sw, src/styles/tokens.css)
 deploy/                     Dockerfile, compose files, Caddy snippet
 docs/                       ARCHITECTURE.md, OPERATIONS.md
 .agents/skills/             agent skills (canonical); .claude/skills/ holds pointers
@@ -191,6 +192,20 @@ per receipt later without a schema change.
    pipeline stage is derived (stored status, a saved raw result splitting
    `processing` into `extracting` and `matching`, and a per-user queue
    position), so no state is added. No websockets.
+7. The browser never sends a chosen photo directly. Every file is written
+   to IndexedDB (`receipt-tracker-uploads`) before anything is sent and
+   drained one file per request, so progress and failure are per file and
+   a closed tab, a lost connection or a drained battery never loses a
+   photo: pending files resume on the next app open and when connectivity
+   returns, and production builds register a service worker (`/sw.js`)
+   whose Background Sync (`receipt-uploads`) drains the queue without the
+   page. Background finishing is best-effort — the browser may kill a long
+   sync, so the queue always finishes on the next app open. A 401 marks
+   the remaining files `needs_signin` and stops instead of looping; an
+   unusable or full IndexedDB falls back to a memory queue that sends
+   immediately; page and worker may race one file, and the SHA-256 dedupe
+   above keeps the outcome one receipt. The browser never downscales or
+   recompresses; HEIC normalisation stays at ingest.
 
 ### 5.2 Product matching (no LLM)
 

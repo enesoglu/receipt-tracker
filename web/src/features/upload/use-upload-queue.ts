@@ -6,6 +6,7 @@ import {
   type UploadItem,
   type UploadQueue,
 } from '../../api/upload-queue';
+import { requestUploadSync } from '../../sw/upload-sync';
 
 /** Bytes sent of one file, for the progress bar while it uploads. */
 export interface UploadProgress {
@@ -115,10 +116,17 @@ export function useUploadQueue(
         window.removeEventListener('online', handleOnline);
       // Resume-on-open: interrupted attempts are retried, week-old settled
       // items are pruned, and whatever is pending is sent.
-      void queue.resume().then(() => {
+      void queue.resume().then(async () => {
         if (!active) return;
         setReady(true);
-        void refresh(queue);
+        await refresh(queue);
+        const unfinished = (await queue.list()).some(
+          (item) => item.state === 'pending',
+        );
+        if (unfinished) {
+          // The drain could not finish: the service worker keeps trying.
+          requestUploadSync();
+        }
       });
     });
     return () => {
@@ -132,6 +140,8 @@ export function useUploadQueue(
   const enqueue = useCallback(async (files: readonly File[]) => {
     const queue = queueRef.current ?? (await getQueueRef.current());
     await queue.enqueue(files);
+    // New work: ask the browser to keep finishing it in the background.
+    requestUploadSync();
   }, []);
 
   const clearSettled = useCallback(async () => {

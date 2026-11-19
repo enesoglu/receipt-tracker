@@ -1,5 +1,6 @@
 import {
   uploadReceiptFile,
+  uploadReceiptFileWithFetch,
   type UploadFileOptions,
   type UploadFileOutcome,
 } from './uploads';
@@ -324,6 +325,7 @@ function firstPending(items: UploadItem[]): UploadItem | undefined {
 }
 
 let queueSingleton: Promise<UploadQueue> | null = null;
+let backgroundQueueSingleton: Promise<UploadQueue> | null = null;
 
 /**
  * The queue of this page, one instance per browser realm: IndexedDB when
@@ -334,4 +336,16 @@ export function getUploadQueue(): Promise<UploadQueue> {
     .catch(() => new MemoryUploadStore())
     .then((store) => new UploadQueue(store, uploadReceiptFile));
   return queueSingleton;
+}
+
+/**
+ * The queue of the service worker realm: the same durable store, but the
+ * fetch sender — a worker has no XMLHttpRequest, and progress is a
+ * page-only concern.
+ */
+export function getBackgroundUploadQueue(): Promise<UploadQueue> {
+  backgroundQueueSingleton ??= openUploadStore()
+    .catch(() => new MemoryUploadStore())
+    .then((store) => new UploadQueue(store, uploadReceiptFileWithFetch));
+  return backgroundQueueSingleton;
 }
