@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -38,11 +39,11 @@ const uploadTimeout = 10 * time.Minute
 
 // UploadReceipts submits the uploaded files, one receipt each, and reports a result per file.
 //
-// The parts are handed to the ingest service as they arrive, so a request
-// never holds more than one file in memory. The flip side is that a
-// request-level problem found late, a twenty-first file or a broken body,
-// fails the request after the files before it were already accepted; their
-// receipts stay, and the web client never sends more than twenty files.
+// Parts are collected before submission so that a request with more than the
+// limit is rejected before any receipt is committed. A body that breaks after
+// a complete part still commits that part's receipt and is reported as a bad
+// request with no per-file results. The web client never sends more than
+// twenty files.
 func (h uploadsHandlers) UploadReceipts(ctx context.Context, request UploadReceiptsRequestObject) (UploadReceiptsResponseObject, error) {
 	if h.uploads == nil {
 		return nil, serviceUnavailable()
@@ -51,39 +52,55 @@ func (h uploadsHandlers) UploadReceipts(ctx context.Context, request UploadRecei
 	if !ok {
 		return nil, unauthenticated()
 	}
-	var readErr error
+	// Collect the parts first so that a request with more than the limit is
+	// rejected before any receipt is committed. A broken body still commits
+	// any complete parts collected before it. The parts are small enough to
+	// hold in memory for the duration of one request.
+	type collected struct {
+		name string
+		data []byte
+	}
+	var collectedFiles []collected
+	readErr := error(nil)
 	tooMany := false
 	count := 0
-	files := func(yield func(ingest.File) bool) {
-		for {
-			part, err := request.Body.NextPart()
-			if errors.Is(err, io.EOF) {
-				return
-			}
-			if err != nil {
-				readErr = err
-				return
-			}
-			if part.FormName() != "files" {
-				// The contract has no other field; an extra one is skipped.
-				_ = part.Close()
-				continue
-			}
-			if count == maxUploadFiles {
-				tooMany = true
-				_ = part.Close()
-				return
-			}
-			count++
-			body := &partReader{part: part}
-			more := yield(ingest.File{Name: part.FileName(), Body: body})
+	for {
+		part, err := request.Body.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			readErr = err
+			break
+		}
+		if part.FormName() != "files" {
+			// The contract has no other field; an extra one is skipped.
 			_ = part.Close()
-			if body.err != nil {
-				// The request body itself broke; nothing after it is usable.
-				readErr = body.err
-				return
-			}
-			if !more {
+			continue
+		}
+		if count == maxUploadFiles {
+			tooMany = true
+			_ = part.Close()
+			break
+		}
+		count++
+		data, err := io.ReadAll(io.LimitReader(part, maxUploadFileBytes+1))
+		_ = part.Close()
+		if err != nil {
+			readErr = err
+			break
+		}
+		collectedFiles = append(collectedFiles, collected{name: part.FileName(), data: data})
+	}
+	// A request over the limit is rejected outright: none of the files
+	// collected so far become receipts.
+	if tooMany {
+		return nil, apperr.New(apperr.Invalid, "Upload at most 20 files at once.").WithField("files", "at most 20 files")
+	}
+
+	files := func(yield func(ingest.File) bool) {
+		for _, c := range collectedFiles {
+			if !yield(ingest.File{Name: c.name, Body: bytes.NewReader(c.data)}) {
 				return
 			}
 		}
@@ -96,8 +113,6 @@ func (h uploadsHandlers) UploadReceipts(ctx context.Context, request UploadRecei
 		return nil, readErr
 	case readErr != nil:
 		return nil, apperr.Wrap(apperr.Invalid, "The upload is not a valid multipart form.", readErr)
-	case tooMany:
-		return nil, apperr.New(apperr.Invalid, "Upload at most 20 files at once.").WithField("files", "at most 20 files")
 	case len(results) == 0:
 		return nil, apperr.New(apperr.Invalid, "Choose at least one photo to upload.").WithField("files", "at least one file is required")
 	}
@@ -115,21 +130,6 @@ func (h uploadsHandlers) UploadReceipts(ctx context.Context, request UploadRecei
 		response.Results = append(response.Results, item)
 	}
 	return response, nil
-}
-
-// partReader remembers why reading a part failed, so that a broken request
-// body is answered as a bad request rather than as one unreadable file.
-type partReader struct {
-	part io.Reader
-	err  error
-}
-
-func (r *partReader) Read(p []byte) (int, error) {
-	n, err := r.part.Read(p)
-	if err != nil && !errors.Is(err, io.EOF) && r.err == nil {
-		r.err = err
-	}
-	return n, err
 }
 
 // uploadDeadlines extends the connection deadlines of the upload operation
