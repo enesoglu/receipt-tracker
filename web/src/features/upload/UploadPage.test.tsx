@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router';
 import {
@@ -10,36 +16,107 @@ import {
   it,
   vi,
 } from 'vitest';
+import type { UploadItem } from '../../api/upload-queue';
 import { createAppQueryClient } from '../../api/query-client';
 import { QueryProvider } from '../../api/QueryProvider';
-import type { components } from '../../api/schema.gen';
-import { mockReceiptPage, mockUsage, resetMockAuth } from '../../mocks/data';
-import { readUploadedFiles } from '../../mocks/multipart';
+import { mockUsage, resetMockAuth } from '../../mocks/data';
 import { server } from '../../mocks/server';
 import { UploadPage } from './UploadPage';
 
-type ReceiptSummary = components['schemas']['ReceiptSummary'];
+// The durable queue is replaced by a hand-written fake that exposes the
+// same surface the hook consumes. The real queue logic has its own tests;
+// this file tests what the screen does with the queue's reports.
+const fake = vi.hoisted(() => {
+  interface QueueEvents {
+    changed?: () => void;
+    progress?: (id: string, uploaded: number, total: number) => void;
+  }
 
-function makeSummary(
-  id: string,
-  status: ReceiptSummary['status'],
-  overrides: Partial<ReceiptSummary> = {},
-): ReceiptSummary {
-  return {
-    id,
-    title: 'Home shopping',
-    store: null,
-    purchasedOn: null,
-    currency: 'TRY',
-    total: null,
-    status,
-    failureReason: null,
-    source: 'web',
-    openFlagCount: 0,
-    createdAt: '2026-11-14T18:00:00Z',
-    ...overrides,
-  };
-}
+  class FakeUploadQueue {
+    items: Array<{
+      id: string;
+      fileName: string;
+      sizeBytes: number;
+      blob: File;
+      createdAt: number;
+      state: string;
+      receiptId: string | null;
+      outcome: string | null;
+      error: string | null;
+    }> = [];
+    enqueueCalls: File[][] = [];
+    resumeCalls = 0;
+    clearSettledCalls = 0;
+    events: QueueEvents = {};
+
+    subscribe(events: QueueEvents): () => void {
+      this.events = events;
+      return () => {
+        this.events = {};
+      };
+    }
+
+    async list() {
+      return this.items.map((item) => ({ ...item }));
+    }
+
+    async resume() {
+      this.resumeCalls += 1;
+      this.events.changed?.();
+    }
+
+    async enqueue(files: readonly File[]) {
+      this.enqueueCalls.push([...files]);
+      for (const file of files) {
+        this.items.push({
+          id: `q-${this.items.length + 1}`,
+          fileName: file.name,
+          sizeBytes: file.size,
+          blob: file,
+          createdAt: Date.now() + this.items.length,
+          state: 'pending',
+          receiptId: null,
+          outcome: null,
+          error: null,
+        });
+      }
+      this.events.changed?.();
+    }
+
+    async clearSettled() {
+      this.clearSettledCalls += 1;
+      this.items = this.items.filter(
+        (item) =>
+          item.state === 'pending' ||
+          item.state === 'uploading' ||
+          item.state === 'needs_signin',
+      );
+      this.events.changed?.();
+    }
+
+    emitProgress(id: string, uploaded: number, total: number) {
+      this.events.progress?.(id, uploaded, total);
+    }
+
+    seed(items: UploadItem[]) {
+      this.items.push(...items);
+    }
+
+    reset() {
+      this.items = [];
+      this.enqueueCalls = [];
+      this.resumeCalls = 0;
+      this.clearSettledCalls = 0;
+      this.events = {};
+    }
+  }
+
+  return { queue: new FakeUploadQueue() };
+});
+
+vi.mock('../../api/upload-queue', () => ({
+  getUploadQueue: () => Promise.resolve(fake.queue),
+}));
 
 function makeFile(name: string, type: string, sizeBytes = 2048): File {
   const file = new File(['x'], name, { type });
@@ -47,6 +124,29 @@ function makeFile(name: string, type: string, sizeBytes = 2048): File {
     Object.defineProperty(file, 'size', { value: sizeBytes });
   }
   return file;
+}
+
+function makeItem(item: Partial<UploadItem>): UploadItem {
+  return {
+    id: item.id ?? 'q-seeded',
+    fileName: item.fileName ?? 'receipt.jpg',
+    sizeBytes: item.sizeBytes ?? 2048,
+    blob: item.blob ?? makeFile(item.fileName ?? 'receipt.jpg', 'image/jpeg'),
+    createdAt: item.createdAt ?? 0,
+    state: item.state ?? 'pending',
+    receiptId: item.receiptId ?? null,
+    outcome: item.outcome ?? null,
+    error: item.error ?? null,
+  };
+}
+
+function pipelineItem(
+  receiptId: string,
+  stage: string,
+  queuePosition: number | null,
+  failureReason: string | null = null,
+) {
+  return { receiptId, stage, queuePosition, failureReason };
 }
 
 function renderUploadPage() {
@@ -68,6 +168,7 @@ afterEach(() => {
   vi.useRealTimers();
   server.resetHandlers();
   resetMockAuth();
+  fake.queue.reset();
 });
 
 afterAll(() => {
@@ -75,7 +176,7 @@ afterAll(() => {
 });
 
 describe('UploadPage', () => {
-  it('renders loading, empty, and error states with retry recovery', async () => {
+  it('renders usage loading, empty, and error states with retry recovery', async () => {
     let usageAttempts = 0;
     let resolvePendingUsage!: (value: Response) => void;
     let markUsageStarted!: () => void;
@@ -141,362 +242,298 @@ describe('UploadPage', () => {
       expect(screen.getByText(/pages used/i)).toBeInTheDocument(),
     );
     expect(screen.getByText('363 pages remaining')).toBeInTheDocument();
-
-    // Batch upload error and retry
-    let uploadCalls = 0;
-    server.use(
-      http.post('/api/v1/receipts', () => {
-        uploadCalls += 1;
-        if (uploadCalls === 1) {
-          return HttpResponse.json(
-            {
-              type: 'about:blank',
-              title: 'Service Unavailable',
-              status: 503,
-              detail: 'image storage is offline',
-            },
-            { status: 503 },
-          );
-        }
-        return HttpResponse.json({
-          results: [
-            {
-              index: 0,
-              fileName: 'receipt.jpg',
-              outcome: 'duplicate',
-              receiptId: mockReceiptPage.items[1].id,
-              error: null,
-            },
-          ],
-        });
-      }),
-    );
-
-    const input = screen.getByLabelText('Choose receipt photos');
-    fireEvent.change(input, {
-      target: { files: [makeFile('receipt.jpg', 'image/jpeg')] },
-    });
-
-    await waitFor(() =>
-      expect(screen.getByText('Upload failed')).toBeInTheDocument(),
-    );
-    expect(
-      screen.getAllByText('image storage is offline').length,
-    ).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Retry batch' }));
-
-    await waitFor(() =>
-      expect(screen.getByText('Duplicate')).toBeInTheDocument(),
-    );
-    expect(uploadCalls).toBe(2);
   });
 
-  it('validates file types, 15 MB size limit, and 20-file batch limit client-side', async () => {
-    const sentNames: string[] = [];
+  it('resumes the durable queue on mount and lists every item state', async () => {
     server.use(
-      http.post('/api/v1/receipts', async ({ request }) => {
-        const files = await readUploadedFiles(request);
-        for (const file of files) {
-          sentNames.push(file.name);
-        }
-        return HttpResponse.json({
-          results: files.map((file, index) => ({
-            index,
-            fileName: file.name,
-            outcome: 'duplicate',
-            receiptId: mockReceiptPage.items[1].id,
-            error: null,
-          })),
-        });
-      }),
+      http.get('/api/v1/pipeline', () =>
+        HttpResponse.json({
+          items: [
+            pipelineItem('rec-created', 'ready', null),
+            pipelineItem('rec-quota', 'waiting_quota', null),
+          ],
+        }),
+      ),
     );
+    fake.queue.seed([
+      makeItem({
+        id: 'q-1',
+        fileName: 'stuck.jpg',
+        state: 'pending',
+        error: 'The server could not be reached.',
+      }),
+      makeItem({
+        id: 'q-2',
+        fileName: 'landed.jpg',
+        state: 'done',
+        receiptId: 'rec-created',
+        outcome: 'created',
+      }),
+      makeItem({
+        id: 'q-3',
+        fileName: 'copy.jpg',
+        state: 'done',
+        receiptId: 'rec-dup',
+        outcome: 'duplicate',
+      }),
+      makeItem({
+        id: 'q-4',
+        fileName: 'rejected.jpg',
+        state: 'failed',
+        error: 'The file is larger than 15 MB.',
+      }),
+      makeItem({
+        id: 'q-5',
+        fileName: 'signed-out.jpg',
+        state: 'needs_signin',
+      }),
+      makeItem({
+        id: 'q-6',
+        fileName: 'next-month.jpg',
+        state: 'done',
+        receiptId: 'rec-quota',
+        outcome: 'created',
+      }),
+    ]);
 
     renderUploadPage();
 
-    const input = screen.getByLabelText('Choose receipt photos');
-
-    const tooMany = Array.from({ length: 21 }, (_, idx) =>
-      makeFile(`photo-${idx}.jpg`, 'image/jpeg'),
+    await waitFor(() =>
+      expect(screen.getByText('landed.jpg')).toBeInTheDocument(),
     );
-    fireEvent.change(input, { target: { files: tooMany } });
+    expect(fake.queue.resumeCalls).toBe(1);
+
+    expect(screen.getByText('stuck.jpg')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'You can upload at most 20 files in one batch (21 selected).',
-      ),
+      screen.getByText('The server could not be reached.'),
     ).toBeInTheDocument();
-    expect(sentNames).toHaveLength(0);
 
-    const badType = makeFile('notes.pdf', 'application/pdf', 1024);
-    const tooLarge = makeFile('huge.jpg', 'image/jpeg', 15 * 1024 * 1024 + 1);
-    const emptyPng = makeFile('blank.png', 'image/png', 0);
-    const validHeic = makeFile('market.heic', '', 2048);
+    // Stage labels arrive with the first pipeline response.
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+    const viewLink = screen.getByRole('link', { name: 'View receipt' });
+    expect(viewLink).toHaveAttribute('href', '/receipts/rec-created');
 
-    fireEvent.change(input, {
-      target: { files: [badType, tooLarge, emptyPng, validHeic] },
+    const duplicateLink = screen.getByRole('link', {
+      name: 'View existing receipt',
+    });
+    expect(duplicateLink).toHaveAttribute('href', '/receipts/rec-dup');
+
+    expect(screen.getByText('Waiting for quota')).toBeInTheDocument();
+    // Once in the page-level alert title, once on the item's badge.
+    expect(screen.getAllByText('Sign in required')).toHaveLength(2);
+    expect(
+      screen.getByText('The file is larger than 15 MB.'),
+    ).toBeInTheDocument();
+  });
+
+  it('validates a selection, enqueues only valid files, and lists rejected ones', async () => {
+    renderUploadPage();
+
+    const dropArea = screen.getByRole('region', {
+      name: 'Receipt photo drop area',
+    });
+    fireEvent.drop(dropArea, {
+      dataTransfer: {
+        files: [
+          makeFile('ok.jpg', 'image/jpeg'),
+          makeFile('ok.png', 'image/png'),
+          makeFile('notes.pdf', 'application/pdf'),
+          makeFile('huge.jpg', 'image/jpeg', 16 * 1024 * 1024),
+        ],
+      },
     });
 
-    await waitFor(() =>
-      expect(screen.getByText('Duplicate')).toBeInTheDocument(),
-    );
-    expect(sentNames).toEqual(['market.heic']);
+    await waitFor(() => expect(fake.queue.enqueueCalls).toHaveLength(1));
+    expect(fake.queue.enqueueCalls[0]?.map((file) => file.name)).toEqual([
+      'ok.jpg',
+      'ok.png',
+    ]);
+
     expect(
       screen.getByText('Only JPEG, PNG, and HEIC/HEIF photos are accepted.'),
     ).toBeInTheDocument();
     expect(
       screen.getByText('File exceeds the 15 MB size limit.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('File is empty.')).toBeInTheDocument();
-    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Failed')).toHaveLength(2);
+    expect(screen.getAllByText('Waiting')).toHaveLength(2);
   });
 
-  it('handles a ten-file batch upload with mixed outcomes in one request', async () => {
-    let postRequests = 0;
-    let resolveUpload!: (response: Response) => void;
-
-    const idQueued = '0193a1b2-0000-7000-8000-000000000801';
-    const idProcessing = '0193a1b2-0000-7000-8000-000000000802';
-    const idReview = '0193a1b2-0000-7000-8000-000000000803';
-    const idReady = '0193a1b2-0000-7000-8000-000000000804';
-    const idFailed = '0193a1b2-0000-7000-8000-000000000805';
-    const idQuota = '0193a1b2-0000-7000-8000-000000000806';
-    const existingDuplicateId = '0193a1b2-0000-7000-8000-000000000100';
-
-    server.use(
-      http.post('/api/v1/receipts', async ({ request }) => {
-        postRequests += 1;
-        const files = await readUploadedFiles(request);
-        expect(files).toHaveLength(8);
-        return new Promise<Response>((resolve) => {
-          resolveUpload = resolve;
-        });
-      }),
-      http.get('/api/v1/receipts', () =>
-        HttpResponse.json({
-          items: [
-            makeSummary(idQueued, 'queued'),
-            makeSummary(idProcessing, 'processing'),
-            makeSummary(idReview, 'needs_review', { openFlagCount: 2 }),
-            makeSummary(idReady, 'ready', { total: '92.10' }),
-            makeSummary(idFailed, 'failed', {
-              failureReason: 'Receipt image was too blurry to read.',
-            }),
-            makeSummary(idQuota, 'waiting_quota'),
-          ],
-          nextCursor: null,
-        }),
-      ),
-    );
+  it('shows per-file upload progress with a static determinate bar', async () => {
+    fake.queue.seed([
+      makeItem({ id: 'q-1', fileName: 'sending.jpg', state: 'uploading' }),
+    ]);
 
     renderUploadPage();
-
-    const dropArea = screen.getByRole('region', {
-      name: 'Receipt photo drop area',
-    });
-
-    const tenFiles = [
-      makeFile('01-queued.jpg', 'image/jpeg'),
-      makeFile('02-processing.png', 'image/png'),
-      makeFile('03-review.heic', 'image/heic'),
-      makeFile('04-ready.heif', 'image/heif'),
-      makeFile('05-failed.jpg', 'image/jpeg'),
-      makeFile('06-quota.png', 'image/png'),
-      makeFile('07-duplicate.jpg', 'image/jpeg'),
-      makeFile('08-unreadable.jpg', 'image/jpeg'),
-      makeFile('09-notes.pdf', 'application/pdf'),
-      makeFile('10-oversized.jpg', 'image/jpeg', 16 * 1024 * 1024),
-    ];
-
-    fireEvent.drop(dropArea, {
-      dataTransfer: { files: tenFiles },
-    });
-
-    expect(screen.getAllByText('Uploading')).toHaveLength(8);
-    expect(screen.getAllByText('Failed')).toHaveLength(2);
-    await waitFor(() => expect(postRequests).toBe(1));
-
-    resolveUpload(
-      HttpResponse.json({
-        results: [
-          {
-            index: 0,
-            fileName: '01-queued.jpg',
-            outcome: 'created',
-            receiptId: idQueued,
-            error: null,
-          },
-          {
-            index: 1,
-            fileName: '02-processing.png',
-            outcome: 'created',
-            receiptId: idProcessing,
-            error: null,
-          },
-          {
-            index: 2,
-            fileName: '03-review.heic',
-            outcome: 'created',
-            receiptId: idReview,
-            error: null,
-          },
-          {
-            index: 3,
-            fileName: '04-ready.heif',
-            outcome: 'created',
-            receiptId: idReady,
-            error: null,
-          },
-          {
-            index: 4,
-            fileName: '05-failed.jpg',
-            outcome: 'created',
-            receiptId: idFailed,
-            error: null,
-          },
-          {
-            index: 5,
-            fileName: '06-quota.png',
-            outcome: 'created',
-            receiptId: idQuota,
-            error: null,
-          },
-          {
-            index: 6,
-            fileName: '07-duplicate.jpg',
-            outcome: 'duplicate',
-            receiptId: existingDuplicateId,
-            error: null,
-          },
-          {
-            index: 7,
-            fileName: '08-unreadable.jpg',
-            outcome: 'rejected',
-            receiptId: null,
-            error: {
-              code: 'unreadable',
-              message: 'Image header is corrupted.',
-            },
-          },
-        ],
-      }),
-    );
-
     await waitFor(() =>
-      expect(screen.getByText('Needs review')).toBeInTheDocument(),
+      expect(screen.getByText('sending.jpg')).toBeInTheDocument(),
     );
 
-    expect(screen.getByText('Queued')).toBeInTheDocument();
-    expect(screen.getByText('Processing')).toBeInTheDocument();
-    expect(screen.getByText('Ready')).toBeInTheDocument();
-    expect(screen.getByText('Waiting for quota')).toBeInTheDocument();
-    expect(screen.getByText('Duplicate')).toBeInTheDocument();
-    expect(screen.getAllByText('Failed')).toHaveLength(4);
+    expect(screen.getByText('Uploading')).toBeInTheDocument();
     expect(
-      screen.getByText('Receipt image was too blurry to read.'),
+      screen.getByText('Sending photo to the server...'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Image header is corrupted.')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
 
-    const duplicateLink = screen.getByRole('link', {
-      name: 'View existing receipt',
+    act(() => {
+      fake.queue.emitProgress('q-1', 30, 100);
     });
-    expect(duplicateLink).toHaveAttribute(
-      'href',
-      `/receipts/${existingDuplicateId}`,
-    );
 
-    const viewLinks = screen.getAllByRole('link', { name: 'View receipt' });
-    expect(viewLinks).toHaveLength(2);
-    expect(viewLinks.map((link) => link.getAttribute('href')).sort()).toEqual(
-      [`/receipts/${idReview}`, `/receipts/${idReady}`].sort(),
+    expect(
+      screen.getByText('Sending photo to the server (30% of 100 B)...'),
+    ).toBeInTheDocument();
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '30');
+    expect(bar).toHaveAttribute('aria-valuemax', '100');
+    expect(bar).toHaveAttribute(
+      'aria-label',
+      'Upload progress for sending.jpg',
     );
+    const filled = bar.firstElementChild;
+    expect(filled).not.toBeNull();
+    expect(filled).toHaveStyle({ width: '30%' });
   });
 
-  it('polls listReceipts every 2 seconds while queued or processing and stops once settled', async () => {
+  it('polls pipeline stages every 2 seconds and stops once settled', async () => {
     vi.useFakeTimers();
+    fake.queue.seed([
+      makeItem({
+        id: 'q-1',
+        fileName: 'polling.jpg',
+        state: 'done',
+        receiptId: 'rec-a',
+        outcome: 'created',
+      }),
+    ]);
 
-    const idA = '0193a1b2-0000-7000-8000-000000000901';
-    const idB = '0193a1b2-0000-7000-8000-000000000902';
     let pollCount = 0;
-
     server.use(
-      http.post('/api/v1/receipts', () =>
-        HttpResponse.json({
-          results: [
-            {
-              index: 0,
-              fileName: 'a.jpg',
-              outcome: 'created',
-              receiptId: idA,
-              error: null,
-            },
-            {
-              index: 1,
-              fileName: 'b.png',
-              outcome: 'created',
-              receiptId: idB,
-              error: null,
-            },
-          ],
-        }),
-      ),
-      http.get('/api/v1/receipts', ({ request }) => {
-        const idsParam = new URL(request.url).searchParams.get('ids');
-        expect(idsParam).toBe(`${idA},${idB}`);
+      http.get('/api/v1/pipeline', ({ request }) => {
+        expect(new URL(request.url).searchParams.get('ids')).toBe('rec-a');
         pollCount += 1;
-
         if (pollCount === 1) {
           return HttpResponse.json({
-            items: [makeSummary(idA, 'queued'), makeSummary(idB, 'processing')],
-            nextCursor: null,
+            items: [pipelineItem('rec-a', 'queued', 2)],
           });
         }
         if (pollCount === 2) {
           return HttpResponse.json({
-            items: [makeSummary(idA, 'processing'), makeSummary(idB, 'ready')],
-            nextCursor: null,
+            items: [pipelineItem('rec-a', 'extracting', null)],
           });
         }
         return HttpResponse.json({
-          items: [
-            makeSummary(idA, 'needs_review', { openFlagCount: 1 }),
-            makeSummary(idB, 'ready'),
-          ],
-          nextCursor: null,
+          items: [pipelineItem('rec-a', 'ready', null)],
         });
       }),
     );
 
     renderUploadPage();
-    await vi.advanceTimersByTimeAsync(0);
-
-    const input = screen.getByLabelText('Choose receipt photos');
-    fireEvent.change(input, {
-      target: {
-        files: [
-          makeFile('a.jpg', 'image/jpeg'),
-          makeFile('b.png', 'image/png'),
-        ],
-      },
-    });
-
+    // The 100ms async advance lets the first pipeline fetch resolve and
+    // commit, the same cadence the old list-polling test used.
     await vi.advanceTimersByTimeAsync(100);
+
     expect(pollCount).toBe(1);
     expect(screen.getByText('Queued')).toBeInTheDocument();
-    expect(screen.getByText('Processing')).toBeInTheDocument();
+    expect(
+      screen.getByText('Position 2 in the extraction queue.'),
+    ).toBeInTheDocument();
 
-    await vi.advanceTimersByTimeAsync(1899);
-    expect(pollCount).toBe(1);
-
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(2000);
     expect(pollCount).toBe(2);
-    expect(screen.getByText('Ready')).toBeInTheDocument();
+    expect(screen.getByText('Extracting')).toBeInTheDocument();
 
     await vi.advanceTimersByTimeAsync(2000);
     expect(pollCount).toBe(3);
-    expect(screen.getByText('Needs review')).toBeInTheDocument();
+    expect(screen.getByText('Ready')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View receipt' })).toHaveAttribute(
+      'href',
+      '/receipts/rec-a',
+    );
 
-    // No further polling once every receipt reaches a non-active state.
+    // No further polling once every tracked receipt has settled.
     await vi.advanceTimersByTimeAsync(10000);
     expect(pollCount).toBe(3);
+  });
+
+  it('explains when uploads wait for a fresh sign-in', async () => {
+    fake.queue.seed([
+      makeItem({
+        id: 'q-1',
+        fileName: 'signed-out.jpg',
+        state: 'needs_signin',
+      }),
+    ]);
+
+    renderUploadPage();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Sign in required');
+    expect(alert).toHaveTextContent(
+      'Your session expired. Sign in again; queued photos resume when you return to this page.',
+    );
+    expect(screen.getByText('signed-out.jpg')).toBeInTheDocument();
+  });
+
+  it('clears settled items and rejected selections, keeping pending work', async () => {
+    fake.queue.seed([
+      makeItem({
+        id: 'q-1',
+        fileName: 'done.jpg',
+        state: 'done',
+        receiptId: 'rec-1',
+        outcome: 'created',
+      }),
+      makeItem({
+        id: 'q-2',
+        fileName: 'broken.jpg',
+        state: 'failed',
+        error: 'The photo could not be uploaded.',
+      }),
+      makeItem({ id: 'q-3', fileName: 'waiting.jpg', state: 'pending' }),
+    ]);
+
+    renderUploadPage();
+    fireEvent.drop(
+      screen.getByRole('region', { name: 'Receipt photo drop area' }),
+      {
+        dataTransfer: { files: [makeFile('notes.pdf', 'application/pdf')] },
+      },
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Only JPEG, PNG, and HEIC/HEIF photos are accepted.'),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear list' }));
+
+    await waitFor(() => expect(fake.queue.clearSettledCalls).toBe(1));
+    await waitFor(() =>
+      expect(screen.getByText('waiting.jpg')).toBeInTheDocument(),
+    );
+    expect(screen.queryByText('done.jpg')).not.toBeInTheDocument();
+    expect(screen.queryByText('broken.jpg')).not.toBeInTheDocument();
+    expect(screen.queryByText('notes.pdf')).not.toBeInTheDocument();
+  });
+
+  it('rejects a selection larger than the batch limit without enqueuing', async () => {
+    renderUploadPage();
+
+    const tooMany = Array.from({ length: 21 }, (_, index) =>
+      makeFile(`bulk-${index}.jpg`, 'image/jpeg'),
+    );
+    fireEvent.drop(
+      screen.getByRole('region', { name: 'Receipt photo drop area' }),
+      { dataTransfer: { files: tooMany } },
+    );
+
+    expect(
+      screen.getByText(
+        'You can upload at most 20 files in one selection (21 chosen).',
+      ),
+    ).toBeInTheDocument();
+    expect(fake.queue.enqueueCalls).toHaveLength(0);
+    expect(screen.getByText('No files uploaded yet')).toBeInTheDocument();
   });
 });

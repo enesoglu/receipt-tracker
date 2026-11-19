@@ -37,7 +37,6 @@ import { useResolveReviewFlag, useReviewFlags } from './review';
 import { useSettings, useUpdateSettings, useUsage } from './settings';
 import { useDisconnectStorage, useStorageStatus } from './storage';
 import { useStores, useUpdateStore } from './stores';
-import { useUploadReceipts } from './uploads';
 
 function okResult<Data>(data: Data) {
   return Promise.resolve({
@@ -90,40 +89,6 @@ describe('API query and mutation hooks', () => {
     expect(postSpy).toHaveBeenCalledWith('/auth/logout');
     expect(client.getQueryData(queryKeys.me)).toBeNull();
     expect(client.getQueryData(queryKeys.receipts.list())).toBeUndefined();
-  });
-
-  it('uploads receipt files as FormData and invalidates receipts and usage', async () => {
-    const postSpy = vi.spyOn(api, 'POST').mockImplementation((path, init) => {
-      expect(path).toBe('/receipts');
-      const serializer = (init as { bodySerializer?: (b: unknown) => FormData })
-        .bodySerializer;
-      expect(serializer).toBeDefined();
-      const form = serializer?.((init as { body: unknown }).body);
-      expect(form).toBeInstanceOf(FormData);
-      expect(form?.getAll('files')).toHaveLength(2);
-      return okResult({ results: [] }) as never;
-    });
-
-    const { client, Wrapper } = createWrapper();
-    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
-    const hook = renderHook(() => useUploadReceipts(), { wrapper: Wrapper });
-
-    const files = [
-      new File(['a'], 'a.jpg', { type: 'image/jpeg' }),
-      new File(['b'], 'b.png', { type: 'image/png' }),
-    ];
-
-    await act(async () => {
-      await hook.result.current.mutateAsync(files);
-    });
-
-    expect(postSpy).toHaveBeenCalledTimes(1);
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.receipts.all,
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.settings.usage,
-    });
   });
 
   it('fetches pipeline stages for given ids and for all unsettled receipts', async () => {
