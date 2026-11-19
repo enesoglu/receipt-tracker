@@ -453,6 +453,39 @@ func TestMCP_PaginatesAndBindsCursorsToUserResourceAndFilters(t *testing.T) {
 	}
 }
 
+func TestMCP_GetReceiptCountsTheReturnedLineItemPage(t *testing.T) {
+	f := setup(t, mcpserver.Options{})
+	tokens := f.tokens(t, f.user)
+	session := f.initialize(t, tokens.AccessToken)
+	type page struct {
+		Items []any  `json:"line_items"`
+		Count int    `json:"line_item_count"`
+		Next  string `json:"next_cursor"`
+	}
+	args := map[string]any{"receipt_id": f.receipt.String(), "limit": 1}
+	readPage := func() page {
+		t.Helper()
+		result := f.call(t, tokens.AccessToken, session, "get_receipt", args)
+		if result.IsError {
+			t.Fatal(text(result))
+		}
+		var got page
+		if err := json.Unmarshal([]byte(text(result)), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	first := readPage()
+	if first.Count != 1 || len(first.Items) != 1 || first.Next == "" {
+		t.Fatalf("first page: count=%d items=%d next=%q", first.Count, len(first.Items), first.Next)
+	}
+	args["cursor"] = first.Next
+	second := readPage()
+	if second.Count != 1 || len(second.Items) != 1 {
+		t.Fatalf("second page: count=%d items=%d", second.Count, len(second.Items))
+	}
+}
+
 func TestMCP_IdleKeepaliveReconnectAndForgottenSession(t *testing.T) {
 	ticks := make(chan time.Time, 4)
 	created := make(chan time.Duration, 4)

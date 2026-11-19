@@ -160,7 +160,7 @@ func (h *Handler) getReceipt(ctx context.Context, userID uuid.UUID, in detailInp
 	result["subtotal"] = amount(detail.Receipt.Subtotal)
 	result["tax_total"] = amount(detail.Receipt.TaxTotal)
 	result["line_items"] = items
-	result["line_item_count"] = len(detail.Lines)
+	result["line_item_count"] = len(items)
 	result["next_cursor"] = next
 	return result, nil
 }
