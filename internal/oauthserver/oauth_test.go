@@ -69,7 +69,7 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.handler = httpapi.New(":0", logger, http.NotFoundHandler(), f.users, f.sessions, nil, httpapi.Ingestion{}, nil, nil, h, nil).Handler()
+	f.handler = httpapi.New(":0", logger, http.NotFoundHandler(), f.users, f.sessions, nil, httpapi.Ingestion{}, nil, nil, nil, h, nil).Handler()
 	f.cookie = testutil.Request(t, f.sessions, f.user, "GET", base, nil).Cookies()[0]
 	return f
 }
@@ -627,7 +627,7 @@ func TestOAuth_GoogleSignInReturnsToOriginalConsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.handler = httpapi.New(":0", logger, http.NotFoundHandler(), users, f.sessions, nil, httpapi.Ingestion{}, nil, nil, h, nil).Handler()
+	f.handler = httpapi.New(":0", logger, http.NotFoundHandler(), users, f.sessions, nil, httpapi.Ingestion{}, nil, nil, nil, h, nil).Handler()
 	client := f.register(t)
 	target := "/oauth/authorize?" + parameters(client).Encode()
 	w := f.request(t, "GET", target, "", "", nil)

@@ -314,7 +314,7 @@ func TestResolve(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resolver := New(&test.source)
+			resolver := NewResolver(&test.source)
 			got, err := resolver.Resolve(t.Context(), uuid.MustParse("00000000-0000-7000-8000-00000000000a"), test.input)
 			if err != nil {
 				t.Fatalf("Resolve: %v", err)
@@ -344,7 +344,7 @@ func TestResolve_PropagatesSourceErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := New(&test.source).Resolve(t.Context(), uuid.Nil, test.input)
+			got, err := NewResolver(&test.source).Resolve(t.Context(), uuid.Nil, test.input)
 			if !errors.Is(err, boom) {
 				t.Fatalf("Resolve error = %v, want boom", err)
 			}

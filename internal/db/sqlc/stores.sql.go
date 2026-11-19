@@ -339,3 +339,29 @@ func (q *Queries) RenameOwnedStore(ctx context.Context, arg RenameOwnedStorePara
 	)
 	return i, err
 }
+
+const writeStoreAudit = `-- name: WriteStoreAudit :exec
+INSERT INTO audit_events (user_id, entity, entity_id, action, detail, created_at)
+VALUES ($1, 'store', $2, $3, $4, $5)
+`
+
+type WriteStoreAuditParams struct {
+	UserID   uuid.UUID
+	EntityID uuid.UUID
+	Action   string
+	Detail   []byte
+	Now      time.Time
+}
+
+// WriteStoreAudit records what a person did to a store. The detail must
+// explain the change on its own: the rows it describes may be gone later.
+func (q *Queries) WriteStoreAudit(ctx context.Context, arg WriteStoreAuditParams) error {
+	_, err := q.db.Exec(ctx, writeStoreAudit,
+		arg.UserID,
+		arg.EntityID,
+		arg.Action,
+		arg.Detail,
+		arg.Now,
+	)
+	return err
+}

@@ -149,7 +149,7 @@ func (s *Service) resolveStore(ctx context.Context, q *unit, userID uuid.UUID, n
 	if vkn != nil {
 		input.VKN = *vkn
 	}
-	decision, err := stores.New(q.storeSource).Resolve(ctx, userID, input)
+	decision, err := stores.NewResolver(q.storeSource).Resolve(ctx, userID, input)
 	if err != nil {
 		return uuid.NullUUID{}, nil, nil, fmt.Errorf("resolve store: %w", err)
 	}

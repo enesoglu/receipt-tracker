@@ -30,7 +30,7 @@ func TestHandler_ServesHealthAndSPA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa, nil, nil, nil, httpapi.Ingestion{}, nil, nil, nil, nil)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa, nil, nil, nil, httpapi.Ingestion{}, nil, nil, nil, nil, nil)
 	tests := []struct {
 		path, accept, body string
 		status             int
@@ -68,7 +68,7 @@ func TestHandler_SetsSecurityHeadersOnEveryResponse(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, "{}")
 	})
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa, nil, nil, nil, httpapi.Ingestion{}, nil, nil, nil, mcp)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa, nil, nil, nil, httpapi.Ingestion{}, nil, nil, nil, nil, mcp)
 	for _, path := range []string{"/", "/receipts", "/livez", "/healthz", "/api/v1/me", "/auth/missing", "/oauth/missing", "/.well-known/missing", "/mcp"} {
 		t.Run(path, func(t *testing.T) {
 			response := httptest.NewRecorder()
@@ -111,7 +111,7 @@ func newTestServer(t *testing.T) authenticatedServer {
 	t.Cleanup(stop)
 	user := testutil.NewUser(t, users)
 	request := testutil.Request(t, sessions, user.ID, http.MethodGet, "/", nil)
-	return authenticatedServer{server: httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, nil, nil, nil, nil), cookie: request.Cookies()[0]}
+	return authenticatedServer{server: httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, nil, nil, nil, nil, nil), cookie: request.Cookies()[0]}
 }
 
 // decodeProblem reads a problem document strictly: an unknown member means
@@ -207,7 +207,7 @@ func TestServe_StopsOnCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), nil, nil, nil, httpapi.Ingestion{}, nil, nil, nil, nil)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), nil, nil, nil, httpapi.Ingestion{}, nil, nil, nil, nil, nil)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(ctx, listener) }()
 	cancel()
@@ -247,7 +247,7 @@ func TestHandler_SessionStorageErrorOnCanceledRequestIsNot500(t *testing.T) {
 	sessions.Store = failingSessionStore{}
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	spa := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
-	server := httpapi.New(":0", logger, spa, nil, sessions, nil, httpapi.Ingestion{}, nil, nil, nil, nil)
+	server := httpapi.New(":0", logger, spa, nil, sessions, nil, httpapi.Ingestion{}, nil, nil, nil, nil, nil)
 	_ = server
 
 	// Live request context: a genuine store error is reported as 500.

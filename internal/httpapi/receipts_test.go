@@ -31,6 +31,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/httpapi"
 	"github.com/enesoglu/receipt-tracker/internal/jobs"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
+	"github.com/enesoglu/receipt-tracker/internal/stores"
 	"github.com/enesoglu/receipt-tracker/internal/testutil"
 )
 
@@ -110,7 +111,8 @@ func newReceiptServer(t *testing.T) *receiptServer {
 	parser := &receiptParser{}
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
 	service := receipts.New(pool, func() time.Time { return now }, receipts.Options{Images: images, Parsers: map[string]receipts.ResultParser{extract.ProviderFake: parser}})
-	server := httpapi.New(":0", logger, http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, nil, nil, nil, nil, service)
+	storeService := stores.New(pool, func() time.Time { return now })
+	server := httpapi.New(":0", logger, http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, nil, nil, storeService, nil, nil, service)
 	return &receiptServer{t: t, pool: pool, q: sqlc.New(pool), service: service, http: server, sessions: sessions, alice: alice, bob: bob, images: images, parser: parser, now: now}
 }
 

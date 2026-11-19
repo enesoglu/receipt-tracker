@@ -14,6 +14,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/products"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
 	"github.com/enesoglu/receipt-tracker/internal/reports"
+	"github.com/enesoglu/receipt-tracker/internal/stores"
 )
 
 func invalid() error { return apperr.New(apperr.Invalid, "invalid tool arguments") }
@@ -293,6 +294,14 @@ func namedPage(page receipts.NamedPage) any {
 	return map[string]any{"items": items, "next_cursor": page.NextCursor}
 }
 
+func storesPage(page stores.Page) any {
+	items := make([]any, 0, len(page.Items))
+	for _, row := range page.Items {
+		items = append(items, map[string]any{"id": row.ID, "name": row.Name, "count": row.Count})
+	}
+	return map[string]any{"items": items, "next_cursor": page.NextCursor}
+}
+
 func (h *Handler) listCategories(ctx context.Context, userID uuid.UUID, in paging) (any, error) {
 	size, err := limit(in)
 	if err != nil {
@@ -310,9 +319,9 @@ func (h *Handler) listStores(ctx context.Context, userID uuid.UUID, in paging) (
 	if err != nil {
 		return nil, err
 	}
-	page, err := h.receipts.ListStores(ctx, userID, size, in.Cursor)
+	page, err := h.stores.List(ctx, userID, size, in.Cursor)
 	if err != nil {
 		return nil, err
 	}
-	return namedPage(page), nil
+	return storesPage(page), nil
 }

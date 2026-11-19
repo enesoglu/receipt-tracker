@@ -68,7 +68,7 @@ func newPipelineServer(t *testing.T) *pipelineServer {
 		t.Fatal(err)
 	}
 	service := receipts.New(pool, func() time.Time { return now })
-	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, nil, nil, nil, nil, service)
+	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{}, nil, nil, nil, nil, nil, service)
 	return &pipelineServer{server: server, sessions: sessions, alice: alice.ID, bob: bob.ID, queued: queued, failed: failed, theirs: theirs}
 }
 

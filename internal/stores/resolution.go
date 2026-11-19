@@ -1,10 +1,3 @@
-// Package stores resolves receipt stores. A store is the chain: the
-// printed store name and the seller tax number resolve to one store per
-// chain per user, and the raw names seen become the store's aliases so
-// that OCR noise keeps matching. Resolution is a decision over a
-// candidate source, in the shape of matching: Resolve says which store a
-// receipt belongs to, and the caller writes the store, its alias and the
-// review flag.
 package stores
 
 import (
@@ -121,8 +114,8 @@ type Resolver struct {
 	source Source
 }
 
-// New returns a Resolver that loads candidates from source.
-func New(source Source) *Resolver {
+// NewResolver returns a Resolver that loads candidates from source.
+func NewResolver(source Source) *Resolver {
 	return &Resolver{source: source}
 }
 

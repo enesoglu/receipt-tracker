@@ -3,15 +3,31 @@ package httpapi
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	"github.com/enesoglu/receipt-tracker/internal/apperr"
-	"github.com/enesoglu/receipt-tracker/internal/receipts"
+	"github.com/enesoglu/receipt-tracker/internal/stores"
 )
 
-type storesHandlers struct{ receipts *receipts.Service }
+// storesHandlers serves the operations of the stores tag: the store
+// catalogue. It holds what those operations need and nothing else, so each
+// tag is built and changed in its own file.
+type storesHandlers struct{ stores *stores.Service }
+
+func (h storesHandlers) identity(ctx context.Context) (uuid.UUID, error) {
+	if h.stores == nil {
+		return uuid.Nil, serviceUnavailable()
+	}
+	id, ok := UserID(ctx)
+	if !ok {
+		return uuid.Nil, unauthenticated()
+	}
+	return id, nil
+}
 
 // ListStores returns one page of the authenticated user's stores.
 func (h storesHandlers) ListStores(ctx context.Context, request ListStoresRequestObject) (ListStoresResponseObject, error) {
-	id, err := receiptUser(ctx, h.receipts)
+	id, err := h.identity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +35,7 @@ func (h storesHandlers) ListStores(ctx context.Context, request ListStoresReques
 	if err != nil {
 		return nil, err
 	}
-	page, err := h.receipts.ListStores(ctx, id, limit, cursor)
+	page, err := h.stores.List(ctx, id, limit, cursor)
 	if err != nil {
 		return nil, err
 	}
@@ -32,14 +48,14 @@ func (h storesHandlers) ListStores(ctx context.Context, request ListStoresReques
 
 // UpdateStore renames a store after checking its owner.
 func (h storesHandlers) UpdateStore(ctx context.Context, request UpdateStoreRequestObject) (UpdateStoreResponseObject, error) {
-	id, err := receiptUser(ctx, h.receipts)
+	id, err := h.identity(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if request.Body == nil {
 		return nil, apperr.New(apperr.Invalid, "store body is required")
 	}
-	row, err := h.receipts.RenameStore(ctx, id, request.StoreId, request.Body.Name)
+	row, err := h.stores.Rename(ctx, id, request.StoreId, request.Body.Name)
 	if err != nil {
 		return nil, err
 	}

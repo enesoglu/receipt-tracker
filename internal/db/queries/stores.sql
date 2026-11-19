@@ -53,3 +53,9 @@ INSERT INTO store_aliases (user_id, store_id, raw_name, normalized_name, last_se
 VALUES (@user_id, @store_id, @raw_name, @normalized_name, @now, @now)
 ON CONFLICT (store_id, normalized_name) DO UPDATE
 SET seen_count = store_aliases.seen_count + 1, last_seen_at = @now;
+
+-- WriteStoreAudit records what a person did to a store. The detail must
+-- explain the change on its own: the rows it describes may be gone later.
+-- name: WriteStoreAudit :exec
+INSERT INTO audit_events (user_id, entity, entity_id, action, detail, created_at)
+VALUES (@user_id, 'store', @entity_id, @action, @detail, @now);
