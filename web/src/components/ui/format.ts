@@ -22,7 +22,7 @@ export function formatMoney(
   }
 }
 
-/** Formats YYYY-MM-DD dates, YYYY-MM months, or RFC 3339 timestamps in UTC. */
+/** Formats YYYY-MM-DD dates and YYYY-MM months as calendar values and RFC 3339 timestamps in local time. */
 export function formatDateValue(
   value: string | null | undefined,
   format: DateDisplayFormat = 'date',
@@ -79,7 +79,6 @@ export function formatDateValue(
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
-      timeZone: 'UTC',
     }).format(parsed);
   }
 
@@ -87,6 +86,5 @@ export function formatDateValue(
     year: 'numeric',
     month: 'short',
     day: 'numeric',
-    timeZone: 'UTC',
   }).format(parsed);
 }

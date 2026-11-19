@@ -25,6 +25,9 @@ function renderDetailPage(receiptId: string) {
   );
 }
 
+// The receipt header renders the creation day in the viewer's local zone.
+process.env.TZ = 'Etc/GMT-3';
+
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
 });
@@ -39,6 +42,24 @@ afterAll(() => {
 });
 
 describe('ReceiptDetailPage', () => {
+  it('shows the receipt creation day from its timestamp, not a string slice', async () => {
+    const receipt: Receipt = {
+      ...mockReceipt,
+      id: '0193a1b2-0000-7000-8000-000000000151',
+      // 21:30Z on the 19th is 00:30 on the 20th at UTC+3.
+      createdAt: '2026-11-19T21:30:00Z',
+    };
+    server.use(
+      http.get('/api/v1/receipts/:receiptId', () => HttpResponse.json(receipt)),
+    );
+
+    renderDetailPage(receipt.id);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Created Nov 20, 2026/)).toBeInTheDocument(),
+    );
+  });
+
   it('renders loading, error retry, image with Download original gating, and flagged fields', async () => {
     let attempts = 0;
     let resolvePending!: (response: Response) => void;

@@ -15,6 +15,7 @@ import { Card } from '../../components/ui/Card';
 import { DateText } from '../../components/ui/DateText';
 import { Dialog } from '../../components/ui/Dialog';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { formatDateValue } from '../../components/ui/format';
 import { Input } from '../../components/ui/Input';
 import { Money } from '../../components/ui/Money';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -209,8 +210,8 @@ export function ReceiptDetailContent({
         title={displayTitle}
         description={
           receipt.store
-            ? `${receipt.store.name} · Created ${receipt.createdAt.slice(0, 10)}`
-            : `Created ${receipt.createdAt.slice(0, 10)}`
+            ? `${receipt.store.name} · Created ${formatDateValue(receipt.createdAt, 'date')}`
+            : `Created ${formatDateValue(receipt.createdAt, 'date')}`
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
