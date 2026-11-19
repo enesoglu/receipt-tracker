@@ -33,6 +33,7 @@ import { ReceiptLineItemsCard } from './ReceiptLineItemsCard';
 interface ReceiptFormValues {
   title: string;
   storeName: string;
+  branchName: string;
   purchasedOn: string;
   purchasedTime: string;
   currency: string;
@@ -48,6 +49,7 @@ function toReceiptFormValues(receipt: Receipt): ReceiptFormValues {
   return {
     title: receipt.title.trim() || 'Home shopping',
     storeName: receipt.store?.name ?? '',
+    branchName: receipt.branchName ?? '',
     purchasedOn: receipt.purchasedOn ?? '',
     purchasedTime: receipt.purchasedTime ?? '',
     currency: receipt.currency,
@@ -75,6 +77,8 @@ function toReceiptUpdate(values: ReceiptFormValues): ReceiptUpdate {
   return {
     title: values.title.trim() || 'Home shopping',
     storeName: toNullable(values.storeName),
+    // The branch is receipt data, never a store: an emptied box clears it.
+    branchName: toNullable(values.branchName),
     purchasedOn: toNullable(values.purchasedOn),
     purchasedTime: toNullable(values.purchasedTime),
     currency: values.currency.trim().toUpperCase() || 'TRY',
@@ -411,25 +415,43 @@ export function ReceiptDetailContent({
                 }
               />
 
-              <div className="flex flex-col gap-1.5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Input
+                    label="Store"
+                    placeholder="Store name"
+                    value={formValues.storeName}
+                    error={pickFieldError(
+                      fieldErrors,
+                      'storeName',
+                      'store_name',
+                      'store',
+                    )}
+                    onChange={(event) =>
+                      setFormValues({
+                        ...formValues,
+                        storeName: event.target.value,
+                      })
+                    }
+                  />
+                  <FieldFlagNotice flags={storeFlags} />
+                </div>
                 <Input
-                  label="Store"
-                  placeholder="Store name"
-                  value={formValues.storeName}
+                  label="Branch name"
+                  hint="Printed branch location of the chain store"
+                  value={formValues.branchName}
                   error={pickFieldError(
                     fieldErrors,
-                    'storeName',
-                    'store_name',
-                    'store',
+                    'branchName',
+                    'branch_name',
                   )}
                   onChange={(event) =>
                     setFormValues({
                       ...formValues,
-                      storeName: event.target.value,
+                      branchName: event.target.value,
                     })
                   }
                 />
-                <FieldFlagNotice flags={storeFlags} />
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -145,7 +145,7 @@ export const mockReceipt: components['schemas']['Receipt'] = {
   ettn: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
   sellerTaxNumber: '1234567890',
   chain: null,
-  branchName: null,
+  branchName: 'Çankaya',
   status: 'needs_review',
   failureReason: null,
   source: 'web',
