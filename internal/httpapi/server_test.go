@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/alexedwards/scs/v2"
 
 	"github.com/google/uuid"
 
@@ -215,5 +218,53 @@ func TestServe_StopsOnCancellation(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("server did not stop")
+	}
+}
+
+// failingSessionStore makes every Save (Commit) fail, so scs invokes ErrorFunc.
+type failingSessionStore struct{}
+
+func (failingSessionStore) Delete(string) error { return nil }
+func (failingSessionStore) Find(string) ([]byte, bool, error) {
+	return nil, false, nil
+}
+
+func (failingSessionStore) Commit(string, []byte, time.Time) error {
+	return errors.New("session store down")
+}
+
+func (failingSessionStore) DeleteCtx(context.Context, string) error { return nil }
+func (failingSessionStore) FindCtx(context.Context, string) ([]byte, bool, error) {
+	return nil, false, nil
+}
+
+func (failingSessionStore) CommitCtx(context.Context, string, []byte, time.Time) error {
+	return errors.New("session store down")
+}
+
+func TestHandler_SessionStorageErrorOnCanceledRequestIsNot500(t *testing.T) {
+	sessions := scs.New()
+	sessions.Store = failingSessionStore{}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	spa := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
+	server := httpapi.New(":0", logger, spa, nil, sessions, nil, httpapi.Ingestion{}, nil, nil, nil, nil)
+	_ = server
+
+	// Live request context: a genuine store error is reported as 500.
+	liveRec := httptest.NewRecorder()
+	liveReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	sessions.ErrorFunc(liveRec, liveReq, errors.New("session store down"))
+	if liveRec.Code != http.StatusInternalServerError {
+		t.Fatalf("live context: status = %d, want 500; body: %s", liveRec.Code, liveRec.Body)
+	}
+
+	// Canceled request context: no 500 is written.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	canceledRec := httptest.NewRecorder()
+	canceledReq := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+	sessions.ErrorFunc(canceledRec, canceledReq, errors.New("session store down"))
+	if canceledRec.Code == http.StatusInternalServerError {
+		t.Fatalf("canceled context: got 500, want non-500; body: %s", canceledRec.Body)
 	}
 }
