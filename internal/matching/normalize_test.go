@@ -163,6 +163,28 @@ func TestNormalize_IdempotentOnKey(t *testing.T) {
 	}
 }
 
+func TestNormalize_PackCount(t *testing.T) {
+	for name, tc := range map[string]struct {
+		raw  string
+		want string
+	}{
+		"volume multipack":      {"6X200ML AYRAN", "6"},
+		"mass multipack":        {"6X500G YOGHURT", "6"},
+		"multipack with spaces": {"6 x 200 ml ayran", "6"},
+		"decimal multiplier":    {"1,5X200ML SU", "1.5"},
+		"single item":           {"SUT 1L", "1"},
+		"count suffix":          {"SUT 1L 6LI", "1"},
+		"number without a unit": {"3 AL 2 ODE", "1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := Normalize(tc.raw).PackCount
+			if want := decimal.RequireFromString(tc.want); !got.Equal(want) {
+				t.Errorf("Normalize(%q).PackCount = %s, want %s", tc.raw, got, want)
+			}
+		})
+	}
+}
+
 func FuzzNormalize(f *testing.F) {
 	for _, seed := range []string{
 		"PINAR SÜT 1LT %08 *24,50", "İÇİM YOĞURT 500GR", "6X200ML AYRAN",
