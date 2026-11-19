@@ -223,13 +223,13 @@ func productResponse(d products.Detail) Product {
 	response := Product{
 		Id: summary.Id, CanonicalName: summary.CanonicalName, Category: summary.Category,
 		SizeValue: summary.SizeValue, SizeUnit: summary.SizeUnit, PurchaseCount: summary.PurchaseCount, PriceBasis: summary.PriceBasis,
-		LastPurchase: summary.LastPurchase, CreatedAt: d.Product.CreatedAt, UpdatedAt: d.Product.UpdatedAt,
+		LastPurchase: summary.LastPurchase, CreatedAt: d.Product.CreatedAt.UTC(), UpdatedAt: d.Product.UpdatedAt.UTC(),
 		Aliases: make([]ProductAlias, 0, len(d.Aliases)), Codes: make([]ProductCode, 0, len(d.Codes)),
 	}
 	for _, a := range d.Aliases {
 		response.Aliases = append(response.Aliases, ProductAlias{
 			Id: a.ID, RawName: a.RawName, NormalizedName: a.NormalizedName, Store: refResponse(a.Store),
-			SeenCount: int(a.SeenCount), LastSeenAt: a.LastSeenAt,
+			SeenCount: int(a.SeenCount), LastSeenAt: a.LastSeenAt.UTC(),
 		})
 	}
 	for _, c := range d.Codes {

@@ -242,7 +242,7 @@ func (h receiptsHandlers) DeleteLineItem(ctx context.Context, request DeleteLine
 
 func summaryResponse(d receipts.Summary) ReceiptSummary {
 	r := d.Receipt
-	response := ReceiptSummary{Id: r.ID, Title: r.Title, Currency: r.Currency, Total: moneyResponse(r.Total), Status: ReceiptStatus(r.Status), Source: ReceiptSource(r.Source), FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt}
+	response := ReceiptSummary{Id: r.ID, Title: r.Title, Currency: r.Currency, Total: moneyResponse(r.Total), Status: ReceiptStatus(r.Status), Source: ReceiptSource(r.Source), FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt.UTC()}
 	if d.Store != nil {
 		response.Store = &StoreRef{Id: d.Store.ID, Name: d.Store.Name}
 	}
@@ -286,7 +286,12 @@ func flagResponse(f sqlc.ReviewFlag) (ReviewFlag, error) {
 	if f.LineItemID.Valid {
 		lineID = &f.LineItemID.UUID
 	}
-	raw, err := json.Marshal(map[string]interface{}{"id": f.ID, "receiptId": f.ReceiptID, "lineItemId": lineID, "kind": f.Kind, "detail": json.RawMessage(f.Detail), "createdAt": f.CreatedAt, "resolvedAt": f.ResolvedAt, "resolution": f.Resolution})
+	var resolvedAt *time.Time
+	if f.ResolvedAt != nil {
+		value := f.ResolvedAt.UTC()
+		resolvedAt = &value
+	}
+	raw, err := json.Marshal(map[string]interface{}{"id": f.ID, "receiptId": f.ReceiptID, "lineItemId": lineID, "kind": f.Kind, "detail": json.RawMessage(f.Detail), "createdAt": f.CreatedAt.UTC(), "resolvedAt": resolvedAt, "resolution": f.Resolution})
 	if err != nil {
 		return ReviewFlag{}, err
 	}
@@ -298,7 +303,7 @@ func flagResponse(f sqlc.ReviewFlag) (ReviewFlag, error) {
 func receiptResponse(d receipts.Detail) (Receipt, error) {
 	summary := summaryResponse(d.Summary)
 	r := d.Receipt
-	response := Receipt{Id: r.ID, Title: r.Title, Store: summary.Store, PurchasedOn: summary.PurchasedOn, Currency: r.Currency, Total: summary.Total, Subtotal: moneyResponse(r.Subtotal), TaxTotal: moneyResponse(r.TaxTotal), Status: summary.Status, Source: summary.Source, FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, LineItems: make([]LineItem, 0, len(d.Lines)), Flags: make([]ReviewFlag, 0, len(d.Flags)), Images: make([]ReceiptImage, 0, len(d.Images))}
+	response := Receipt{Id: r.ID, Title: r.Title, Store: summary.Store, PurchasedOn: summary.PurchasedOn, Currency: r.Currency, Total: summary.Total, Subtotal: moneyResponse(r.Subtotal), TaxTotal: moneyResponse(r.TaxTotal), Status: summary.Status, Source: summary.Source, FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), LineItems: make([]LineItem, 0, len(d.Lines)), Flags: make([]ReviewFlag, 0, len(d.Flags)), Images: make([]ReceiptImage, 0, len(d.Images))}
 	if r.PurchasedTime.Valid {
 		value := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(r.PurchasedTime.Microseconds) * time.Microsecond).Format("15:04")
 		response.PurchasedTime = &value
