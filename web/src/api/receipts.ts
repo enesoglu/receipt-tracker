@@ -6,6 +6,7 @@ import type { components } from './schema.gen';
 export type ReceiptPage = components['schemas']['ReceiptPage'];
 export type ReceiptSummary = components['schemas']['ReceiptSummary'];
 export type Receipt = components['schemas']['Receipt'];
+export type ReceiptChain = components['schemas']['ReceiptChain'];
 export type ReceiptUpdate = components['schemas']['ReceiptUpdate'];
 export type LineItem = components['schemas']['LineItem'];
 export type LineItemInput = components['schemas']['LineItemInput'];

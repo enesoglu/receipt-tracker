@@ -26,6 +26,7 @@ import {
   getOpenFlagsForField,
   type ReviewFlag,
 } from './flag-reasons';
+import { EArchivePanel } from './EArchivePanel';
 import { FieldFlagNotice } from './FieldFlagNotice';
 import { ReceiptLineItemsCard } from './ReceiptLineItemsCard';
 
@@ -359,209 +360,232 @@ export function ReceiptDetailContent({
           )}
         </Card>
 
-        <Card
-          title="Receipt details"
-          description="Edit header fields or totals and save changes."
-        >
-          <form
-            onSubmit={(event) => void handleSaveHeader(event)}
-            className="flex flex-col gap-4"
+        <div className="flex flex-col gap-6">
+          <Card
+            title="Receipt details"
+            description="Edit header fields or totals and save changes."
           >
-            <div className="grid grid-cols-1 gap-3 rounded-control border border-border bg-surface-subtle p-3 sm:grid-cols-3">
-              <div>
-                <div className="text-caption font-medium text-muted">
-                  Subtotal
+            <form
+              onSubmit={(event) => void handleSaveHeader(event)}
+              className="flex flex-col gap-4"
+            >
+              <div className="grid grid-cols-1 gap-3 rounded-control border border-border bg-surface-subtle p-3 sm:grid-cols-3">
+                <div>
+                  <div className="text-caption font-medium text-muted">
+                    Subtotal
+                  </div>
+                  <div className="text-body font-medium text-ink">
+                    <Money
+                      value={receipt.subtotal}
+                      currency={receipt.currency}
+                    />
+                  </div>
                 </div>
-                <div className="text-body font-medium text-ink">
-                  <Money value={receipt.subtotal} currency={receipt.currency} />
+                <div>
+                  <div className="text-caption font-medium text-muted">Tax</div>
+                  <div className="text-body font-medium text-ink">
+                    <Money
+                      value={receipt.taxTotal}
+                      currency={receipt.currency}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-caption font-medium text-muted">
+                    Total
+                  </div>
+                  <div className="text-body font-semibold text-ink">
+                    <Money value={receipt.total} currency={receipt.currency} />
+                  </div>
                 </div>
               </div>
-              <div>
-                <div className="text-caption font-medium text-muted">Tax</div>
-                <div className="text-body font-medium text-ink">
-                  <Money value={receipt.taxTotal} currency={receipt.currency} />
-                </div>
-              </div>
-              <div>
-                <div className="text-caption font-medium text-muted">Total</div>
-                <div className="text-body font-semibold text-ink">
-                  <Money value={receipt.total} currency={receipt.currency} />
-                </div>
-              </div>
-            </div>
 
-            <Input
-              label="Title"
-              required
-              placeholder="Home shopping"
-              value={formValues.title}
-              error={pickFieldError(fieldErrors, 'title')}
-              onChange={(event) =>
-                setFormValues({ ...formValues, title: event.target.value })
-              }
-            />
-
-            <div className="flex flex-col gap-1.5">
               <Input
-                label="Store"
-                placeholder="Store name"
-                value={formValues.storeName}
-                error={pickFieldError(
-                  fieldErrors,
-                  'storeName',
-                  'store_name',
-                  'store',
-                )}
+                label="Title"
+                required
+                placeholder="Home shopping"
+                value={formValues.title}
+                error={pickFieldError(fieldErrors, 'title')}
                 onChange={(event) =>
-                  setFormValues({
-                    ...formValues,
-                    storeName: event.target.value,
-                  })
+                  setFormValues({ ...formValues, title: event.target.value })
                 }
               />
-              <FieldFlagNotice flags={storeFlags} />
-            </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Input
-                  label="Purchase date"
-                  type="date"
-                  value={formValues.purchasedOn}
+                  label="Store"
+                  placeholder="Store name"
+                  value={formValues.storeName}
                   error={pickFieldError(
                     fieldErrors,
-                    'purchasedOn',
-                    'purchased_on',
+                    'storeName',
+                    'store_name',
+                    'store',
                   )}
                   onChange={(event) =>
                     setFormValues({
                       ...formValues,
-                      purchasedOn: event.target.value,
+                      storeName: event.target.value,
                     })
                   }
                 />
-                <FieldFlagNotice flags={dateFlags} />
+                <FieldFlagNotice flags={storeFlags} />
               </div>
 
-              <Input
-                label="Purchase time"
-                type="time"
-                value={formValues.purchasedTime}
-                error={pickFieldError(
-                  fieldErrors,
-                  'purchasedTime',
-                  'purchased_time',
-                )}
-                onChange={(event) =>
-                  setFormValues({
-                    ...formValues,
-                    purchasedTime: event.target.value,
-                  })
-                }
-              />
-            </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Input
+                    label="Purchase date"
+                    type="date"
+                    value={formValues.purchasedOn}
+                    error={pickFieldError(
+                      fieldErrors,
+                      'purchasedOn',
+                      'purchased_on',
+                    )}
+                    onChange={(event) =>
+                      setFormValues({
+                        ...formValues,
+                        purchasedOn: event.target.value,
+                      })
+                    }
+                  />
+                  <FieldFlagNotice flags={dateFlags} />
+                </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <Input
-                label="Invoice number"
-                hint="Printed as FATURA NO / BELGE NO"
-                value={formValues.invoiceNumber}
-                error={pickFieldError(fieldErrors, 'invoiceNumber')}
-                onChange={(event) =>
-                  setFormValues({
-                    ...formValues,
-                    invoiceNumber: event.target.value,
-                  })
-                }
-              />
-              <Input
-                label="ETTN"
-                hint="Printed invoice UUID, hyphenated or compact"
-                value={formValues.ettn}
-                error={pickFieldError(fieldErrors, 'ettn')}
-                onChange={(event) =>
-                  setFormValues({ ...formValues, ettn: event.target.value })
-                }
-              />
-              <Input
-                label="Seller tax number"
-                hint="Seller VKN, exactly ten digits"
-                value={formValues.sellerTaxNumber}
-                error={pickFieldError(fieldErrors, 'sellerTaxNumber')}
-                onChange={(event) =>
-                  setFormValues({
-                    ...formValues,
-                    sellerTaxNumber: event.target.value,
-                  })
-                }
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Input
-                label="Currency"
-                required
-                placeholder="TRY"
-                value={formValues.currency}
-                error={pickFieldError(fieldErrors, 'currency')}
-                onChange={(event) =>
-                  setFormValues({ ...formValues, currency: event.target.value })
-                }
-              />
-
-              <Input
-                label="Subtotal"
-                placeholder="0.00"
-                value={formValues.subtotal}
-                error={pickFieldError(fieldErrors, 'subtotal')}
-                onChange={(event) =>
-                  setFormValues({ ...formValues, subtotal: event.target.value })
-                }
-              />
-
-              <Input
-                label="Tax total"
-                placeholder="0.00"
-                value={formValues.taxTotal}
-                error={pickFieldError(fieldErrors, 'taxTotal', 'tax_total')}
-                onChange={(event) =>
-                  setFormValues({ ...formValues, taxTotal: event.target.value })
-                }
-              />
-
-              <div className="flex flex-col gap-1.5">
                 <Input
-                  label="Total"
-                  placeholder="0.00"
-                  value={formValues.total}
-                  error={pickFieldError(fieldErrors, 'total')}
+                  label="Purchase time"
+                  type="time"
+                  value={formValues.purchasedTime}
+                  error={pickFieldError(
+                    fieldErrors,
+                    'purchasedTime',
+                    'purchased_time',
+                  )}
                   onChange={(event) =>
-                    setFormValues({ ...formValues, total: event.target.value })
+                    setFormValues({
+                      ...formValues,
+                      purchasedTime: event.target.value,
+                    })
                   }
                 />
               </div>
-            </div>
-            <FieldFlagNotice flags={totalFlags} />
 
-            {saveError ? (
-              <p role="alert" className="text-small text-danger">
-                {saveError.message}
-              </p>
-            ) : null}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Input
+                  label="Invoice number"
+                  hint="Printed as FATURA NO / BELGE NO"
+                  value={formValues.invoiceNumber}
+                  error={pickFieldError(fieldErrors, 'invoiceNumber')}
+                  onChange={(event) =>
+                    setFormValues({
+                      ...formValues,
+                      invoiceNumber: event.target.value,
+                    })
+                  }
+                />
+                <Input
+                  label="ETTN"
+                  hint="Printed invoice UUID, hyphenated or compact"
+                  value={formValues.ettn}
+                  error={pickFieldError(fieldErrors, 'ettn')}
+                  onChange={(event) =>
+                    setFormValues({ ...formValues, ettn: event.target.value })
+                  }
+                />
+                <Input
+                  label="Seller tax number"
+                  hint="Seller VKN, exactly ten digits"
+                  value={formValues.sellerTaxNumber}
+                  error={pickFieldError(fieldErrors, 'sellerTaxNumber')}
+                  onChange={(event) =>
+                    setFormValues({
+                      ...formValues,
+                      sellerTaxNumber: event.target.value,
+                    })
+                  }
+                />
+              </div>
 
-            {savedNotice ? (
-              <p role="status" className="text-small text-success">
-                Receipt details saved.
-              </p>
-            ) : null}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Input
+                  label="Currency"
+                  required
+                  placeholder="TRY"
+                  value={formValues.currency}
+                  error={pickFieldError(fieldErrors, 'currency')}
+                  onChange={(event) =>
+                    setFormValues({
+                      ...formValues,
+                      currency: event.target.value,
+                    })
+                  }
+                />
 
-            <div className="flex justify-end">
-              <Button type="submit" loading={updateReceipt.isPending}>
-                Save details
-              </Button>
-            </div>
-          </form>
-        </Card>
+                <Input
+                  label="Subtotal"
+                  placeholder="0.00"
+                  value={formValues.subtotal}
+                  error={pickFieldError(fieldErrors, 'subtotal')}
+                  onChange={(event) =>
+                    setFormValues({
+                      ...formValues,
+                      subtotal: event.target.value,
+                    })
+                  }
+                />
+
+                <Input
+                  label="Tax total"
+                  placeholder="0.00"
+                  value={formValues.taxTotal}
+                  error={pickFieldError(fieldErrors, 'taxTotal', 'tax_total')}
+                  onChange={(event) =>
+                    setFormValues({
+                      ...formValues,
+                      taxTotal: event.target.value,
+                    })
+                  }
+                />
+
+                <div className="flex flex-col gap-1.5">
+                  <Input
+                    label="Total"
+                    placeholder="0.00"
+                    value={formValues.total}
+                    error={pickFieldError(fieldErrors, 'total')}
+                    onChange={(event) =>
+                      setFormValues({
+                        ...formValues,
+                        total: event.target.value,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+              <FieldFlagNotice flags={totalFlags} />
+
+              {saveError ? (
+                <p role="alert" className="text-small text-danger">
+                  {saveError.message}
+                </p>
+              ) : null}
+
+              {savedNotice ? (
+                <p role="status" className="text-small text-success">
+                  Receipt details saved.
+                </p>
+              ) : null}
+
+              <div className="flex justify-end">
+                <Button type="submit" loading={updateReceipt.isPending}>
+                  Save details
+                </Button>
+              </div>
+            </form>
+          </Card>
+          <EArchivePanel chain={receipt.chain} />
+        </div>
       </div>
 
       <ReceiptLineItemsCard receipt={receipt} />
