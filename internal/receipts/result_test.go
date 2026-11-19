@@ -88,6 +88,12 @@ func TestApplyResult_MapsGoldenExtraction(t *testing.T) {
 		if receipt.Status != "needs_review" {
 			t.Fatalf("status=%s", receipt.Status)
 		}
+		// The identity is stored exactly as extracted, on every pass.
+		if receipt.InvoiceNumber == nil || *receipt.InvoiceNumber != "T112026000000000" ||
+			!receipt.Ettn.Valid || receipt.Ettn.UUID.String() != "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d" ||
+			receipt.SellerTaxNumber == nil || *receipt.SellerTaxNumber != "1234567890" {
+			t.Fatalf("identity=%+v %+v %+v", receipt.InvoiceNumber, receipt.Ettn, receipt.SellerTaxNumber)
+		}
 		lines, err := q.ListReceiptLines(t.Context(), sqlc.ListReceiptLinesParams{UserID: user.ID, ReceiptID: id})
 		if err != nil {
 			t.Fatal(err)

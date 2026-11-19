@@ -72,7 +72,11 @@ func (s *StoreResult) ApplyResult(ctx context.Context, userID, receiptID uuid.UU
 
 	params := sqlc.ApplyExtractedReceiptParams{
 		Subtotal: money(result.Subtotal), TaxTotal: money(result.Tax), Total: money(result.Total),
+		InvoiceNumber: optionalText(result.InvoiceNumber), SellerTaxNumber: optionalText(result.SellerTaxNumber),
 		Now: now, UserID: userID, ReceiptID: receiptID,
+	}
+	if result.Ettn.Found {
+		params.Ettn = uuid.NullUUID{UUID: result.Ettn.Value, Valid: true}
 	}
 	if name := optionalText(result.StoreName); name != nil {
 		if key := matching.Normalize(*name).Key; key != "" {

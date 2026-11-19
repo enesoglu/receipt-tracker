@@ -70,6 +70,9 @@ UPDATE receipts SET
     subtotal = sqlc.narg(subtotal),
     tax_total = sqlc.narg(tax_total),
     total = sqlc.narg(total),
+    invoice_number = sqlc.narg(invoice_number),
+    ettn = sqlc.narg(ettn),
+    seller_tax_number = sqlc.narg(seller_tax_number),
     status = 'needs_review',
     failure_reason = NULL,
     updated_at = @now

@@ -27,6 +27,11 @@ type (
 		PurchasedTime             *string
 		Currency                  string
 		Subtotal, TaxTotal, Total decimal.NullDecimal
+		// InvoiceNumber, Ettn and SellerTaxNumber hold the e-archive
+		// identity. A nil string clears the field, like the store name.
+		InvoiceNumber   *string
+		Ettn            uuid.NullUUID
+		SellerTaxNumber *string
 	}
 	// LineInput replaces the editable values of a line.
 	LineInput struct {
@@ -74,10 +79,51 @@ func validateReceipt(input ReceiptInput) error {
 			err = err.WithField("purchasedTime", "must be a time of day as HH:MM, such as 18:42")
 		}
 	}
+	if input.InvoiceNumber != nil && !validInvoiceNumber(*input.InvoiceNumber) {
+		err = err.WithField("invoiceNumber", "must be up to 32 letters or digits")
+	}
+	if input.SellerTaxNumber != nil && !validTaxNumber(*input.SellerTaxNumber) {
+		err = err.WithField("sellerTaxNumber", "must be exactly ten digits")
+	}
 	if len(err.Fields) == 0 {
 		return nil
 	}
 	return err
+}
+
+// validInvoiceNumber reports whether a manually entered invoice number
+// holds a printed shape: not blank, at most 32 upper-case letters and
+// digits. The handler upper-cases the input; anything else is not what a
+// chain prints.
+func validInvoiceNumber(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 32 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c < '0' || (c > '9' && c < 'A') || c > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+// validTaxNumber reports whether a manually entered seller tax number is
+// exactly ten digits. Only the format holds here: the check digit is a
+// reader's rule, and a user correcting what the paper prints is never
+// second-guessed.
+func validTaxNumber(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 10 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func validateLine(input LineInput) error {
@@ -119,6 +165,16 @@ func (s *Service) storeForName(ctx context.Context, q *unit, userID uuid.UUID, n
 	return uuid.NullUUID{UUID: id, Valid: err == nil}, err
 }
 
+// trimmedText returns the value without surrounding space, or nil. A nil
+// input clears the field, matching how the update replaces every value.
+func trimmedText(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	text := strings.TrimSpace(*value)
+	return &text
+}
+
 func (s *Service) writeReceipt(ctx context.Context, q *unit, userID, receiptID uuid.UUID, input ReceiptInput) error {
 	if err := validateReceipt(input); err != nil {
 		return err
@@ -127,7 +183,7 @@ func (s *Service) writeReceipt(ctx context.Context, q *unit, userID, receiptID u
 	if err != nil {
 		return err
 	}
-	p := sqlc.UpdateReviewReceiptParams{UserID: userID, ReceiptID: receiptID, Title: strings.TrimSpace(input.Title), StoreID: storeID, PurchasedOn: input.PurchasedOn, Currency: input.Currency, Subtotal: input.Subtotal, TaxTotal: input.TaxTotal, Total: input.Total, Now: s.now().UTC()}
+	p := sqlc.UpdateReviewReceiptParams{UserID: userID, ReceiptID: receiptID, Title: strings.TrimSpace(input.Title), StoreID: storeID, PurchasedOn: input.PurchasedOn, Currency: input.Currency, Subtotal: input.Subtotal, TaxTotal: input.TaxTotal, Total: input.Total, InvoiceNumber: trimmedText(input.InvoiceNumber), Ettn: input.Ettn, SellerTaxNumber: trimmedText(input.SellerTaxNumber), Now: s.now().UTC()}
 	if input.PurchasedTime != nil {
 		clock, _ := time.Parse("15:04", *input.PurchasedTime)
 		p.PurchasedTime = pgtype.Time{Microseconds: int64(clock.Hour()*60+clock.Minute()) * 60 * 1000000, Valid: true}

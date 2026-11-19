@@ -161,21 +161,24 @@ type ProviderUsage struct {
 }
 
 type Receipt struct {
-	ID            uuid.UUID
-	UserID        uuid.UUID
-	Title         string
-	StoreID       uuid.NullUUID
-	PurchasedOn   *time.Time
-	PurchasedTime pgtype.Time
-	Currency      string
-	Subtotal      decimal.NullDecimal
-	TaxTotal      decimal.NullDecimal
-	Total         decimal.NullDecimal
-	Status        string
-	Source        string
-	FailureReason *string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID              uuid.UUID
+	UserID          uuid.UUID
+	Title           string
+	StoreID         uuid.NullUUID
+	PurchasedOn     *time.Time
+	PurchasedTime   pgtype.Time
+	Currency        string
+	Subtotal        decimal.NullDecimal
+	TaxTotal        decimal.NullDecimal
+	Total           decimal.NullDecimal
+	Status          string
+	Source          string
+	FailureReason   *string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	InvoiceNumber   *string
+	Ettn            uuid.NullUUID
+	SellerTaxNumber *string
 }
 
 type ReceiptImage struct {
