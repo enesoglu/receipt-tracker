@@ -11,13 +11,15 @@ Browser (React SPA) ──┐
 Claude / Gemini (MCP) ─┼─> Caddy (host, TLS) ─> app container (127.0.0.1:8087) ─> Postgres container
                        │                         │
                        │                         ├─> Azure Document Intelligence (prebuilt-receipt)
+                       │                         ├─> optional self-hosted LLM (line suggestions, §5.8)
                        │                         └─> Google OIDC (sign-in) / Google Drive (images, database backups)
 ```
 
 One process serves the REST API (`/api/v1`), the embedded SPA, the MCP endpoint
 (`/mcp`), the OAuth authorization server used by MCP clients (`/oauth/*`,
 `/.well-known/*`), the job worker and the backup scheduler. Two containers
-total: `app` and `db`. No Redis, no separate worker, no LLM.
+total: `app` and `db`. No Redis, no separate worker; the LLM of §5.8 is
+optional and self-hosted.
 
 ## 2. Stack
 
@@ -112,7 +114,7 @@ The [isolation audit](ISOLATION-AUDIT.md) records these boundaries and their tes
 | Table | Purpose and key columns |
 | --- | --- |
 | `users` | `google_sub` (unique), `email`, `name`, `is_admin` |
-| `user_settings` | `default_currency` (default `TRY`), `default_receipt_title` (default `Home shopping`) |
+| `user_settings` | `default_currency` (default `TRY`), `default_receipt_title` (default `Home shopping`), `llm_suggestions_enabled` (default on; an opt-out, §5.8) |
 | `sessions` | scs session store |
 | `stores` | `name`, `normalized_name` (unique per user) |
 | `categories` | `name` (unique per user); seeded defaults per new user |
@@ -125,7 +127,8 @@ The [isolation audit](ISOLATION-AUDIT.md) records these boundaries and their tes
 | `product_codes` | `product_id`, `code`, `kind` (`gtin`, `store`), `store_id` (set for `store` codes), `seen_count` |
 | `match_rejections` | `product_id`, `normalized_name`, `store_id`: "the user said these are different" |
 | `review_flags` | `receipt_id`, `line_item_id` (nullable), `kind`, `detail` (jsonb), `resolved_at`, `resolution` |
-| `jobs` | `kind`, `payload`, `status`, `attempts`, `run_after`, `last_error`; processed in `created_at` order |
+| `line_suggestions` | `receipt_id`, `line_item_id` (one row per user and line), `raw_name` snapshot, `suggested_name`, `suggested_category_id`, `status` (`pending`, `accepted`, `ignored`), `model`, `prompt_version`, `decided_at`; the LLM output of §5.8, decided by the user |
+| `jobs` | `kind` (`extract_receipt`, `suggest_lines`), `payload`, `status`, `attempts`, `run_after`, `last_error`; processed in `created_at` order |
 | `provider_usage` | `provider`, `period` (`YYYY-MM`), `pages`; monthly quota counter |
 | `storage_connections` | `backend`, `connected_by`, `encrypted_refresh_token`, `root_folder_ref`; one active row per instance |
 | `oauth_clients`, `oauth_codes`, `oauth_tokens` | MCP authorization server state; tokens stored hashed |
@@ -480,6 +483,51 @@ run and to `<url>/fail` after a failed one (one attempt, short timeout, never
 logged). A heartbeat service then alerts on a failure or a missed run. The
 app itself sends no email: outbound SMTP is blocked on the host.
 
+### 5.8 Optional LLM suggestions
+
+Matching stays deterministic. When configured, an optional self-hosted LLM
+suggests a clean product name and a category for the lines matching could
+not confidently resolve: `match_status` `needs_review` (rules 4, 5, 7, 9),
+`new_product` (rule 10) or `unmatched`, excluding discounts, lines with an
+empty `raw_name` and the `Unreadable item` placeholder.
+
+One client interface speaks two wire protocols, selected by `LLM_PROTOCOL`
+(§6): `openai` posts to `{LLM_BASE_URL}/chat/completions` and reads
+`choices[0].message.content`; `ollama` posts to `{LLM_BASE_URL}/api/chat`
+and reads `message.content`. Both request JSON output and send at most 25
+lines per call. The base URL is used verbatim with only the documented path
+appended; the client never sniffs or rewrites it. The endpoint is usually a
+network-level relay to a model on the owner's PC: no key by default,
+availability not guaranteed.
+
+`applyResult` enqueues a `suggest_lines` job inside the transaction that
+saves the lines, when it saved at least one eligible line and the user has
+not switched suggestions off (`user_settings.llm_suggestions_enabled`,
+default on; the feature is off for everyone while `LLM_BASE_URL` is
+unset). The job sends the store name when present, the user's real
+category names and the numbered raw line texts — nothing else — and stores
+one `pending` `line_suggestions` row per line, recording the model and the
+prompt version. It never writes products, aliases or line items, and it
+never blocks the pipeline: a busy model postpones the job; a refused,
+timing-out or 5xx endpoint retries with backoff and then re-arms one
+successor every two hours while eligible lines still lack suggestions; any
+other 4xx and unusable output give up for that receipt. Request and
+response bodies never reach a log or an error, which carry the HTTP status
+only.
+
+Accepting a suggestion runs the existing deterministic paths in one
+transaction, audited like every edit: for `new_product` the product is
+renamed to the suggested name and given the suggested category under the
+product-update rules (size and price basis preserved); for `needs_review`
+the flag closes exactly like a `different_product` resolution (rejections,
+product creation, alias and code learning); for `unmatched` the product is
+created and confirmed. Ignoring only records the decision. Neither path
+calls the LLM. Suggestions do not survive a reprocess: the line items are
+re-created, the cascade clears their rows, and the re-enqueued job
+regenerates only the still-eligible lines. The settings page shows Off /
+Online / LLM offline, derived from the newest `suggest_lines` job; error
+text never leaves the server.
+
 ## 6. Configuration
 
 Environment variables only; `.env.example` lists them. `APP_ENV` (`dev`,
@@ -489,7 +537,11 @@ Environment variables only; `.env.example` lists them. `APP_ENV` (`dev`,
 (`local`, `drive`), `STORAGE_LOCAL_DIR`, `DRIVE_ROOT_FOLDER` (default `receipt-tracker`),
 `DRIVE_ROOT_FOLDER_ID` (optional; §5.5), `EXTRACTOR` (`azure`, `fake`),
 `AZURE_DI_ENDPOINT`, `AZURE_DI_KEY`, `AZURE_DI_MONTHLY_PAGES` (default 500),
-`BACKUP_DESTINATION` (`drive`, `local`, `none`), `BACKUP_LOCAL_DIR`,
+`LLM_PROTOCOL` (`openai`, `ollama`; default `openai`), `LLM_BASE_URL`
+(optional: unset disables LLM suggestions), `LLM_MODEL` (required when
+`LLM_BASE_URL` is set), `LLM_API_KEY` (optional bearer token),
+`LLM_TIMEOUT` (default `300s`), `BACKUP_DESTINATION` (`drive`, `local`,
+`none`), `BACKUP_LOCAL_DIR`,
 `BACKUP_SCHEDULE`, `BACKUP_HEARTBEAT_URL` (optional), `DEV_LOGIN_EMAIL` (accepted only
 when `APP_ENV=dev`; the server refuses to start otherwise), `MCP_BROWSER_ORIGINS`
 (comma-separated browser origins allowed to call `/mcp`; default
@@ -503,8 +555,8 @@ path, a query or a fragment; a malformed entry is reported at startup. Setting
 the variable replaces the defaults, so a new browser-based MCP client must be
 added to the list explicitly.
 
-Only `APP_LISTEN_ADDR`, `DRIVE_ROOT_FOLDER`, `AZURE_DI_MONTHLY_PAGES` and
-`MCP_BROWSER_ORIGINS` have
+Only `APP_LISTEN_ADDR`, `DRIVE_ROOT_FOLDER`, `AZURE_DI_MONTHLY_PAGES`,
+`MCP_BROWSER_ORIGINS`, `LLM_PROTOCOL` and `LLM_TIMEOUT` have
 defaults; every other variable not marked optional is required in `dev` and
 `prod`, backend-specific variables only when that backend is selected, and the
 Google client may be omitted only in `dev` with `DEV_LOGIN_EMAIL` and no Drive
