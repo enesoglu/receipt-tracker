@@ -964,6 +964,75 @@ export function queryMockReceipts(
   };
 }
 
+/** Reports pipeline stages for the asked ids, or every unsettled mock receipt. */
+export function queryMockPipeline(
+  searchParams: URLSearchParams,
+): components['schemas']['PipelinePage'] {
+  const ids = searchParams
+    .getAll('ids')
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  // Polling the pipeline advances the mock receipts like the list does.
+  for (const entry of uploadedMockEntries) {
+    if (ids.length > 0 && ids.includes(entry.receipt.id)) {
+      advancePolledUpload(entry, entry.signature.split(':')[0] ?? '');
+    }
+  }
+
+  const allSummaries: components['schemas']['ReceiptSummary'][] = [
+    ...uploadedMockEntries.map((entry) => toSummary(entry.receipt)),
+    ...mockReceiptPage.items,
+  ];
+
+  const candidates = allSummaries.filter((summary) => {
+    if (ids.length > 0) return ids.includes(summary.id);
+    return (
+      summary.status === 'queued' ||
+      summary.status === 'processing' ||
+      summary.status === 'waiting_quota'
+    );
+  });
+
+  let queuedSeen = 0;
+  const items = candidates.map((summary) => {
+    let stage: components['schemas']['PipelineStage'];
+    let queuePosition: number | null = null;
+    switch (summary.status) {
+      case 'queued':
+        stage = 'queued';
+        queuedSeen += 1;
+        queuePosition = queuedSeen;
+        break;
+      case 'processing':
+        // No mock receipt is ever caught between the raw and the mapping.
+        stage = 'extracting';
+        break;
+      case 'waiting_quota':
+        stage = 'waiting_quota';
+        break;
+      case 'needs_review':
+        stage = 'needs_review';
+        break;
+      case 'ready':
+        stage = 'ready';
+        break;
+      default:
+        stage = 'failed';
+        break;
+    }
+    return {
+      receiptId: summary.id,
+      stage,
+      queuePosition,
+      failureReason: stage === 'failed' ? summary.failureReason : null,
+    };
+  });
+
+  return { items };
+}
+
 /** Looks up a stateful uploaded mock receipt before falling back to mockReceipt. */
 export function getMockReceiptById(
   receiptId: string,

@@ -24,6 +24,7 @@ import {
   queryMockCategories,
   queryMockMonthBreakdown,
   queryMockMonthlySpending,
+  queryMockPipeline,
   queryMockProducts,
   queryMockReceipts,
   queryMockReviewFlags,
@@ -91,6 +92,13 @@ export const handlers = [
     if (blocked) return blocked;
     const url = new URL(request.url);
     return HttpResponse.json(queryMockReceipts(url.searchParams));
+  }),
+
+  http.get('/api/v1/pipeline', ({ request }) => {
+    const blocked = guardSignedIn();
+    if (blocked) return blocked;
+    const url = new URL(request.url);
+    return HttpResponse.json(queryMockPipeline(url.searchParams));
   }),
 
   http.get('/api/v1/receipts/:receiptId', ({ params }) => {

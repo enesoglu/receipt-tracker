@@ -32,6 +32,7 @@ import {
   useUpdateReceipt,
 } from './receipts';
 import { useMonthBreakdown, useMonthlySpending } from './reports';
+import { usePipeline } from './pipeline';
 import { useResolveReviewFlag, useReviewFlags } from './review';
 import { useSettings, useUpdateSettings, useUsage } from './settings';
 import { useDisconnectStorage, useStorageStatus } from './storage';
@@ -122,6 +123,46 @@ describe('API query and mutation hooks', () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.settings.usage,
+    });
+  });
+
+  it('fetches pipeline stages for given ids and for all unsettled receipts', async () => {
+    const getSpy = vi.spyOn(api, 'GET').mockResolvedValue(
+      okResult({
+        items: [
+          {
+            receiptId: '0193a1b2-0000-7000-8000-000000000001',
+            stage: 'queued',
+            queuePosition: 2,
+            failureReason: null,
+          },
+        ],
+      }) as never,
+    );
+
+    const { Wrapper } = createWrapper();
+
+    const idsHook = renderHook(
+      () => usePipeline({ ids: ['0193a1b2-0000-7000-8000-000000000001'] }),
+      { wrapper: Wrapper },
+    );
+    await waitFor(() => expect(idsHook.result.current.isSuccess).toBe(true));
+    expect(getSpy).toHaveBeenCalledWith('/pipeline', {
+      params: {
+        query: { ids: ['0193a1b2-0000-7000-8000-000000000001'] },
+      },
+    });
+    expect(idsHook.result.current.data?.items[0]).toEqual({
+      receiptId: '0193a1b2-0000-7000-8000-000000000001',
+      stage: 'queued',
+      queuePosition: 2,
+      failureReason: null,
+    });
+
+    const allHook = renderHook(() => usePipeline(), { wrapper: Wrapper });
+    await waitFor(() => expect(allHook.result.current.isSuccess).toBe(true));
+    expect(getSpy).toHaveBeenCalledWith('/pipeline', {
+      params: { query: {} },
     });
   });
 

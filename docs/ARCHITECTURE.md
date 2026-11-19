@@ -184,8 +184,13 @@ per receipt later without a schema change.
    it (`3%01` keeps `3`), while `raw_name` keeps the printed text.
    Unreadable characters are never guessed, and a weight/price row that
    Azure attaches to the wrong item is left to the `line_math` flag.
-6. The UI polls `GET /api/v1/receipts?ids=…` every 2 s while any receipt is
-   `queued` or `processing`. No websockets.
+6. The UI polls `GET /api/v1/pipeline` every 2 s while any receipt is
+   `queued`, `extracting` or `matching`: with `ids` for the receipts an
+   upload produced, without ids for everything of this user still
+   unsettled, which also feeds the global processing indicator. The
+   pipeline stage is derived (stored status, a saved raw result splitting
+   `processing` into `extracting` and `matching`, and a per-user queue
+   position), so no state is added. No websockets.
 
 ### 5.2 Product matching (no LLM)
 
