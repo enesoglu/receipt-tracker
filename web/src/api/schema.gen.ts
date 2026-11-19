@@ -1037,6 +1037,22 @@ export interface components {
       subtotal: components['schemas']['Money'] | null;
       /** @description The tax, or `null` when the receipt does not print it. */
       taxTotal: components['schemas']['Money'] | null;
+      /**
+       * @description The e-archive invoice number, printed as FATURA NO or
+       *     BELGE NO. `null` when the receipt does not carry one.
+       */
+      invoiceNumber: string | null;
+      /**
+       * @description The e-archive invoice UUID printed next to the ETTN label,
+       *     always canonical hyphenated lower case. `null` when the
+       *     receipt does not carry one.
+       */
+      ettn: string | null;
+      /**
+       * @description The seller's Turkish tax number (VKN). `null` when the
+       *     receipt does not print one.
+       */
+      sellerTaxNumber: string | null;
       /** Format: date-time */
       updatedAt: string;
       /** @description The lines, in the order printed. */
@@ -1085,6 +1101,24 @@ export interface components {
       subtotal?: components['schemas']['Money'] | null;
       taxTotal?: components['schemas']['Money'] | null;
       total?: components['schemas']['Money'] | null;
+      /**
+       * @description The e-archive invoice number as printed (FATURA NO or BELGE NO).
+       *     The server trims and upper-cases it. `null` or empty clears the
+       *     field.
+       */
+      invoiceNumber?: string | null;
+      /**
+       * @description The e-archive invoice UUID, hyphenated or in the compact
+       *     32-character print. The server normalises it to canonical lower
+       *     case. `null` or empty clears the field.
+       */
+      ettn?: string | null;
+      /**
+       * @description The seller's Turkish tax number (VKN), exactly ten digits, so a
+       *     value that starts with a zero travels as text. `null` or empty
+       *     clears the field.
+       */
+      sellerTaxNumber?: string | null;
     };
     ReceiptPage: {
       items: components['schemas']['ReceiptSummary'][];

@@ -1574,6 +1574,11 @@ type Receipt struct {
 	// Example: TRY
 	Currency Currency `json:"currency"`
 
+	// Ettn The e-archive invoice UUID printed next to the ETTN label,
+	// always canonical hyphenated lower case. `null` when the
+	// receipt does not carry one.
+	Ettn *string `json:"ettn"`
+
 	// FailureReason Why extraction failed, in words for the user; `null` unless the status is `failed`.
 	FailureReason *string `json:"failureReason"`
 
@@ -1583,6 +1588,10 @@ type Receipt struct {
 
 	// Images The images, in order. One per receipt in v1.
 	Images []ReceiptImage `json:"images"`
+
+	// InvoiceNumber The e-archive invoice number, printed as FATURA NO or
+	// BELGE NO. `null` when the receipt does not carry one.
+	InvoiceNumber *string `json:"invoiceNumber"`
 
 	// LineItems The lines, in the order printed.
 	LineItems []LineItem `json:"lineItems"`
@@ -1595,6 +1604,10 @@ type Receipt struct {
 
 	// PurchasedTime The time printed on the receipt, or `null`.
 	PurchasedTime *TimeOfDay `json:"purchasedTime"`
+
+	// SellerTaxNumber The seller's Turkish tax number (VKN). `null` when the
+	// receipt does not print one.
+	SellerTaxNumber *string `json:"sellerTaxNumber"`
 
 	// Source The channel the receipt came in through.
 	Source ReceiptSource `json:"source"`
@@ -1701,9 +1714,24 @@ type ReceiptUpdate struct {
 	// Currency ISO 4217 currency code.
 	//
 	// Example: TRY
-	Currency      Currency            `json:"currency"`
+	Currency Currency `json:"currency"`
+
+	// Ettn The e-archive invoice UUID, hyphenated or in the compact
+	// 32-character print. The server normalises it to canonical lower
+	// case. `null` or empty clears the field.
+	Ettn *string `json:"ettn,omitempty"`
+
+	// InvoiceNumber The e-archive invoice number as printed (FATURA NO or BELGE NO).
+	// The server trims and upper-cases it. `null` or empty clears the
+	// field.
+	InvoiceNumber *string             `json:"invoiceNumber,omitempty"`
 	PurchasedOn   *openapi_types.Date `json:"purchasedOn,omitempty"`
 	PurchasedTime *TimeOfDay          `json:"purchasedTime,omitempty"`
+
+	// SellerTaxNumber The seller's Turkish tax number (VKN), exactly ten digits, so a
+	// value that starts with a zero travels as text. `null` or empty
+	// clears the field.
+	SellerTaxNumber *string `json:"sellerTaxNumber,omitempty"`
 
 	// StoreName Name of the store. The store with that name is used, compared
 	// without case, accents or punctuation; one is created when the user

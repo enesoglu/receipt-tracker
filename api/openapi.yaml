@@ -1836,6 +1836,9 @@ components:
             - purchasedTime
             - subtotal
             - taxTotal
+            - invoiceNumber
+            - ettn
+            - sellerTaxNumber
             - updatedAt
             - lineItems
             - flags
@@ -1856,6 +1859,28 @@ components:
               description: The tax, or `null` when the receipt does not print it.
               allOf:
                 - $ref: "#/components/schemas/Money"
+            invoiceNumber:
+              type: string
+              nullable: true
+              pattern: '^[0-9A-Z]{1,32}$'
+              description: |
+                The e-archive invoice number, printed as FATURA NO or
+                BELGE NO. `null` when the receipt does not carry one.
+            ettn:
+              type: string
+              nullable: true
+              pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              description: |
+                The e-archive invoice UUID printed next to the ETTN label,
+                always canonical hyphenated lower case. `null` when the
+                receipt does not carry one.
+            sellerTaxNumber:
+              type: string
+              nullable: true
+              pattern: '^[0-9]{10}$'
+              description: |
+                The seller's Turkish tax number (VKN). `null` when the
+                receipt does not print one.
             updatedAt:
               type: string
               format: date-time
@@ -1952,6 +1977,30 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/Money"
+        invoiceNumber:
+          type: string
+          nullable: true
+          maxLength: 32
+          description: |
+            The e-archive invoice number as printed (FATURA NO or BELGE NO).
+            The server trims and upper-cases it. `null` or empty clears the
+            field.
+        ettn:
+          type: string
+          nullable: true
+          maxLength: 36
+          description: |
+            The e-archive invoice UUID, hyphenated or in the compact
+            32-character print. The server normalises it to canonical lower
+            case. `null` or empty clears the field.
+        sellerTaxNumber:
+          type: string
+          nullable: true
+          maxLength: 10
+          description: |
+            The seller's Turkish tax number (VKN), exactly ten digits, so a
+            value that starts with a zero travels as text. `null` or empty
+            clears the field.
     ReceiptPage:
       type: object
       required: [items, nextCursor]
@@ -3151,6 +3200,9 @@ components:
         subtotal: null
         taxTotal: "7.65"
         total: "129.40"
+        invoiceNumber: T112026000000000
+        ettn: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
+        sellerTaxNumber: "1234567890"
         status: needs_review
         failureReason: null
         source: web
@@ -3258,7 +3310,7 @@ components:
               contentType: image/heic
               sizeBytes: 2516582
     ReceiptUpdate:
-      summary: Correct the store and the date
+      summary: Correct the store, the date and the printed identity
       value:
         title: Home shopping
         storeName: Example Market
@@ -3268,6 +3320,9 @@ components:
         subtotal: null
         taxTotal: "7.65"
         total: "129.40"
+        invoiceNumber: "t112026000000000"
+        ettn: "1A2B3C4D5E6F4A7B8C9D0E1F2A3B4C5D"
+        sellerTaxNumber: "1234567890"
     LineItemInput:
       summary: Two cartons of ayran
       value:

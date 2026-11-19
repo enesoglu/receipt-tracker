@@ -204,7 +204,7 @@ func TestReceipts_IsolatesEveryOperation(t *testing.T) {
 	lineID := d.Lines[0].Item.ID
 	base := "/receipts/" + id.String()
 	for _, tc := range []struct{ method, path, body string }{
-		{"GET", base, ""}, {"PUT", base, `{"title":"Changed","currency":"TRY","total":"10.00"}`}, {"DELETE", base, ""}, {"POST", base + "/reprocess", ""}, {"GET", base + "/images/" + imageID.String(), ""}, {"GET", base + "/images/" + imageID.String() + "?variant=original", ""}, {"POST", base + "/line-items", `{"name":"Milk","lineTotal":"3.00"}`}, {"PUT", base + "/line-items/" + lineID.String(), `{"name":"Milk","lineTotal":"3.00"}`}, {"DELETE", base + "/line-items/" + lineID.String(), ""},
+		{"GET", base, ""}, {"PUT", base, `{"title":"Changed","currency":"TRY","total":"10.00","invoiceNumber":"T112026000000000","ettn":"1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d","sellerTaxNumber":"1234567890"}`}, {"DELETE", base, ""}, {"POST", base + "/reprocess", ""}, {"GET", base + "/images/" + imageID.String(), ""}, {"GET", base + "/images/" + imageID.String() + "?variant=original", ""}, {"POST", base + "/line-items", `{"name":"Milk","lineTotal":"3.00"}`}, {"PUT", base + "/line-items/" + lineID.String(), `{"name":"Milk","lineTotal":"3.00"}`}, {"DELETE", base + "/line-items/" + lineID.String(), ""},
 	} {
 		t.Run(tc.method+tc.path, func(t *testing.T) {
 			r := s.call(s.bob, tc.method, tc.path, tc.body)
@@ -258,6 +258,34 @@ func TestReceipts_ReadEditAndReprocess(t *testing.T) {
 	}
 	if auditCount != 3 {
 		t.Fatalf("audits=%d", auditCount)
+	}
+}
+
+func TestReceipts_IdentityFieldsNormaliseAndClear(t *testing.T) {
+	s := newReceiptServer(t)
+	id := s.seed(s.alice, cleanReceipt())
+	base := "/receipts/" + id.String()
+	typed := decodeReceipt(t, s.call(s.alice, "PUT", base, `{"title":"Corrected receipt","currency":"TRY","invoiceNumber":" t112026000000000 ","ettn":"1A2B3C4D5E6F4A7B8C9D0E1F2A3B4C5D","sellerTaxNumber":" 1234567890 "}`), 200)
+	if typed.InvoiceNumber == nil || *typed.InvoiceNumber != "T112026000000000" {
+		t.Fatalf("invoice number=%v", typed.InvoiceNumber)
+	}
+	if typed.Ettn == nil || *typed.Ettn != "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d" {
+		t.Fatalf("ettn=%v", typed.Ettn)
+	}
+	if typed.SellerTaxNumber == nil || *typed.SellerTaxNumber != "1234567890" {
+		t.Fatalf("seller tax number=%v", typed.SellerTaxNumber)
+	}
+	// The edit is audited with the identity before and after it.
+	var audited int
+	if err := s.pool.QueryRow(t.Context(), "SELECT count(*) FROM audit_events WHERE user_id=$1 AND entity_id=$2 AND detail->'before'->'Receipt'->>'InvoiceNumber' IS NULL AND detail->'after'->'Receipt'->>'InvoiceNumber' = $3", s.alice, id, "T112026000000000").Scan(&audited); err != nil {
+		t.Fatal(err)
+	}
+	if audited != 1 {
+		t.Fatalf("audits carrying the identity change=%d", audited)
+	}
+	cleared := decodeReceipt(t, s.call(s.alice, "PUT", base, `{"title":"Corrected receipt","currency":"TRY","invoiceNumber":"","ettn":"","sellerTaxNumber":""}`), 200)
+	if cleared.InvoiceNumber != nil || cleared.Ettn != nil || cleared.SellerTaxNumber != nil {
+		t.Fatalf("cleared identity=%v %v %v", cleared.InvoiceNumber, cleared.Ettn, cleared.SellerTaxNumber)
 	}
 }
 
@@ -435,6 +463,12 @@ func TestReceipts_RejectsInvalidInputsAndMissingResources(t *testing.T) {
 		{"PUT", base, `{"title":"","currency":"TRY"}`, 400},
 		{"PUT", base, `{"title":"A","currency":"try"}`, 400},
 		{"PUT", base, `{"title":"A","currency":"TRY","total":"abc"}`, 400},
+		{"PUT", base, `{"title":"A","currency":"TRY","invoiceNumber":"T-1120260000"}`, 400},
+		{"PUT", base, `{"title":"A","currency":"TRY","invoiceNumber":"T` + strings.Repeat("1", 33) + `"}`, 400},
+		{"PUT", base, `{"title":"A","currency":"TRY","sellerTaxNumber":"123456789"}`, 400},
+		{"PUT", base, `{"title":"A","currency":"TRY","sellerTaxNumber":"12345678AB"}`, 400},
+		{"PUT", base, `{"title":"A","currency":"TRY","ettn":"not-a-uuid"}`, 400},
+		{"PUT", base, `{"title":"A","currency":"TRY","ettn":"` + strings.Repeat("a", 31) + `"}`, 400},
 		{"POST", base + "/line-items", `{"name":"A","lineTotal":"NaN"}`, 400},
 		{"POST", base + "/line-items", `{"name":"A","quantity":"1.0001","lineTotal":"10.00"}`, 400},
 		{"GET", base + "/images/" + uuid.NewString(), "", 404},
@@ -447,6 +481,18 @@ func TestReceipts_RejectsInvalidInputsAndMissingResources(t *testing.T) {
 				t.Fatalf("status=%d want %d: %s", r.Code, tc.status, r.Body.String())
 			}
 		})
+	}
+	// One identity rejection is inspected fully: the problem names the field.
+	r := s.call(s.alice, "PUT", base, `{"title":"A","currency":"TRY","sellerTaxNumber":"123456789"}`)
+	if r.Code != 400 {
+		t.Fatalf("tax status=%d: %s", r.Code, r.Body.String())
+	}
+	var problem httpapi.Problem
+	if err := json.Unmarshal(r.Body.Bytes(), &problem); err != nil {
+		t.Fatal(err)
+	}
+	if problem.Errors == nil || len(*problem.Errors) != 1 || (*problem.Errors)[0].Field != "sellerTaxNumber" {
+		t.Fatalf("field errors=%+v", problem.Errors)
 	}
 	queued := uuid.New()
 	if err := s.q.CreateQueuedReceipt(t.Context(), sqlc.CreateQueuedReceiptParams{ID: queued, UserID: s.alice, Title: "Waiting", Currency: "TRY", Source: "web", Now: s.now}); err != nil {
