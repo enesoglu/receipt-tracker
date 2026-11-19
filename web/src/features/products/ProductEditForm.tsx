@@ -6,6 +6,7 @@ import { ErrorState } from '../../components/ui/ErrorState';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { normaliseDecimal, validateDecimal } from '../../components/ui/decimal';
+import { formatQuantity } from '../../components/ui/format';
 
 interface ProductEditFormProps {
   product: Product;
@@ -20,7 +21,9 @@ export function ProductEditForm({
 }: ProductEditFormProps) {
   const [canonicalName, setCanonicalName] = useState(product.canonicalName);
   const [categoryId, setCategoryId] = useState(product.category?.id ?? '');
-  const [sizeValue, setSizeValue] = useState(product.sizeValue ?? '');
+  const [sizeValue, setSizeValue] = useState(
+    formatQuantity(product.sizeValue, ''),
+  );
   const [sizeUnit, setSizeUnit] = useState(product.sizeUnit ?? '');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);

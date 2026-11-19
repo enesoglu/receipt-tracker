@@ -18,6 +18,7 @@ import {
   normaliseDecimal,
   validateDecimal,
 } from '../../components/ui/decimal';
+import { formatQuantity } from '../../components/ui/format';
 import {
   formatReviewFlagSummary,
   getOpenFlagsForLineItem,
@@ -37,7 +38,7 @@ const EMPTY_FORM: LineItemFormValues = {
 function toFormValues(item: LineItem): LineItemFormValues {
   return {
     name: item.name,
-    quantity: item.quantity ?? '',
+    quantity: formatQuantity(item.quantity, ''),
     quantityUnit: item.quantityUnit ?? '',
     unitPrice: item.unitPrice ?? '',
     lineTotal: item.lineTotal ?? '',
@@ -306,7 +307,7 @@ export function ReceiptLineItemsCard({ receipt }: ReceiptLineItemsCardProps) {
                           </div>
                           <div className="flex flex-wrap gap-x-4 gap-y-1 text-small text-muted">
                             <span>
-                              Qty: {item.quantity ?? '—'}
+                              Qty: {formatQuantity(item.quantity)}
                               {item.quantityUnit ? ` ${item.quantityUnit}` : ''}
                             </span>
                             <span>

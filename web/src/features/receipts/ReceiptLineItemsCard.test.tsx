@@ -178,4 +178,28 @@ describe('ReceiptLineItemsCard', () => {
     await waitFor(() => expect(updated).toHaveLength(1));
     expect(updated[0]).toMatchObject({ lineTotal: '84.5' });
   });
+
+  it('renders quantities without trailing zeros and prefills the editor the same way', () => {
+    const lineItem = {
+      ...mockReceipt.lineItems[0],
+      quantity: '2.000',
+      quantityUnit: 'ad',
+    };
+    const client = createAppQueryClient({ staleTime: 0 });
+    render(
+      <QueryProvider client={client}>
+        <ReceiptLineItemsCard
+          receipt={{ ...mockReceipt, lineItems: [lineItem] }}
+        />
+      </QueryProvider>,
+    );
+
+    expect(screen.getByText('Qty: 2 ad')).toBeInTheDocument();
+    expect(screen.queryByText(/Qty: 2\.000/)).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: `Edit ${lineItem.name}` }),
+    );
+    expect(screen.getByLabelText(/Quantity/i)).toHaveValue('2');
+  });
 });
