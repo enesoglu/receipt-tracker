@@ -207,7 +207,7 @@ func New(ctx context.Context) (Config, error) {
 	cfg.Backup.Schedule = l.timeOfDay("BACKUP_SCHEDULE", backupRuns, "backups are enabled")
 	cfg.Backup.HeartbeatURL = Secret(l.webURL("BACKUP_HEARTBEAT_URL"))
 
-	cfg.DevLoginEmail = l.devLoginEmail("DEV_LOGIN_EMAIL", cfg.Environment)
+	cfg.DevLoginEmail = l.devLoginEmail("DEV_LOGIN_EMAIL", cfg.Environment, cfg.AllowedEmails)
 
 	// Google is needed for real sign-in and for Drive. A developer who
 	// signs in through the development sign-in and uses neither may leave
@@ -427,7 +427,7 @@ func (l *loader) adminEmail(name string, allowed []string) string {
 	return address
 }
 
-func (l *loader) devLoginEmail(name string, environment Environment) string {
+func (l *loader) devLoginEmail(name string, environment Environment, allowed []string) string {
 	value := l.value(name)
 	if value == "" {
 		return ""
@@ -439,6 +439,13 @@ func (l *loader) devLoginEmail(name string, environment Environment) string {
 	address := email(value)
 	if address == "" {
 		l.fail(name, "must be an email address")
+		return ""
+	}
+	// A dev login outside the allow-list could never be admitted. The check
+	// is skipped when the allow-list itself is broken, which is reported.
+	if allowed != nil && !slices.Contains(allowed, address) {
+		l.fail(name, "must also be listed in ALLOWED_EMAILS")
+		return ""
 	}
 	return address
 }

@@ -224,6 +224,11 @@ func TestNew_ReportsProblems(t *testing.T) {
 			want: []string{"DEV_LOGIN_EMAIL must be an email address"},
 		},
 		{
+			name: "development sign-in who may not sign in",
+			env:  with(developmentEnv(), map[string]string{"DEV_LOGIN_EMAIL": "root@example.com"}),
+			want: []string{"DEV_LOGIN_EMAIL must also be listed in ALLOWED_EMAILS"},
+		},
+		{
 			name: "unknown environment",
 			env:  with(productionEnv(), map[string]string{"APP_ENV": "preview"}),
 			want: []string{"APP_ENV must be one of: dev, prod"},
