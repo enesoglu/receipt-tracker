@@ -5,6 +5,7 @@ import { useReviewFlags } from '../../api/review';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { primaryNavItems } from './navigation';
+import { ProcessingIndicator } from './ProcessingIndicator';
 
 export interface AppShellProps {
   user: User;
@@ -82,6 +83,7 @@ export function AppShell({ user, children }: AppShellProps) {
             </p>
           </div>
           <nav aria-label="Primary">{renderNavLinks()}</nav>
+          <ProcessingIndicator />
         </div>
         {renderAccountBlock()}
       </aside>
@@ -96,6 +98,7 @@ export function AppShell({ user, children }: AppShellProps) {
               {openReviewCount > 0 ? (
                 <Badge variant="warning">{openReviewCount}</Badge>
               ) : null}
+              <ProcessingIndicator />
             </div>
             <Button
               variant="secondary"
