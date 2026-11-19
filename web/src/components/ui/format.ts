@@ -1,6 +1,6 @@
 export type DateDisplayFormat = 'date' | 'datetime' | 'month';
 
-/** Formats a decimal string and ISO 4217 currency code without float arithmetic. */
+/** formatMoney renders a decimal string with its two stored decimals and ISO 4217 currency. */
 export function formatMoney(
   value: string | null | undefined,
   currency: string,
@@ -16,6 +16,10 @@ export function formatMoney(
     return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
+      // The API stores exactly two decimals; a currency's own minor unit must
+      // not drop (JPY) or add (KWD) digits to what was actually recorded.
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(numeric);
   } catch {
     return `${trimmed} ${currency}`;

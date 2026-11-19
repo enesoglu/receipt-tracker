@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateValue, formatQuantity } from './format';
+import { formatDateValue, formatMoney, formatQuantity } from './format';
 
 // Audit timestamps render in the viewer's local zone. Pin UTC+3 so the
 // midnight rollover is deterministic on any host.
@@ -39,5 +39,13 @@ describe('formatQuantity', () => {
     expect(formatQuantity(undefined)).toBe('—');
     expect(formatQuantity('  ')).toBe('—');
     expect(formatQuantity('abc', 'N/A')).toBe('N/A');
+  });
+});
+
+describe('formatMoney', () => {
+  it('renders the two stored decimals for every currency', () => {
+    expect(formatMoney('84.50', 'JPY')).toMatch(/84\.50/);
+    expect(formatMoney('1234.56', 'KWD')).toMatch(/1,234\.56(?!\d)/);
+    expect(formatMoney('1234.56', 'KWD')).not.toMatch(/1,234\.560/);
   });
 });
