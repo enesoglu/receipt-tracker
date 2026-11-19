@@ -1064,8 +1064,8 @@ UPDATE receipts SET title = $1, store_id = $2, purchased_on = $3,
  purchased_time = $4, currency = $5, subtotal = $6,
  tax_total = $7, total = $8,
  invoice_number = $9, ettn = $10,
- seller_tax_number = $11, updated_at = $12
-WHERE user_id = $13 AND id = $14
+ seller_tax_number = $11, branch_name = $12, updated_at = $13
+WHERE user_id = $14 AND id = $15
 `
 
 type UpdateReviewReceiptParams struct {
@@ -1080,6 +1080,7 @@ type UpdateReviewReceiptParams struct {
 	InvoiceNumber   *string
 	Ettn            uuid.NullUUID
 	SellerTaxNumber *string
+	BranchName      *string
 	Now             time.Time
 	UserID          uuid.UUID
 	ReceiptID       uuid.UUID
@@ -1098,6 +1099,7 @@ func (q *Queries) UpdateReviewReceipt(ctx context.Context, arg UpdateReviewRecei
 		arg.InvoiceNumber,
 		arg.Ettn,
 		arg.SellerTaxNumber,
+		arg.BranchName,
 		arg.Now,
 		arg.UserID,
 		arg.ReceiptID,

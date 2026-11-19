@@ -58,6 +58,8 @@ func TestReview_ConfirmCorrectAndAcceptEveryAllowedValue(t *testing.T) {
 		{"accept math", "line_math", "accept", `{"action":"accept"}`, func(r *extract.Result) { r.Lines[0].Quantity = receiptField(decimal.New(2, 0)) }},
 		{"accept sum", "sum_mismatch", "accept", `{"action":"accept"}`, func(r *extract.Result) { r.Total = receiptField(decimal.New(11, 0)) }},
 		{"accept duplicate", "possible_duplicate", "accept", `{"action":"accept"}`, func(_ *extract.Result) {}},
+		{"confirm new store", "new_store", "confirm", `{"action":"confirm"}`, func(r *extract.Result) { r.StoreName.Value = "Unmatched Market" }},
+		{"correct new store", "new_store", "correct", `{"action":"correct","storeName":"Corrected Store"}`, func(r *extract.Result) { r.StoreName.Value = "Unmatched Market" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newReceiptServer(t)
@@ -81,7 +83,7 @@ func TestReview_ConfirmCorrectAndAcceptEveryAllowedValue(t *testing.T) {
 				t.Fatalf("stored resolution=%+v", stored)
 			}
 			switch tc.name {
-			case "correct store":
+			case "correct store", "correct new store":
 				if response.Store == nil || response.Store.Name != "Corrected Store" {
 					t.Fatal("store was not corrected")
 				}

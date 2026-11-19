@@ -14,6 +14,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/extract"
 	"github.com/enesoglu/receipt-tracker/internal/jobs"
 	"github.com/enesoglu/receipt-tracker/internal/matching"
+	"github.com/enesoglu/receipt-tracker/internal/stores"
 )
 
 // unreadableItem is the placeholder name of a line whose text could not
@@ -46,20 +47,17 @@ func (s *Service) applyResult(ctx context.Context, q *unit, userID, receiptID uu
 		return err
 	}
 	now := s.now().UTC()
-	p := sqlc.ApplyExtractedReceiptParams{UserID: userID, ReceiptID: receiptID, Subtotal: amount(result.Subtotal, 2), TaxTotal: amount(result.Tax, 2), Total: amount(result.Total, 2), InvoiceNumber: text(result.InvoiceNumber), SellerTaxNumber: text(result.SellerTaxNumber), Now: now}
+	vkn := text(result.SellerTaxNumber)
+	p := sqlc.ApplyExtractedReceiptParams{UserID: userID, ReceiptID: receiptID, Subtotal: amount(result.Subtotal, 2), TaxTotal: amount(result.Tax, 2), Total: amount(result.Total, 2), InvoiceNumber: text(result.InvoiceNumber), SellerTaxNumber: vkn, Now: now}
 	if result.Ettn.Found {
 		p.Ettn = uuid.NullUUID{UUID: result.Ettn.Value, Valid: true}
 	}
-	if name := text(result.StoreName); name != nil {
-		key := matching.Normalize(*name).Key
-		if key != "" {
-			id, err := q.UpsertExtractedStore(ctx, sqlc.UpsertExtractedStoreParams{UserID: userID, Name: *name, NormalizedName: key, Now: now})
-			if err != nil {
-				return fmt.Errorf("save store: %w", err)
-			}
-			p.StoreID = uuid.NullUUID{UUID: id, Valid: true}
-		}
+	storeID, branch, flag, err := s.resolveStore(ctx, q, userID, text(result.StoreName), vkn, now)
+	if err != nil {
+		return err
 	}
+	p.StoreID = storeID
+	p.BranchName = branch
 	if result.Date.Found {
 		day := result.Date.Value.UTC()
 		p.PurchasedOn = &day
@@ -112,7 +110,11 @@ func (s *Service) applyResult(ctx context.Context, q *unit, userID, receiptID uu
 		hasEligible = hasEligible || suggestible(l, status)
 	}
 	fields := []Confidence{{"store", result.StoreName.Confidence, result.StoreName.Found}, {"purchased_on", result.Date.Confidence, result.Date.Found}, {"total", result.Total.Confidence, result.Total.Found}}
-	flags, err := s.evaluate(ctx, q, userID, receiptID, fields, matchFlags)
+	extra := matchFlags
+	if flag != nil {
+		extra = append(extra, *flag)
+	}
+	flags, err := s.evaluate(ctx, q, userID, receiptID, fields, extra)
 	if err != nil {
 		return err
 	}
@@ -130,6 +132,56 @@ func (s *Service) applyResult(ctx context.Context, q *unit, userID, receiptID uu
 		}
 	}
 	return nil
+}
+
+// resolveStore resolves the printed store name and the seller tax
+// number to the user's one store for the shop, in the resolution order:
+// the registry chain's store, the user's matching store, or a new one.
+// Whatever the outcome, a printed name is remembered as the resolved
+// store's alias. A chain match parses the printed branch, and a store
+// the resolution had to create raises a new_store review flag for the
+// user to confirm or correct.
+func (s *Service) resolveStore(ctx context.Context, q *unit, userID uuid.UUID, name, vkn *string, now time.Time) (uuid.NullUUID, *string, *Flag, error) {
+	var input stores.Input
+	if name != nil {
+		input.Name = *name
+	}
+	if vkn != nil {
+		input.VKN = *vkn
+	}
+	decision, err := stores.New(q.storeSource).Resolve(ctx, userID, input)
+	if err != nil {
+		return uuid.NullUUID{}, nil, nil, fmt.Errorf("resolve store: %w", err)
+	}
+	var storeID uuid.NullUUID
+	var branch *string
+	var flag *Flag
+	switch decision.Outcome {
+	case stores.OutcomeChain:
+		store, err := stores.ChainStore(ctx, q.Queries, userID, decision.Chain, decision.VKN, now)
+		if err != nil {
+			return uuid.NullUUID{}, nil, nil, fmt.Errorf("chain store: %w", err)
+		}
+		storeID = uuid.NullUUID{UUID: store.ID, Valid: true}
+		branch = branchFrom(input.Name, decision.Token)
+	case stores.OutcomeExisting:
+		storeID = uuid.NullUUID{UUID: decision.StoreID, Valid: true}
+	case stores.OutcomeNew:
+		created, err := q.UpsertExtractedStore(ctx, sqlc.UpsertExtractedStoreParams{UserID: userID, Name: input.Name, NormalizedName: matching.Normalize(input.Name).Key, Now: now})
+		if err != nil {
+			return uuid.NullUUID{}, nil, nil, fmt.Errorf("save store: %w", err)
+		}
+		storeID = uuid.NullUUID{UUID: created, Valid: true}
+		flag = &Flag{Kind: "new_store", Detail: map[string]interface{}{"field": "store", "name": input.Name, "storeId": created}}
+	case stores.OutcomeNone:
+		return uuid.NullUUID{}, nil, nil, nil
+	}
+	if input.Name != "" {
+		if err := q.RememberStoreAlias(ctx, sqlc.RememberStoreAliasParams{UserID: userID, StoreID: storeID.UUID, RawName: input.Name, NormalizedName: matching.Normalize(input.Name).Key, Now: now}); err != nil {
+			return uuid.NullUUID{}, nil, nil, fmt.Errorf("remember store alias: %w", err)
+		}
+	}
+	return storeID, branch, flag, nil
 }
 
 func validCurrency(v string) bool {

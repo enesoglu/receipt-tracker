@@ -210,6 +210,16 @@ per receipt later without a schema change.
    string through unchanged. The portal endpoint and verification flag stay
    server-side; the client opens only the landing page and copies values —
    no automated lookup, captcha solving, or client money/date formatting.
+
+   **Store resolution.** The printed store name and the seller VKN
+   resolve to the user's one store for the shop, in order: a registry
+   VKN (`chains`), the user's own VKN, a chain keyword in the name, an
+   exact name, then trigram similarity over stores and aliases. Anything
+   else creates a store and raises `new_store` (5.3); every resolution
+   remembers the printed name as the resolved store's alias, so OCR
+   noise keeps matching on its own. A chain match also parses the
+   printed branch onto the receipt (`branch_name`, trimmed): the branch
+   is data, never a store, and an unreadable remainder stays null.
 6. The UI polls `GET /api/v1/pipeline` every 2 s while any receipt is
    `queued`, `extracting` or `matching`: with `ids` for the receipts an
    upload produced, without ids for everything of this user still
@@ -323,6 +333,7 @@ Flags are created only for suspicious data:
 | `uncertain_match` | Matching rules 4, 7 and 9 |
 | `code_conflict` | Matching rule 5 |
 | `possible_duplicate` | Same store, date and total as another receipt |
+| `new_store` | Store resolution created a store for a name it did not recognise |
 
 The review screen lists open flags; each resolution (edit, confirm, pick a
 product, accept as is) closes the flag. Editing a line name re-runs matching

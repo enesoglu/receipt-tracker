@@ -277,6 +277,35 @@ func (q *Queries) PageOwnedStores(ctx context.Context, arg PageOwnedStoresParams
 	return items, nil
 }
 
+const rememberStoreAlias = `-- name: RememberStoreAlias :exec
+INSERT INTO store_aliases (user_id, store_id, raw_name, normalized_name, last_seen_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $5)
+ON CONFLICT (store_id, normalized_name) DO UPDATE
+SET seen_count = store_aliases.seen_count + 1, last_seen_at = $5
+`
+
+type RememberStoreAliasParams struct {
+	UserID         uuid.UUID
+	StoreID        uuid.UUID
+	RawName        string
+	NormalizedName string
+	Now            time.Time
+}
+
+// RememberStoreAlias records raw_name as a name the store printed. A
+// second sighting of the same reading bumps seen_count, and last_seen_at
+// follows the latest receipt; raw_name stays the first form seen.
+func (q *Queries) RememberStoreAlias(ctx context.Context, arg RememberStoreAliasParams) error {
+	_, err := q.db.Exec(ctx, rememberStoreAlias,
+		arg.UserID,
+		arg.StoreID,
+		arg.RawName,
+		arg.NormalizedName,
+		arg.Now,
+	)
+	return err
+}
+
 const renameOwnedStore = `-- name: RenameOwnedStore :one
 UPDATE stores SET name = $1,normalized_name = $2,updated_at = $3
 WHERE user_id = $4 AND id = $5 RETURNING id, user_id, name, normalized_name, created_at, updated_at, vkn

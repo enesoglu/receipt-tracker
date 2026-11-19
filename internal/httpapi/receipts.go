@@ -377,7 +377,7 @@ func lookupValue(r sqlc.Receipt, name string) (*string, bool) {
 func receiptResponse(d receipts.Detail) (Receipt, error) {
 	summary := summaryResponse(d.Summary)
 	r := d.Receipt
-	response := Receipt{Id: r.ID, Title: r.Title, Store: summary.Store, PurchasedOn: summary.PurchasedOn, Currency: r.Currency, Total: summary.Total, Subtotal: moneyResponse(r.Subtotal), TaxTotal: moneyResponse(r.TaxTotal), InvoiceNumber: r.InvoiceNumber, SellerTaxNumber: r.SellerTaxNumber, Chain: chainResponse(r), Status: summary.Status, Source: summary.Source, FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), LineItems: make([]LineItem, 0, len(d.Lines)), Flags: make([]ReviewFlag, 0, len(d.Flags)), Images: make([]ReceiptImage, 0, len(d.Images))}
+	response := Receipt{Id: r.ID, Title: r.Title, Store: summary.Store, PurchasedOn: summary.PurchasedOn, Currency: r.Currency, Total: summary.Total, Subtotal: moneyResponse(r.Subtotal), TaxTotal: moneyResponse(r.TaxTotal), InvoiceNumber: r.InvoiceNumber, SellerTaxNumber: r.SellerTaxNumber, Chain: chainResponse(r), BranchName: r.BranchName, Status: summary.Status, Source: summary.Source, FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), LineItems: make([]LineItem, 0, len(d.Lines)), Flags: make([]ReviewFlag, 0, len(d.Flags)), Images: make([]ReceiptImage, 0, len(d.Images))}
 	if r.Ettn.Valid {
 		// The column is a UUID, so the canonical spelling comes for free.
 		ettn := r.Ettn.UUID.String()
@@ -432,7 +432,26 @@ func receiptRequest(body ReceiptUpdate) (receipts.ReceiptInput, error) {
 		return input, err
 	}
 	input.SellerTaxNumber, err = taxNumberRequest(body.SellerTaxNumber)
-	return input, err
+	if err != nil {
+		return input, err
+	}
+	input.BranchName = branchNameRequest(body.BranchName)
+	return input, nil
+}
+
+// branchNameRequest reads the printed branch of the store: free text,
+// so the server only trims it, and an empty value clears the column —
+// the length and character checks are the service's, like the other
+// identity fields.
+func branchNameRequest(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 // invoiceNumberRequest reads the printed invoice number. Chains print

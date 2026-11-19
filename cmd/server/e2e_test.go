@@ -127,7 +127,7 @@ func TestE2E_RealServerWorkflowAndContract(t *testing.T) {
 		s.decode(encoded, &flag)
 		action := "accept"
 		switch flag.Kind {
-		case "low_confidence":
+		case "low_confidence", "new_store":
 			action = "confirm"
 		case "uncertain_match", "code_conflict":
 			action = "different_product"

@@ -104,6 +104,11 @@ export function formatReviewFlagSummary(flag: ReviewFlag): {
         reason:
           'Another receipt already has the same store, purchase date, and total.',
       };
+    case 'new_store':
+      return {
+        label: 'New store',
+        reason: `No known store matched the printed name "${flag.detail.name}"; it was saved as a new store.`,
+      };
   }
 }
 

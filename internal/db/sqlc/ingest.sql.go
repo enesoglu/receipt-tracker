@@ -50,10 +50,11 @@ UPDATE receipts SET
     invoice_number = $8,
     ettn = $9,
     seller_tax_number = $10,
+    branch_name = $11,
     status = 'needs_review',
     failure_reason = NULL,
-    updated_at = $11
-WHERE user_id = $12 AND id = $13
+    updated_at = $12
+WHERE user_id = $13 AND id = $14
 `
 
 type ApplyExtractedReceiptParams struct {
@@ -67,6 +68,7 @@ type ApplyExtractedReceiptParams struct {
 	InvoiceNumber   *string
 	Ettn            uuid.NullUUID
 	SellerTaxNumber *string
+	BranchName      *string
 	Now             time.Time
 	UserID          uuid.UUID
 	ReceiptID       uuid.UUID
@@ -84,6 +86,7 @@ func (q *Queries) ApplyExtractedReceipt(ctx context.Context, arg ApplyExtractedR
 		arg.InvoiceNumber,
 		arg.Ettn,
 		arg.SellerTaxNumber,
+		arg.BranchName,
 		arg.Now,
 		arg.UserID,
 		arg.ReceiptID,

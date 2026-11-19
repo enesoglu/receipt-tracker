@@ -128,6 +128,15 @@ func (s *receiptServer) seed(user uuid.UUID, result extract.Result) uuid.UUID {
 	if err := s.q.CreateQueuedReceipt(s.t.Context(), sqlc.CreateQueuedReceiptParams{ID: id, UserID: user, Title: "Synthetic receipt", Currency: "TRY", Source: "web", Now: s.now}); err != nil {
 		s.t.Fatal(err)
 	}
+	// The fixture's canonical store exists before extraction, so a seeded
+	// receipt that prints it links by name and the test sees only the
+	// flags it asked for: a name nothing matches would raise new_store on
+	// top of them.
+	if result.StoreName.Found && result.StoreName.Value == "Synthetic Market" {
+		if _, err := s.q.UpsertExtractedStore(s.t.Context(), sqlc.UpsertExtractedStoreParams{UserID: user, Name: "Synthetic Market", NormalizedName: "synthetic market", Now: s.now}); err != nil {
+			s.t.Fatal(err)
+		}
+	}
 	raw, err := json.Marshal(result)
 	if err != nil {
 		s.t.Fatal(err)
@@ -319,6 +328,16 @@ func TestReceipts_IdentityFieldsNormaliseAndClear(t *testing.T) {
 	}
 	if typed.SellerTaxNumber == nil || *typed.SellerTaxNumber != "1234567890" {
 		t.Fatalf("seller tax number=%v", typed.SellerTaxNumber)
+	}
+	// The branch reads like the identity: trimmed on the way in, and a
+	// later update that omits it clears it.
+	branch := decodeReceipt(t, s.call(s.alice, "PUT", base, `{"title":"Corrected receipt","currency":"TRY","branchName":" ANKARA ÇANKAYA "}`), 200)
+	if branch.BranchName == nil || *branch.BranchName != "ANKARA ÇANKAYA" {
+		t.Fatalf("branch name=%v", branch.BranchName)
+	}
+	branchCleared := decodeReceipt(t, s.call(s.alice, "PUT", base, `{"title":"Corrected receipt","currency":"TRY","branchName":null}`), 200)
+	if branchCleared.BranchName != nil {
+		t.Fatalf("cleared branch name=%v", *branchCleared.BranchName)
 	}
 	// The edit is audited with the identity before and after it.
 	var audited int

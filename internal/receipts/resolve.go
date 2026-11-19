@@ -117,7 +117,7 @@ func (s *Service) ListFlags(ctx context.Context, userID uuid.UUID, limit int, cu
 
 func allowedResolution(kind, action string) bool {
 	switch kind {
-	case "low_confidence":
+	case "low_confidence", "new_store":
 		return action == "confirm" || action == "correct"
 	case "missing_field", "line_math":
 		return action == "correct" || action == "accept"
@@ -175,7 +175,7 @@ func (s *Service) Resolve(ctx context.Context, userID, flagID uuid.UUID, resolut
 
 func receiptInput(d Detail) ReceiptInput {
 	r := d.Receipt
-	input := ReceiptInput{Title: r.Title, PurchasedOn: r.PurchasedOn, Currency: r.Currency, Subtotal: r.Subtotal, TaxTotal: r.TaxTotal, Total: r.Total}
+	input := ReceiptInput{Title: r.Title, PurchasedOn: r.PurchasedOn, Currency: r.Currency, Subtotal: r.Subtotal, TaxTotal: r.TaxTotal, Total: r.Total, BranchName: r.BranchName}
 	if d.Store != nil {
 		input.StoreName = &d.Store.Name
 	}
