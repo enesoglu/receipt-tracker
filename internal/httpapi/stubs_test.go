@@ -180,15 +180,19 @@ func TestAPI_AnswersBadRequestsWithProblems(t *testing.T) {
 	}{
 		{
 			name: "path id that is not a UUID", method: http.MethodGet, target: "/api/v1/receipts/not-a-uuid",
-			wantStatus: 400, wantField: "receiptId", wantMessage: "is not valid", wantDetail: "the request is not valid",
+			wantStatus: 400, wantField: "receiptId", wantMessage: "must be a UUID", wantDetail: "the request is not valid",
 		},
 		{
 			name: "query value of the wrong type", method: http.MethodGet, target: "/api/v1/receipts?limit=many",
 			wantStatus: 400, wantField: "limit", wantMessage: "is not valid", wantDetail: "the request is not valid",
 		},
 		{
+			name: "query id that is not a UUID", method: http.MethodGet, target: "/api/v1/products?categoryId=not-a-uuid",
+			wantStatus: 400, wantField: "categoryId", wantMessage: "must be a UUID", wantDetail: "the request is not valid",
+		},
+		{
 			name: "list item that is not a UUID", method: http.MethodGet, target: "/api/v1/receipts?ids=1,2",
-			wantStatus: 400, wantField: "ids", wantMessage: "is not valid", wantDetail: "the request is not valid",
+			wantStatus: 400, wantField: "ids", wantMessage: "must be a UUID", wantDetail: "the request is not valid",
 		},
 		{
 			name: "missing required query parameter", method: http.MethodGet, target: "/api/v1/reports/month-breakdown?groupBy=store",
@@ -244,9 +248,12 @@ func TestAPI_AnswersBadRequestsWithProblems(t *testing.T) {
 				(*problem.Errors)[0].Field != tt.wantField || (*problem.Errors)[0].Message != tt.wantMessage {
 				t.Errorf("field problems = %+v, want %s %s", problem.Errors, tt.wantField, tt.wantMessage)
 			}
-			// Decoder and router messages name Go types and offsets.
+			// Decoder and router messages name Go types and offsets. The
+			// format phrase is deliberately user-facing, so ignore it before
+			// looking for internal type names.
+			sanitized := strings.ReplaceAll(strings.ToLower(raw), "must be a uuid", "")
 			for _, internal := range []string{"json:", "uuid", "unmarshal", "strconv", "multipart"} {
-				if strings.Contains(strings.ToLower(raw), internal) {
+				if strings.Contains(sanitized, internal) {
 					t.Errorf("the response leaks %q: %s", internal, raw)
 				}
 			}

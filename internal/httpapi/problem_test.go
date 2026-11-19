@@ -117,7 +117,7 @@ func TestProblemFor_MapsEveryKindAndUnknownErrors(t *testing.T) {
 			err:  &InvalidParamFormatError{ParamName: "receiptId", Err: errors.New("error unmarshaling 'x' text as *uuid.UUID")},
 			want: Problem{
 				Type: "about:blank", Title: "Bad Request", Status: 400, Detail: text("the request is not valid"),
-				Errors: &[]FieldProblem{{Field: "receiptId", Message: "is not valid"}},
+				Errors: &[]FieldProblem{{Field: "receiptId", Message: "must be a UUID"}},
 			},
 		},
 		{
