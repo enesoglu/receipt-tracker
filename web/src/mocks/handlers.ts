@@ -134,6 +134,7 @@ export const handlers = [
       invoiceNumber: body.invoiceNumber ?? null,
       ettn: body.ettn ?? null,
       sellerTaxNumber: body.sellerTaxNumber ?? null,
+      branchName: body.branchName ?? null,
     });
   }),
 

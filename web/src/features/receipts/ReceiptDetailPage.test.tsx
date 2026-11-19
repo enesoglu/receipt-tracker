@@ -470,6 +470,51 @@ describe('ReceiptDetailPage', () => {
     expect(invoiceInput).toHaveValue('');
   });
 
+  it('shows the branch name beside the store and saves edits and clearing', async () => {
+    let savedPayload: Record<string, unknown> | null = null;
+    let receiptState = structuredClone(mockReceipt);
+
+    server.use(
+      http.get('/api/v1/receipts/:receiptId', () =>
+        HttpResponse.json(receiptState),
+      ),
+      http.put('/api/v1/receipts/:receiptId', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        savedPayload = body;
+        receiptState = {
+          ...receiptState,
+          branchName: (body.branchName as string | null) ?? null,
+        };
+        return HttpResponse.json(receiptState);
+      }),
+    );
+
+    renderDetailPage(mockReceipt.id);
+
+    const branchInput = await screen.findByLabelText(/Branch name/i);
+    expect(branchInput).toHaveValue('Çankaya');
+
+    // A typed branch round-trips trimmed into the update request.
+    fireEvent.change(branchInput, { target: { value: ' Kızılay ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Receipt details saved.')).toBeInTheDocument(),
+    );
+    expect(savedPayload).toMatchObject({ branchName: 'Kızılay' });
+    expect(branchInput).toHaveValue('Kızılay');
+
+    // An emptied box saves null: the branch is data, never a guess.
+    fireEvent.change(branchInput, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Receipt details saved.')).toBeInTheDocument(),
+    );
+    expect(savedPayload).toMatchObject({ branchName: null });
+    expect(branchInput).toHaveValue('');
+  });
+
   it('supports adding, editing with validation recovery, and deleting line items', async () => {
     let receiptState = structuredClone(mockReceipt);
 

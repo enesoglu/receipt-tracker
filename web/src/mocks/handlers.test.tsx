@@ -54,10 +54,15 @@ describe('MSW API handlers', () => {
     const updatedReceipt = await unwrap(
       api.PUT('/receipts/{receiptId}', {
         params: { path: { receiptId: receipt.id } },
-        body: { title: 'Updated trip', currency: 'TRY' },
+        body: {
+          title: 'Updated trip',
+          currency: 'TRY',
+          branchName: 'Kızılay',
+        },
       }),
     );
     expect(updatedReceipt.title).toBe('Updated trip');
+    expect(updatedReceipt.branchName).toBe('Kızılay');
 
     const reprocessed = await unwrap(
       api.POST('/receipts/{receiptId}/reprocess', {
