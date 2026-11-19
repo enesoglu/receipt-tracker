@@ -108,13 +108,31 @@ func TestGetMonthlySpending_ReturnsEveryMonthOfTheRange(t *testing.T) {
 func TestGetMonthlySpending_RejectsBadInput(t *testing.T) {
 	s := newReportServer(t)
 	for name, path := range map[string]string{
-		"from after to":   "/reports/monthly-spending?from=2026-12&to=2026-01",
-		"more than 60":    "/reports/monthly-spending?from=2020-01&to=2026-01",
-		"malformed month": "/reports/monthly-spending?from=2026-13&to=2026-14",
+		"from after to": "/reports/monthly-spending?from=2026-12&to=2026-01",
+		"more than 60":  "/reports/monthly-spending?from=2020-01&to=2026-01",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if r := s.get(s.alice, path); r.Code != http.StatusBadRequest {
 				t.Errorf("status=%d want 400: %s", r.Code, r.Body.String())
+			}
+		})
+	}
+	for name, tc := range map[string]struct{ path, field string }{
+		"bad from": {"/reports/monthly-spending?from=2026-13&to=2026-14", "from"},
+		"bad to":   {"/reports/monthly-spending?from=2026-10&to=2026-13", "to"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := s.get(s.alice, tc.path)
+			if r.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d want 400: %s", r.Code, r.Body.String())
+			}
+			problem := decodeProblem(t, r)
+			if problem.Errors == nil {
+				t.Fatalf("problem names no field: %s", r.Body.String())
+			}
+			want := []httpapi.FieldProblem{{Field: tc.field, Message: "must be written as YYYY-MM"}}
+			if diff := cmp.Diff(want, *problem.Errors); diff != "" {
+				t.Errorf("field errors mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -189,7 +207,6 @@ func TestGetMonthBreakdown_ByStore(t *testing.T) {
 func TestGetMonthBreakdown_RejectsBadInput(t *testing.T) {
 	s := newReportServer(t)
 	for name, path := range map[string]string{
-		"malformed month":  "/reports/month-breakdown?month=2026-13&groupBy=store",
 		"unknown grouping": "/reports/month-breakdown?month=2026-03&groupBy=colour",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -198,6 +215,20 @@ func TestGetMonthBreakdown_RejectsBadInput(t *testing.T) {
 			}
 		})
 	}
+	t.Run("malformed month", func(t *testing.T) {
+		r := s.get(s.alice, "/reports/month-breakdown?month=2026-13&groupBy=store")
+		if r.Code != http.StatusBadRequest {
+			t.Fatalf("status=%d want 400: %s", r.Code, r.Body.String())
+		}
+		problem := decodeProblem(t, r)
+		if problem.Errors == nil {
+			t.Fatalf("problem names no field: %s", r.Body.String())
+		}
+		want := []httpapi.FieldProblem{{Field: "month", Message: "must be written as YYYY-MM"}}
+		if diff := cmp.Diff(want, *problem.Errors); diff != "" {
+			t.Errorf("field errors mismatch (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func TestGetMonthBreakdown_IsolatesUsers(t *testing.T) {
