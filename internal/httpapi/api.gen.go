@@ -445,6 +445,27 @@ func (e ProductCodeKind) Valid() bool {
 	}
 }
 
+// Defines values for ReceiptChainCaptcha.
+const (
+	ReceiptChainCaptchaImage     ReceiptChainCaptcha = "image"
+	ReceiptChainCaptchaNone      ReceiptChainCaptcha = "none"
+	ReceiptChainCaptchaTurnstile ReceiptChainCaptcha = "turnstile"
+)
+
+// Valid indicates whether the value is a known member of the ReceiptChainCaptcha enum.
+func (e ReceiptChainCaptcha) Valid() bool {
+	switch e {
+	case ReceiptChainCaptchaImage:
+		return true
+	case ReceiptChainCaptchaNone:
+		return true
+	case ReceiptChainCaptchaTurnstile:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReceiptImageContentType.
 const (
 	ReceiptImageContentTypeImagejpeg ReceiptImageContentType = "image/jpeg"
@@ -1577,6 +1598,9 @@ type Quantity = string
 
 // Receipt A receipt with everything on it.
 type Receipt struct {
+	// Chain The chain the seller tax number resolves to, with the portal's lookup values ready to paste, or null.
+	Chain *ReceiptChain `json:"chain"`
+
 	// CreatedAt When the receipt was uploaded.
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -1644,6 +1668,39 @@ type Receipt struct {
 	// Total The amount paid, or `null` when it is not known.
 	Total     *Money    `json:"total"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// ReceiptChain A chain's e-archive lookup, ready to paste into its portal.
+type ReceiptChain struct {
+	// Captcha The challenge the portal puts in front of a lookup; the user completes it themselves.
+	Captcha ReceiptChainCaptcha `json:"captcha"`
+
+	// Fields The portal's lookup fields in form order, without the captcha. Empty when the portal's fields are not known.
+	Fields []ReceiptChainField `json:"fields"`
+
+	// Id Stable registry key of the chain.
+	Id string `json:"id"`
+
+	// Name Display name of the chain.
+	Name string `json:"name"`
+
+	// PortalUrl The portal's landing page; the only URL the client opens.
+	PortalUrl string `json:"portalUrl"`
+}
+
+// ReceiptChainCaptcha The challenge the portal puts in front of a lookup; the user completes it themselves.
+type ReceiptChainCaptcha string
+
+// ReceiptChainField One lookup field and the receipt's value for it.
+type ReceiptChainField struct {
+	// Description What the user enters into that field.
+	Description string `json:"description"`
+
+	// Name The wire name the portal's form carries.
+	Name string `json:"name"`
+
+	// Value The receipt's value in the portal's wire format — the invoice number or canonical ETTN, the date as DD-MM-YYYY, the total with a dot decimal — or null when the receipt does not carry it.
+	Value *string `json:"value"`
 }
 
 // ReceiptImage defines model for ReceiptImage.

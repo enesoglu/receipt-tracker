@@ -12,6 +12,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"github.com/enesoglu/receipt-tracker/internal/apperr"
+	"github.com/enesoglu/receipt-tracker/internal/chains"
 	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
 	"github.com/enesoglu/receipt-tracker/internal/receipts"
 )
@@ -302,10 +303,72 @@ func flagResponse(f sqlc.ReviewFlag) (ReviewFlag, error) {
 	return flag, err
 }
 
+// chainResponse derives the e-archive panel data from the seller tax number.
+// It is nil unless the number resolves to a chain with a known portal.
+func chainResponse(r sqlc.Receipt) *ReceiptChain {
+	if r.SellerTaxNumber == nil {
+		return nil
+	}
+	chain, ok := chains.ByVKN(*r.SellerTaxNumber)
+	if !ok || chain.EArchive == nil {
+		return nil
+	}
+	return chainLookup(r, chain)
+}
+
+// chainLookup builds the panel data from a resolved chain. Endpoint and
+// Verified stay server-side: the client only opens the portal and copies
+// values, it never POSTs or shows a verification badge.
+func chainLookup(r sqlc.Receipt, chain chains.Chain) *ReceiptChain {
+	eArchive := chain.EArchive
+	fields := make([]ReceiptChainField, 0, len(eArchive.Fields))
+	for _, field := range eArchive.Fields {
+		value, known := lookupValue(r, field.Name)
+		if !known {
+			continue
+		}
+		fields = append(fields, ReceiptChainField{Name: field.Name, Description: field.Description, Value: value})
+	}
+	return &ReceiptChain{
+		Id:        chain.ID,
+		Name:      chain.Name,
+		PortalUrl: eArchive.PortalURL,
+		Captcha:   ReceiptChainCaptcha(string(eArchive.Captcha)),
+		Fields:    fields,
+	}
+}
+
+// lookupValue returns the receipt's value for one portal wire field. The
+// bool is false for field names the server cannot source (a captcha token,
+// for example), which are left out of the response entirely.
+func lookupValue(r sqlc.Receipt, name string) (*string, bool) {
+	switch name {
+	case "belgeno":
+		if r.InvoiceNumber != nil {
+			return r.InvoiceNumber, true
+		}
+		if r.Ettn.Valid {
+			ettn := r.Ettn.UUID.String()
+			return &ettn, true
+		}
+		return nil, true
+	case "tarih":
+		if r.PurchasedOn != nil {
+			value := r.PurchasedOn.Format("02-01-2006")
+			return &value, true
+		}
+		return nil, true
+	case "tutar":
+		return moneyResponse(r.Total), true
+	default:
+		return nil, false
+	}
+}
+
 func receiptResponse(d receipts.Detail) (Receipt, error) {
 	summary := summaryResponse(d.Summary)
 	r := d.Receipt
-	response := Receipt{Id: r.ID, Title: r.Title, Store: summary.Store, PurchasedOn: summary.PurchasedOn, Currency: r.Currency, Total: summary.Total, Subtotal: moneyResponse(r.Subtotal), TaxTotal: moneyResponse(r.TaxTotal), InvoiceNumber: r.InvoiceNumber, SellerTaxNumber: r.SellerTaxNumber, Status: summary.Status, Source: summary.Source, FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), LineItems: make([]LineItem, 0, len(d.Lines)), Flags: make([]ReviewFlag, 0, len(d.Flags)), Images: make([]ReceiptImage, 0, len(d.Images))}
+	response := Receipt{Id: r.ID, Title: r.Title, Store: summary.Store, PurchasedOn: summary.PurchasedOn, Currency: r.Currency, Total: summary.Total, Subtotal: moneyResponse(r.Subtotal), TaxTotal: moneyResponse(r.TaxTotal), InvoiceNumber: r.InvoiceNumber, SellerTaxNumber: r.SellerTaxNumber, Chain: chainResponse(r), Status: summary.Status, Source: summary.Source, FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), LineItems: make([]LineItem, 0, len(d.Lines)), Flags: make([]ReviewFlag, 0, len(d.Flags)), Images: make([]ReceiptImage, 0, len(d.Images))}
 	if r.Ettn.Valid {
 		// The column is a UUID, so the canonical spelling comes for free.
 		ettn := r.Ettn.UUID.String()

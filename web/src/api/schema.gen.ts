@@ -1044,8 +1044,38 @@ export interface components {
        */
       createdAt: string;
     };
+    /** @description A chain's e-archive lookup, ready to paste into its portal. */
+    ReceiptChain: {
+      /** @description Stable registry key of the chain. */
+      id: string;
+      /** @description Display name of the chain. */
+      name: string;
+      /**
+       * Format: uri
+       * @description The portal's landing page; the only URL the client opens.
+       */
+      portalUrl: string;
+      /**
+       * @description The challenge the portal puts in front of a lookup; the user completes it themselves.
+       * @enum {string}
+       */
+      captcha: 'none' | 'image' | 'turnstile';
+      /** @description The portal's lookup fields in form order, without the captcha. Empty when the portal's fields are not known. */
+      fields: components['schemas']['ReceiptChainField'][];
+    };
+    /** @description One lookup field and the receipt's value for it. */
+    ReceiptChainField: {
+      /** @description The wire name the portal's form carries. */
+      name: string;
+      /** @description What the user enters into that field. */
+      description: string;
+      /** @description The receipt's value in the portal's wire format — the invoice number or canonical ETTN, the date as DD-MM-YYYY, the total with a dot decimal — or null when the receipt does not carry it. */
+      value: string | null;
+    };
     /** @description A receipt with everything on it. */
     Receipt: components['schemas']['ReceiptSummary'] & {
+      /** @description The chain the seller tax number resolves to, with the portal's lookup values ready to paste, or null. */
+      chain: components['schemas']['ReceiptChain'] | null;
       /** @description The time printed on the receipt, or `null`. */
       purchasedTime: components['schemas']['TimeOfDay'] | null;
       /** @description The amount before tax, or `null` when the receipt does not print it. */
