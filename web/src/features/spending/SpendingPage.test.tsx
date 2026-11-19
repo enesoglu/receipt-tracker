@@ -12,6 +12,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { resetMockState, setMockAuthMode } from '../../mocks/data';
 import { server } from '../../mocks/server';
 import {
+  buildBreakdownReceiptsHref,
   formatSharePercentage,
   getDefaultMonthRange,
   validateMonthRange,
@@ -40,6 +41,41 @@ function renderSpendingPage() {
 }
 
 describe('spending helpers', () => {
+  it('builds one filtered receipts link per breakdown group kind', () => {
+    type Group = Parameters<typeof buildBreakdownReceiptsHref>[1];
+    const id = '0193a1b2-0000-7000-8000-000000000020';
+    const group = (
+      kind: Group['kind'],
+      groupId: string | null = null,
+    ): Group => ({
+      kind,
+      id: groupId,
+      name: 'Group',
+      amount: '10.00',
+      share: '0.1000',
+      itemCount: 1,
+    });
+
+    expect(
+      buildBreakdownReceiptsHref('2026-11', group('category', id), 'category'),
+    ).toBe(`/receipts?month=2026-11&categoryId=${id}`);
+    expect(
+      buildBreakdownReceiptsHref('2026-11', group('store', id), 'store'),
+    ).toBe(`/receipts?month=2026-11&storeId=${id}`);
+    expect(
+      buildBreakdownReceiptsHref('2026-11', group('uncategorised'), 'category'),
+    ).toBe('/receipts?month=2026-11&group=uncategorised');
+    expect(
+      buildBreakdownReceiptsHref('2026-11', group('uncategorised'), 'store'),
+    ).toBe('/receipts?month=2026-11&group=no-store');
+    expect(
+      buildBreakdownReceiptsHref('2026-11', group('discounts'), 'category'),
+    ).toBe('/receipts?month=2026-11&group=discounts');
+    expect(
+      buildBreakdownReceiptsHref('2026-11', group('unallocated'), 'category'),
+    ).toBe('/receipts?month=2026-11&group=unallocated');
+  });
+
   it('defaults to the local current month during the first hours of a month', () => {
     const originalTz = process.env.TZ;
     process.env.TZ = 'Europe/Istanbul';
@@ -207,7 +243,15 @@ describe('SpendingPage', () => {
     });
     expect(categoryReceiptLinks[0]).toHaveAttribute(
       'href',
-      '/receipts?month=2026-11',
+      '/receipts?month=2026-11&categoryId=0193a1b2-0000-7000-8000-000000000020',
+    );
+    expect(categoryReceiptLinks[1]).toHaveAttribute(
+      'href',
+      '/receipts?month=2026-11&group=uncategorised',
+    );
+    expect(categoryReceiptLinks[2]).toHaveAttribute(
+      'href',
+      '/receipts?month=2026-11&group=unallocated',
     );
 
     // Recharts bars render cleanly with token fill and zero hex colours.
@@ -239,8 +283,10 @@ describe('SpendingPage', () => {
       'href',
       '/receipts?month=2026-11&storeId=0193a1b2-0000-7000-8000-000000000011',
     );
-    // Unallocated store row falls back to month filter only.
-    expect(storeLinks[2]).toHaveAttribute('href', '/receipts?month=2026-11');
+    expect(storeLinks[2]).toHaveAttribute(
+      'href',
+      '/receipts?month=2026-11&group=unallocated',
+    );
 
     // Clicking Sep 2026 in the monthly table drills into Sep 2026 store breakdown.
     fireEvent.click(screen.getAllByRole('button', { name: 'Sep 2026' })[0]);
