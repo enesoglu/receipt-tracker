@@ -94,6 +94,12 @@ func (s *Service) refresh(ctx context.Context, q *unit, userID, receiptID uuid.U
 			if f.ResolvedAt == nil && !rematched[f.LineItemID.UUID] {
 				extra = append(extra, Flag{LineID: f.LineItemID, Kind: f.Kind, Detail: detail})
 			}
+		case "new_store":
+			// A store edit or correction answers the question the flag
+			// asked, so it is dropped; anything else leaves it open.
+			if f.ResolvedAt == nil && !dropFields["store"] {
+				extra = append(extra, Flag{LineID: f.LineItemID, Kind: f.Kind, Detail: detail})
+			}
 		}
 	}
 	flags, err := s.evaluate(ctx, q, userID, receiptID, fields, extra)

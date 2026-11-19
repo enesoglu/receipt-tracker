@@ -361,6 +361,36 @@ func (e MissingFieldFlagKind) Valid() bool {
 	}
 }
 
+// Defines values for NewStoreDetailField.
+const (
+	NewStoreDetailFieldStore NewStoreDetailField = "store"
+)
+
+// Valid indicates whether the value is a known member of the NewStoreDetailField enum.
+func (e NewStoreDetailField) Valid() bool {
+	switch e {
+	case NewStoreDetailFieldStore:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NewStoreFlagKind.
+const (
+	NewStoreFlagKindNewStore NewStoreFlagKind = "new_store"
+)
+
+// Valid indicates whether the value is a known member of the NewStoreFlagKind enum.
+func (e NewStoreFlagKind) Valid() bool {
+	switch e {
+	case NewStoreFlagKindNewStore:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for OriginalImageContentType.
 const (
 	OriginalImageContentTypeImageheic OriginalImageContentType = "image/heic"
@@ -1364,6 +1394,42 @@ type MonthlySpending struct {
 	To Month `json:"to"`
 }
 
+// NewStoreDetail defines model for NewStoreDetail.
+type NewStoreDetail struct {
+	// Field Always `store`, so the flag corrects like a low-confidence store field.
+	Field NewStoreDetailField `json:"field"`
+
+	// Name The printed store name, as the receipt spelled it.
+	Name string `json:"name"`
+
+	// StoreId The store the resolution created for that name.
+	StoreId openapi_types.UUID `json:"storeId"`
+}
+
+// NewStoreDetailField Always `store`, so the flag corrects like a low-confidence store field.
+type NewStoreDetailField string
+
+// NewStoreFlag defines model for NewStoreFlag.
+type NewStoreFlag struct {
+	CreatedAt time.Time          `json:"createdAt"`
+	Detail    NewStoreDetail     `json:"detail"`
+	Id        openapi_types.UUID `json:"id"`
+	Kind      NewStoreFlagKind   `json:"kind"`
+
+	// LineItemId The line the flag is about, or `null` for a flag about the receipt itself.
+	LineItemId *openapi_types.UUID `json:"lineItemId"`
+	ReceiptId  openapi_types.UUID  `json:"receiptId"`
+
+	// Resolution How the flag was closed; `null` while it is open.
+	Resolution *ReviewResolutionKind `json:"resolution"`
+
+	// ResolvedAt When the flag was closed; `null` while it is open.
+	ResolvedAt *time.Time `json:"resolvedAt"`
+}
+
+// NewStoreFlagKind defines model for NewStoreFlag.Kind.
+type NewStoreFlagKind string
+
 // OriginalImage defines model for OriginalImage.
 type OriginalImage struct {
 	ContentType OriginalImageContentType `json:"contentType"`
@@ -1675,6 +1741,11 @@ type Quantity = string
 
 // Receipt A receipt with everything on it.
 type Receipt struct {
+	// BranchName The branch printed with the store, e.g. the `ANKARA
+	// ÇANKAYA` of a BİM receipt: data on the receipt, never a
+	// store. `null` when the receipt prints no readable branch.
+	BranchName *string `json:"branchName"`
+
 	// Chain The chain the seller tax number resolves to, with the portal's lookup values ready to paste, or null.
 	Chain *ReceiptChain `json:"chain"`
 
@@ -1865,6 +1936,11 @@ type ReceiptSummary struct {
 
 // ReceiptUpdate The editable fields of a receipt. Every field is replaced.
 type ReceiptUpdate struct {
+	// BranchName The branch printed with the store, e.g. the `ANKARA ÇANKAYA` of
+	// a BİM receipt. The server trims it. `null` or empty clears the
+	// field.
+	BranchName *string `json:"branchName,omitempty"`
+
 	// Currency ISO 4217 currency code.
 	//
 	// Example: TRY
@@ -2749,6 +2825,40 @@ func (t *ReviewFlag) MergePossibleDuplicateFlag(v PossibleDuplicateFlag) error {
 	return err
 }
 
+// AsNewStoreFlag returns the union data inside the ReviewFlag as a NewStoreFlag
+func (t ReviewFlag) AsNewStoreFlag() (NewStoreFlag, error) {
+	var body NewStoreFlag
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromNewStoreFlag overwrites any union data inside the ReviewFlag as the provided NewStoreFlag
+func (t *ReviewFlag) FromNewStoreFlag(v NewStoreFlag) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"new_store"}`))
+	t.union = b
+	return err
+}
+
+// MergeNewStoreFlag performs a merge with any union data inside the ReviewFlag, using the provided NewStoreFlag
+func (t *ReviewFlag) MergeNewStoreFlag(v NewStoreFlag) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"new_store"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t ReviewFlag) Discriminator() (string, error) {
 	var discriminator struct {
 		Discriminator string `json:"kind"`
@@ -2771,6 +2881,8 @@ func (t ReviewFlag) ValueByDiscriminator() (interface{}, error) {
 		return t.AsLowConfidenceFlag()
 	case "missing_field":
 		return t.AsMissingFieldFlag()
+	case "new_store":
+		return t.AsNewStoreFlag()
 	case "possible_duplicate":
 		return t.AsPossibleDuplicateFlag()
 	case "sum_mismatch":

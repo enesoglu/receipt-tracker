@@ -88,6 +88,7 @@ UPDATE receipts SET
     invoice_number = sqlc.narg(invoice_number),
     ettn = sqlc.narg(ettn),
     seller_tax_number = sqlc.narg(seller_tax_number),
+    branch_name = sqlc.narg(branch_name),
     status = 'needs_review',
     failure_reason = NULL,
     updated_at = @now

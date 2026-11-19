@@ -16,6 +16,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/extract"
 	"github.com/enesoglu/receipt-tracker/internal/matching"
 	"github.com/enesoglu/receipt-tracker/internal/storage"
+	"github.com/enesoglu/receipt-tracker/internal/stores"
 )
 
 type database interface {
@@ -91,7 +92,7 @@ func (s *Service) transaction(ctx context.Context, fn func(*unit) error) error {
 		return fmt.Errorf("begin receipt transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	if err = fn(&unit{Queries: sqlc.New(tx), tx: tx, source: matching.NewSQLSource(tx)}); err != nil {
+	if err = fn(&unit{Queries: sqlc.New(tx), tx: tx, source: matching.NewSQLSource(tx), storeSource: stores.NewSQLSource(tx)}); err != nil {
 		return classify(err)
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -105,6 +106,7 @@ type unit struct {
 	// tx is the open transaction, so code inside it can pass it on: a
 	// job enqueued through it is committed or rolled back together with
 	// the rows it refers to.
-	tx     pgx.Tx
-	source matching.CandidateSource
+	tx          pgx.Tx
+	source      matching.CandidateSource
+	storeSource stores.Source
 }

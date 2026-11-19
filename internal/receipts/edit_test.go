@@ -3,6 +3,7 @@ package receipts
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +104,34 @@ func TestValidateReceipt_IdentityFields(t *testing.T) {
 			"tax number with a letter",
 			func(in *ReceiptInput) {
 				in.SellerTaxNumber = ptr("12345678AB")
+			},
+			false,
+		},
+		{
+			"branch name with a space around it",
+			func(in *ReceiptInput) {
+				in.BranchName = ptr(" ANKARA ÇANKAYA ")
+			},
+			true,
+		},
+		{
+			"blank branch name",
+			func(in *ReceiptInput) {
+				in.BranchName = ptr("   ")
+			},
+			false,
+		},
+		{
+			"branch name with a nul byte",
+			func(in *ReceiptInput) {
+				in.BranchName = ptr("ANKARA\x00")
+			},
+			false,
+		},
+		{
+			"over-long branch name",
+			func(in *ReceiptInput) {
+				in.BranchName = ptr(strings.Repeat("a", 201))
 			},
 			false,
 		},

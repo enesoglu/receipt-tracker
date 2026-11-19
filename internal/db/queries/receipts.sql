@@ -100,7 +100,7 @@ UPDATE receipts SET title = @title, store_id = sqlc.narg(store_id), purchased_on
  purchased_time = sqlc.narg(purchased_time), currency = @currency, subtotal = sqlc.narg(subtotal),
  tax_total = sqlc.narg(tax_total), total = sqlc.narg(total),
  invoice_number = sqlc.narg(invoice_number), ettn = sqlc.narg(ettn),
- seller_tax_number = sqlc.narg(seller_tax_number), updated_at = @now
+ seller_tax_number = sqlc.narg(seller_tax_number), branch_name = sqlc.narg(branch_name), updated_at = @now
 WHERE user_id = @user_id AND id = @receipt_id;
 
 -- FillReceiptIdentity fills the identity columns that are still unset and

@@ -435,6 +435,7 @@ export interface paths {
      *     | `uncertain_match` | `same_product`, `different_product` |
      *     | `code_conflict` | `same_product`, `different_product` |
      *     | `possible_duplicate` | `accept` |
+     *     | `new_store` | `confirm`, `correct` |
      *
      *     An action the kind does not allow is a `400`. A flag that is already
      *     resolved is a `409`.
@@ -1224,6 +1225,12 @@ export interface components {
        *     receipt does not print one.
        */
       sellerTaxNumber: string | null;
+      /**
+       * @description The branch printed with the store, e.g. the `ANKARA
+       *     ÇANKAYA` of a BİM receipt: data on the receipt, never a
+       *     store. `null` when the receipt prints no readable branch.
+       */
+      branchName: string | null;
       /** Format: date-time */
       updatedAt: string;
       /** @description The lines, in the order printed. */
@@ -1290,6 +1297,12 @@ export interface components {
        *     clears the field.
        */
       sellerTaxNumber?: string | null;
+      /**
+       * @description The branch printed with the store, e.g. the `ANKARA ÇANKAYA` of
+       *     a BİM receipt. The server trims it. `null` or empty clears the
+       *     field.
+       */
+      branchName?: string | null;
     };
     ReceiptPage: {
       items: components['schemas']['ReceiptSummary'][];
@@ -1372,6 +1385,7 @@ export interface components {
      *     - `uncertain_match`: matching is not sure which product a line is.
      *     - `code_conflict`: the line's code points to one product and its name to another.
      *     - `possible_duplicate`: another receipt has the same store, date and total.
+     *     - `new_store`: store resolution created a store for a name it did not recognise.
      * @enum {string}
      */
     ReviewFlagKind:
@@ -1381,7 +1395,8 @@ export interface components {
       | 'sum_mismatch'
       | 'uncertain_match'
       | 'code_conflict'
-      | 'possible_duplicate';
+      | 'possible_duplicate'
+      | 'new_store';
     /**
      * @description How a flag was closed.
      *     - `confirmed`, `corrected`, `same_product`, `different_product`, `accepted`: by the matching `action` of the user.
@@ -1429,7 +1444,8 @@ export interface components {
       | components['schemas']['SumMismatchFlag']
       | components['schemas']['UncertainMatchFlag']
       | components['schemas']['CodeConflictFlag']
-      | components['schemas']['PossibleDuplicateFlag'];
+      | components['schemas']['PossibleDuplicateFlag']
+      | components['schemas']['NewStoreFlag'];
     LowConfidenceFlag: components['schemas']['ReviewFlagBase'] & {
       /** @enum {string} */
       kind: 'low_confidence';
@@ -1580,6 +1596,31 @@ export interface components {
        * @description The receipt with the same store, date and total.
        */
       otherReceiptId: string;
+    };
+    NewStoreFlag: components['schemas']['ReviewFlagBase'] & {
+      /** @enum {string} */
+      kind: 'new_store';
+      detail: components['schemas']['NewStoreDetail'];
+    } & {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      kind: 'new_store';
+    };
+    NewStoreDetail: {
+      /**
+       * @description Always `store`, so the flag corrects like a low-confidence store field.
+       * @enum {string}
+       */
+      field: 'store';
+      /** @description The printed store name, as the receipt spelled it. */
+      name: string;
+      /**
+       * Format: uuid
+       * @description The store the resolution created for that name.
+       */
+      storeId: string;
     };
     /** @description An open flag with what is needed to show and resolve it. */
     ReviewFlagEntry: {

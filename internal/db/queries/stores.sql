@@ -44,3 +44,12 @@ RETURNING *;
 UPDATE stores SET vkn = sqlc.arg(vkn)::text, updated_at = @now
 WHERE user_id = @user_id AND id = @store_id AND vkn IS NULL
 RETURNING *;
+
+-- RememberStoreAlias records raw_name as a name the store printed. A
+-- second sighting of the same reading bumps seen_count, and last_seen_at
+-- follows the latest receipt; raw_name stays the first form seen.
+-- name: RememberStoreAlias :exec
+INSERT INTO store_aliases (user_id, store_id, raw_name, normalized_name, last_seen_at, created_at)
+VALUES (@user_id, @store_id, @raw_name, @normalized_name, @now, @now)
+ON CONFLICT (store_id, normalized_name) DO UPDATE
+SET seen_count = store_aliases.seen_count + 1, last_seen_at = @now;

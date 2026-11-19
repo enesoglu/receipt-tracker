@@ -18,6 +18,7 @@ func TestReceipts_RejectsNullBytesWithoutChangingData(t *testing.T) {
 	for _, test := range []struct{ name, method, path, body string }{
 		{"title", "PUT", base, `{"title":"bad\u0000title","currency":"TRY"}`},
 		{"store", "PUT", base, `{"title":"Valid","storeName":"bad\u0000store","currency":"TRY"}`},
+		{"branch", "PUT", base, `{"title":"Valid","currency":"TRY","branchName":"bad\u0000branch"}`},
 		{"line name", "POST", base + "/line-items", `{"name":"bad\u0000name","lineTotal":"1.00"}`},
 		{"unit", "POST", base + "/line-items", `{"name":"Valid","quantityUnit":"a\u0000d","lineTotal":"1.00"}`},
 		{"code", "POST", base + "/line-items", `{"name":"Valid","productCode":"bad\u0000code","lineTotal":"1.00"}`},

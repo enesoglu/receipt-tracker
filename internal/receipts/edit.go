@@ -32,6 +32,9 @@ type (
 		InvoiceNumber   *string
 		Ettn            uuid.NullUUID
 		SellerTaxNumber *string
+		// BranchName is the printed branch of the receipt's store: data
+		// on the receipt, never a store. A nil value clears it.
+		BranchName *string
 	}
 	// LineInput replaces the editable values of a line.
 	LineInput struct {
@@ -84,6 +87,9 @@ func validateReceipt(input ReceiptInput) error {
 	}
 	if input.SellerTaxNumber != nil && !validTaxNumber(*input.SellerTaxNumber) {
 		err = err.WithField("sellerTaxNumber", "must be exactly ten digits")
+	}
+	if input.BranchName != nil && !validText(*input.BranchName, 200) {
+		err = err.WithField("branchName", "must be 1 to 200 characters")
 	}
 	if len(err.Fields) == 0 {
 		return nil
@@ -161,8 +167,20 @@ func (s *Service) storeForName(ctx context.Context, q *unit, userID uuid.UUID, n
 	if name == nil {
 		return uuid.NullUUID{}, nil
 	}
-	id, err := q.UpsertExtractedStore(ctx, sqlc.UpsertExtractedStoreParams{UserID: userID, Name: strings.TrimSpace(*name), NormalizedName: matching.Normalize(*name).Key, Now: s.now().UTC()})
-	return uuid.NullUUID{UUID: id, Valid: err == nil}, err
+	// The typed name is authoritative: an exact upsert, never a
+	// similarity guess. It is remembered as an alias too, so the next
+	// noisy reading of the same shop resolves here on its own.
+	value := strings.TrimSpace(*name)
+	key := matching.Normalize(value).Key
+	now := s.now().UTC()
+	id, err := q.UpsertExtractedStore(ctx, sqlc.UpsertExtractedStoreParams{UserID: userID, Name: value, NormalizedName: key, Now: now})
+	if err != nil {
+		return uuid.NullUUID{}, err
+	}
+	if err := q.RememberStoreAlias(ctx, sqlc.RememberStoreAliasParams{UserID: userID, StoreID: id, RawName: value, NormalizedName: key, Now: now}); err != nil {
+		return uuid.NullUUID{}, err
+	}
+	return uuid.NullUUID{UUID: id, Valid: true}, nil
 }
 
 // trimmedText returns the value without surrounding space, or nil. A nil
@@ -183,7 +201,7 @@ func (s *Service) writeReceipt(ctx context.Context, q *unit, userID, receiptID u
 	if err != nil {
 		return err
 	}
-	p := sqlc.UpdateReviewReceiptParams{UserID: userID, ReceiptID: receiptID, Title: strings.TrimSpace(input.Title), StoreID: storeID, PurchasedOn: input.PurchasedOn, Currency: input.Currency, Subtotal: input.Subtotal, TaxTotal: input.TaxTotal, Total: input.Total, InvoiceNumber: trimmedText(input.InvoiceNumber), Ettn: input.Ettn, SellerTaxNumber: trimmedText(input.SellerTaxNumber), Now: s.now().UTC()}
+	p := sqlc.UpdateReviewReceiptParams{UserID: userID, ReceiptID: receiptID, Title: strings.TrimSpace(input.Title), StoreID: storeID, PurchasedOn: input.PurchasedOn, Currency: input.Currency, Subtotal: input.Subtotal, TaxTotal: input.TaxTotal, Total: input.Total, InvoiceNumber: trimmedText(input.InvoiceNumber), Ettn: input.Ettn, SellerTaxNumber: trimmedText(input.SellerTaxNumber), BranchName: trimmedText(input.BranchName), Now: s.now().UTC()}
 	if input.PurchasedTime != nil {
 		clock, _ := time.Parse("15:04", *input.PurchasedTime)
 		p.PurchasedTime = pgtype.Time{Microseconds: int64(clock.Hour()*60+clock.Minute()) * 60 * 1000000, Valid: true}
