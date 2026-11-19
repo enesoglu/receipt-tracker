@@ -17,6 +17,7 @@ import { ReceiptsListPage } from '../features/receipts/ReceiptsListPage';
 import { ReviewQueuePage } from '../features/review/ReviewQueuePage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { SpendingPage } from '../features/spending/SpendingPage';
+import { StoresPage } from '../features/stores/StoresPage';
 import { UploadPage } from '../features/upload/UploadPage';
 import { AuthGate } from './AuthGate';
 import { LoginRoute } from './LoginRoute';
@@ -55,6 +56,7 @@ export function AppRouterContent({ queryClient }: AppRouterContentProps) {
           <Route path="/products" element={<ProductsListPage />} />
           <Route path="/products/:productId" element={<ProductDetailPage />} />
           <Route path="/spending" element={<SpendingPage />} />
+          <Route path="/stores" element={<StoresPage />} />
           <Route path="/categories" element={<CategoriesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route

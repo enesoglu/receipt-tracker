@@ -3,7 +3,9 @@ import type { components } from '../api/schema.gen';
 import {
   acceptMockSuggestion,
   createMockCategory,
+  createMockStore,
   deleteMockCategory,
+  deleteMockStore,
   disconnectMockStorage,
   getMockAuthMode,
   getMockProductById,
@@ -11,15 +13,15 @@ import {
   getMockReceiptById,
   getMockSettings,
   getMockStorageStatus,
+  getMockStoreDetail,
   ignoreMockSuggestion,
   mergeMockProducts,
+  mergeMockStore,
   mockImageBytes,
   mockProblemForbidden,
   mockProblemNotFound,
   mockProblemUnauthorized,
   mockReceipt,
-  mockStore,
-  mockStorePage,
   mockSuggestionsStatus,
   mockUploadResponse,
   mockUsage,
@@ -32,6 +34,7 @@ import {
   queryMockReceipts,
   queryMockReviewFlags,
   queryMockSuggestions,
+  queryMockStores,
   registerMockUploads,
   resolveMockReviewFlag,
   setMockAuthMode,
@@ -39,6 +42,7 @@ import {
   updateMockCategory,
   updateMockProduct,
   updateMockSettings,
+  updateMockStore,
 } from './data';
 import { readUploadedFiles } from './multipart';
 
@@ -405,21 +409,148 @@ export const handlers = [
     },
   ),
 
-  http.get('/api/v1/stores', () => {
+  http.get('/api/v1/stores', ({ request }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
-    return HttpResponse.json(mockStorePage);
+    const url = new URL(request.url);
+    return HttpResponse.json(queryMockStores(url.searchParams));
+  }),
+
+  http.post('/api/v1/stores', async ({ request }) => {
+    const blocked = guardSignedIn();
+    if (blocked) return blocked;
+    const body = (await request.json()) as components['schemas']['StoreCreate'];
+    const result = createMockStore(body);
+    if (!result.ok) {
+      if (result.reason === 'conflict') {
+        return problemJson(409, {
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          detail: 'a store with this name already exists',
+          requestId: mockProblemNotFound.requestId,
+        });
+      }
+      return problemJson(400, {
+        type: 'about:blank',
+        title: 'Bad Request',
+        status: 400,
+        detail: 'store name is invalid',
+        requestId: mockProblemNotFound.requestId,
+        errors: [
+          {
+            field: 'name',
+            message: 'must be between 1 and 200 characters',
+          },
+        ],
+      });
+    }
+    return HttpResponse.json(result.store, { status: 201 });
+  }),
+
+  http.get('/api/v1/stores/:storeId', ({ params }) => {
+    const blocked = guardSignedIn();
+    if (blocked) return blocked;
+    const detail = getMockStoreDetail(String(params.storeId));
+    if (!detail) {
+      return problemJson(404, {
+        ...mockProblemNotFound,
+        detail: 'store not found',
+      });
+    }
+    return HttpResponse.json(detail);
   }),
 
   http.put('/api/v1/stores/:storeId', async ({ request, params }) => {
     const blocked = guardSignedIn();
     if (blocked) return blocked;
     const body = (await request.json()) as components['schemas']['StoreUpdate'];
-    return HttpResponse.json({
-      ...mockStore,
-      id: String(params.storeId),
-      name: body.name,
-    });
+    const result = updateMockStore(String(params.storeId), body);
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        return problemJson(404, {
+          ...mockProblemNotFound,
+          detail: 'store not found',
+        });
+      }
+      if (result.reason === 'conflict') {
+        return problemJson(409, {
+          type: 'about:blank',
+          title: 'Conflict',
+          status: 409,
+          detail: 'a store with this name already exists',
+          requestId: mockProblemNotFound.requestId,
+        });
+      }
+      return problemJson(400, {
+        type: 'about:blank',
+        title: 'Bad Request',
+        status: 400,
+        detail: 'store name is invalid',
+        requestId: mockProblemNotFound.requestId,
+        errors: [
+          {
+            field: 'name',
+            message: 'must be between 1 and 200 characters',
+          },
+        ],
+      });
+    }
+    return HttpResponse.json(result.store);
+  }),
+
+  http.post('/api/v1/stores/:storeId/merge', async ({ request, params }) => {
+    const blocked = guardSignedIn();
+    if (blocked) return blocked;
+    const body = (await request.json()) as components['schemas']['StoreMerge'];
+    const result = mergeMockStore(String(params.storeId), body.sourceId);
+    if (!result.ok) {
+      if (result.reason === 'invalid') {
+        return problemJson(400, {
+          type: 'about:blank',
+          title: 'Bad Request',
+          status: 400,
+          detail: 'a store cannot be merged into itself',
+          requestId: mockProblemNotFound.requestId,
+        });
+      }
+      if (result.reason === 'not_found') {
+        return problemJson(404, {
+          ...mockProblemNotFound,
+          detail: 'store not found',
+        });
+      }
+      return problemJson(409, {
+        type: 'about:blank',
+        title: 'Conflict',
+        status: 409,
+        detail: `the stores carry different tax numbers (${result.targetVkn} and ${result.sourceVkn})`,
+        requestId: mockProblemNotFound.requestId,
+      });
+    }
+    return HttpResponse.json(result.detail);
+  }),
+
+  http.delete('/api/v1/stores/:storeId', ({ params }) => {
+    const blocked = guardSignedIn();
+    if (blocked) return blocked;
+    const result = deleteMockStore(String(params.storeId));
+    if (!result.ok) {
+      if (result.reason === 'not_found') {
+        return problemJson(404, {
+          ...mockProblemNotFound,
+          detail: 'store not found',
+        });
+      }
+      return problemJson(409, {
+        type: 'about:blank',
+        title: 'Conflict',
+        status: 409,
+        detail: `the store still has ${result.receiptCount} receipts`,
+        requestId: mockProblemNotFound.requestId,
+      });
+    }
+    return new HttpResponse(null, { status: 204 });
   }),
 
   http.get('/api/v1/categories', ({ request }) => {

@@ -22,6 +22,10 @@ are in [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES).
   values ready to copy; every lookup and captcha is completed by the user.
 - Match products across receipts using names, sizes, stores and codes. Confirm
   uncertain matches, merge duplicates or split products that were joined wrongly.
+- Resolve each receipt to one store per chain from the printed name and the
+  seller tax number, keeping the printed branch on the receipt. Manage stores on
+  their own screen: see the raw names and branches they were seen under, rename,
+  merge duplicates or delete unused ones.
 - Compare product price history and monthly spending, with currencies kept separate.
 - Sign in with an allow-listed Google account; store images locally or in Google
   Drive. The current administrator manages the shared Drive connection.

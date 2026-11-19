@@ -11,6 +11,7 @@ export const primaryNavItems: readonly NavItem[] = [
   { to: '/review', label: 'Review', showReviewBadge: true },
   { to: '/products', label: 'Products' },
   { to: '/spending', label: 'Spending' },
+  { to: '/stores', label: 'Stores' },
   { to: '/categories', label: 'Categories' },
   { to: '/settings', label: 'Settings' },
 ];

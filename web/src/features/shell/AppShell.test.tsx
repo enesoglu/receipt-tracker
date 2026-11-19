@@ -73,6 +73,7 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Upload' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Products' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Spending' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Stores' })).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'Categories' }),
     ).toBeInTheDocument();
