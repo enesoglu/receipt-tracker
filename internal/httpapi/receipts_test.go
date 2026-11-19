@@ -661,3 +661,74 @@ func receiptJSON(t *testing.T, receipt httpapi.Receipt) string {
 	}
 	return string(raw)
 }
+
+func TestReceipts_HugeDerivedFlagAmountsStayInContract(t *testing.T) {
+	s := newReceiptServer(t)
+	huge := decimal.RequireFromString("9999999999.99")
+	mismatch := cleanReceipt()
+	mismatch.Total = receiptField(decimal.RequireFromString("0.01"))
+	mismatch.Lines = []extract.Line{
+		{Name: receiptField("BREAD"), Quantity: receiptField(decimal.New(1, 0)), UnitPrice: receiptField(huge), Total: receiptField(huge)},
+		{Name: receiptField("RICE"), Quantity: receiptField(decimal.New(1, 0)), UnitPrice: receiptField(huge), Total: receiptField(huge)},
+	}
+	mismatchID := s.seed(s.alice, mismatch)
+
+	math := cleanReceipt()
+	math.Lines = []extract.Line{{Name: receiptField("BREAD"), Quantity: receiptField(decimal.RequireFromString("999999999.999")), UnitPrice: receiptField(huge), Total: receiptField(decimal.New(100, -2))}}
+	mathID := s.seed(s.alice, math)
+
+	receipt := decodeReceipt(t, s.call(s.alice, http.MethodGet, "/receipts/"+mismatchID.String(), ""), 200)
+	var sums, differences int
+	for _, flag := range receipt.Flags {
+		if kind, err := flag.Discriminator(); err != nil || kind != "sum_mismatch" {
+			continue
+		}
+		sum, err := flag.AsSumMismatchFlag()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sum.Detail.LineSum != "19999999999.98" {
+			t.Errorf("lineSum = %q, want the sum of both lines", sum.Detail.LineSum)
+		}
+		if sum.Detail.Difference != "-19999999999.97" {
+			t.Errorf("difference = %q, want total minus line sum", sum.Detail.Difference)
+		}
+		sums++
+		differences++
+	}
+	if sums != 1 || differences != 1 {
+		t.Fatalf("sum_mismatch flags = %+v", receipt.Flags)
+	}
+
+	receipt = decodeReceipt(t, s.call(s.alice, http.MethodGet, "/receipts/"+mathID.String(), ""), 200)
+	var expectations int
+	for _, flag := range receipt.Flags {
+		if kind, err := flag.Discriminator(); err != nil || kind != "line_math" {
+			continue
+		}
+		mathFlag, err := flag.AsLineMathFlag()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mathFlag.Detail.ExpectedTotal != "9999999999980000000.00" {
+			t.Errorf("expectedTotal = %q, want quantity times unit price", mathFlag.Detail.ExpectedTotal)
+		}
+		expectations++
+	}
+	if expectations != 1 {
+		t.Fatalf("line_math flags = %+v", receipt.Flags)
+	}
+
+	// The flag list answers with the same shapes as the receipt detail.
+	response := s.call(s.alice, http.MethodGet, "/review-flags", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("review list = %d: %s", response.Code, response.Body.String())
+	}
+	var document any
+	if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	if err := loadContract(t).Components.Schemas["ReviewFlagPage"].Value.VisitJSON(document); err != nil {
+		t.Fatalf("review flags violate contract: %v\n%s", err, response.Body.String())
+	}
+}

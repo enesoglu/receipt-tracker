@@ -833,11 +833,22 @@ export interface components {
      * @description An amount of money as a decimal string, in the currency of its
      *     receipt. Input accepts up to two decimal places with `.` or `,` as
      *     the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-     *     amount. Storage and responses use exactly two places with a dot.
-     *     Negative amounts are discounts or refunds.
+     *     amount. Storage and responses use exactly two places with a dot, and
+     *     a stored amount stays within ten integer digits. Negative amounts
+     *     are discounts or refunds.
      * @example 84.50
      */
     Money: string;
+    /**
+     * @description An amount the server computes from stored money: a sum or
+     *     difference of `Money` values, or a per-unit price, as a decimal
+     *     string with exactly two places and a dot. Unlike `Money` the
+     *     integer part has no fixed bound: adding valid amounts can need
+     *     more digits than any one of them, so a client must accept any
+     *     number of integer digits.
+     * @example 19999999999.98
+     */
+    DerivedMoney: string;
     /**
      * @description A quantity or package size as a positive decimal string. Input
      *     accepts up to three decimal places with `.` or `,` as the separator;
@@ -855,7 +866,8 @@ export interface components {
      * @description A group's amount divided by the total, as a decimal string with four
      *     places. It is negative for `discounts` and can exceed 1 for a category
      *     when discounts lower the total; the shares of a currency add up to 1.
-     *     It is `0.0000` when the total is zero.
+     *     When the total is close to zero the ratio can need any number of
+     *     integer digits, and it is `0.0000` when the total is zero.
      * @example 0.6530
      */
     Share: string;
@@ -1312,7 +1324,7 @@ export interface components {
       unitPrice: components['schemas']['Money'];
       lineTotal: components['schemas']['Money'];
       /** @description Quantity times unit price. */
-      expectedTotal: components['schemas']['Money'];
+      expectedTotal: components['schemas']['DerivedMoney'];
     };
     SumMismatchFlag: components['schemas']['ReviewFlagBase'] & {
       /** @enum {string} */
@@ -1327,10 +1339,10 @@ export interface components {
     };
     SumMismatchDetail: {
       /** @description Sum of the line totals, discounts included. */
-      lineSum: components['schemas']['Money'];
+      lineSum: components['schemas']['DerivedMoney'];
       total: components['schemas']['Money'];
       /** @description Receipt total minus the sum of the lines. */
-      difference: components['schemas']['Money'];
+      difference: components['schemas']['DerivedMoney'];
     };
     UncertainMatchFlag: components['schemas']['ReviewFlagBase'] & {
       /** @enum {string} */
@@ -1652,7 +1664,7 @@ export interface components {
        *     printed in the line's name. `null` for an `item` product, for a
        *     line without a usable size, and for a size of another dimension.
        */
-      basisPrice: components['schemas']['Money'] | null;
+      basisPrice: components['schemas']['DerivedMoney'] | null;
     };
     StorePriceSummary: {
       /** @description The store, or `null` for purchases without one. */
@@ -1710,7 +1722,8 @@ export interface components {
     };
     CurrencyTotal: {
       currency: components['schemas']['Currency'];
-      amount: components['schemas']['Money'];
+      /** @description The month's total in this currency. */
+      amount: components['schemas']['DerivedMoney'];
       receiptCount: number;
     };
     /** @enum {string} */
@@ -1726,7 +1739,7 @@ export interface components {
     CurrencyBreakdown: {
       currency: components['schemas']['Currency'];
       /** @description The month's total in this currency; the groups add up to it. */
-      total: components['schemas']['Money'];
+      total: components['schemas']['DerivedMoney'];
       /** @description Largest amount first. */
       groups: components['schemas']['BreakdownGroup'][];
     };
@@ -1749,7 +1762,7 @@ export interface components {
       id: string | null;
       /** @description Display name of the group. */
       name: string;
-      amount: components['schemas']['Money'];
+      amount: components['schemas']['DerivedMoney'];
       /** @description Part of the currency's total. */
       share: components['schemas']['Share'];
       /** @description Number of line items in the group, or of receipts when grouping by store. */

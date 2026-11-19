@@ -13,6 +13,7 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"github.com/enesoglu/receipt-tracker/internal/auth"
 	"github.com/enesoglu/receipt-tracker/internal/config"
@@ -240,5 +241,70 @@ func TestGetMonthBreakdown_IsolatesUsers(t *testing.T) {
 		if len(got.Currencies) != 0 || got.ExcludedReceipts != 0 {
 			t.Errorf("%s: user B saw user A's data: %+v", by, got)
 		}
+	}
+}
+
+// hugeLinesWithNearZeroTotal stores two receipts whose totals cancel to one
+// cent while each carries a line at the largest amount the API accepts, so
+// every derived breakdown value leaves the range of a single stored amount.
+func (s *reportServer) hugeLinesWithNearZeroTotal() {
+	s.t.Helper()
+	s.exec(`WITH c AS (INSERT INTO categories (user_id, name) VALUES ($1, 'Dairy') RETURNING id),
+	             p AS (INSERT INTO products (user_id, canonical_name, category_id) SELECT $1, 'Milk', id FROM c RETURNING id),
+	             r AS (INSERT INTO receipts (user_id, title, purchased_on, total, currency, status)
+	                   SELECT $1, 'Synthetic receipt', '2026-03-10', 10.01, 'TRY', 'ready' RETURNING id)
+	        INSERT INTO line_items (user_id, receipt_id, position, raw_name, name, line_total, product_id, match_status)
+	        SELECT $1, r.id, 0, 'MILK', 'MILK', 9999999999.99, p.id, 'confirmed' FROM r, p`, s.alice)
+	s.exec(`WITH r AS (INSERT INTO receipts (user_id, title, purchased_on, total, currency, status)
+	                   SELECT $1, 'Synthetic receipt', '2026-03-11', -10.00, 'TRY', 'ready' RETURNING id)
+	        INSERT INTO line_items (user_id, receipt_id, position, raw_name, name, line_total, match_status)
+	        SELECT $1, r.id, 0, 'BREAD', 'BREAD', 9999999999.99, 'unmatched' FROM r`, s.alice)
+}
+
+func TestGetMonthlySpending_HugeTotalsStayInContract(t *testing.T) {
+	s := newReportServer(t)
+	s.receipt(s.alice, "2026-10-03", "9999999999.99", "TRY", "ready")
+	s.receipt(s.alice, "2026-10-04", "9999999999.99", "TRY", "ready")
+
+	got := decodeReport[httpapi.MonthlySpending](t, s.get(s.alice, "/reports/monthly-spending?from=2026-10&to=2026-10"), "MonthlySpending")
+
+	if len(got.Months) != 1 || len(got.Months[0].Totals) != 1 || got.Months[0].Totals[0].ReceiptCount != 2 {
+		t.Fatalf("months = %+v", got.Months)
+	}
+	if amount := got.Months[0].Totals[0].Amount; amount != "19999999999.98" {
+		t.Errorf("amount = %q, want the sum of both totals", amount)
+	}
+}
+
+func TestGetMonthBreakdown_HugeLinesWithNearZeroTotalStayInContract(t *testing.T) {
+	s := newReportServer(t)
+	s.hugeLinesWithNearZeroTotal()
+
+	got := decodeReport[httpapi.MonthBreakdown](t, s.get(s.alice, "/reports/month-breakdown?month=2026-03&groupBy=category"), "MonthBreakdown")
+
+	if len(got.Currencies) != 1 || got.Currencies[0].Total != "0.01" {
+		t.Fatalf("currencies = %+v", got.Currencies)
+	}
+	type row struct{ Kind, Name, Amount, Share string }
+	var rows []row
+	var shares decimal.Decimal
+	for _, g := range got.Currencies[0].Groups {
+		rows = append(rows, row{string(g.Kind), g.Name, g.Amount, g.Share})
+		share, err := decimal.NewFromString(g.Share)
+		if err != nil {
+			t.Fatalf("share %q: %v", g.Share, err)
+		}
+		shares = shares.Add(share)
+	}
+	want := []row{
+		{"category", "Dairy", "9999999999.99", "999999999999.0000"},
+		{"uncategorised", "Uncategorised", "9999999999.99", "999999999999.0000"},
+		{"unallocated", "Unallocated", "-19999999999.97", "-1999999999997.0000"},
+	}
+	if diff := cmp.Diff(want, rows); diff != "" {
+		t.Errorf("groups mismatch (-want +got):\n%s", diff)
+	}
+	if !shares.Equal(decimal.NewFromInt(1)) {
+		t.Errorf("shares add up to %s, want 1", shares.StringFixed(4))
 	}
 }
