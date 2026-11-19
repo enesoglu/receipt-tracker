@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -57,11 +58,41 @@ func (h authHandlers) Logout(ctx context.Context, _ LogoutRequestObject) (Logout
 
 const bindingCookieName = "auth_binding"
 
+// sameOriginLogin guards the sign-in routes against login CSRF. A SameSite=Lax
+// session cookie is sent on top-level cross-site navigations, so another
+// origin could otherwise silently sign a visitor in. The API's crossOrigin
+// middleware cannot help because these are GET routes outside /api/v1, so the
+// same browser signals are checked here.
+func (h authHandlers) sameOriginLogin(problems problemWriter, next http.Handler) http.Handler {
+	refuse := func(w http.ResponseWriter, r *http.Request) {
+		problems.write(w, r, &statusError{
+			status: http.StatusForbidden,
+			detail: "sign-in must start from this site",
+			code:   "cross_origin",
+		})
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Sec-Fetch-Site") {
+		case "cross-site", "same-site":
+			refuse(w, r)
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" {
+			parsed, err := url.Parse(origin)
+			if err != nil || !strings.EqualFold(parsed.Host, r.Host) {
+				refuse(w, r)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (h authHandlers) mount(router chi.Router, problems problemWriter) {
 	if h.users == nil || h.sessions == nil {
 		return
 	}
-	router.Get("/auth/google/login", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/auth/google/login", h.sameOriginLogin(problems, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		login, err := h.users.BeginLogin()
 		if err != nil {
 			problems.write(w, r, err)
@@ -70,7 +101,7 @@ func (h authHandlers) mount(router chi.Router, problems problemWriter) {
 		h.bindingCookie(w, login.Binding, int(auth.LoginLifetime.Seconds()))
 		w.Header().Set("Cache-Control", "no-store")
 		http.Redirect(w, r, login.URL, http.StatusFound)
-	})
+	})).ServeHTTP)
 	router.Get("/auth/google/callback", h.sessions.LoadAndSave(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		cookie, _ := r.Cookie(bindingCookieName)
@@ -95,7 +126,7 @@ func (h authHandlers) mount(router chi.Router, problems problemWriter) {
 		h.signIn(w, r, problems, user.ID.String())
 	})).ServeHTTP)
 	if h.users.DevLoginEnabled() {
-		router.Get("/auth/dev/login", h.sessions.LoadAndSave(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		router.Get("/auth/dev/login", h.sameOriginLogin(problems, h.sessions.LoadAndSave(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			user, err := h.users.DevLogin(r.Context())
 			if err != nil {
@@ -103,7 +134,7 @@ func (h authHandlers) mount(router chi.Router, problems problemWriter) {
 				return
 			}
 			h.signIn(w, r, problems, user.ID.String())
-		})).ServeHTTP)
+		}))).ServeHTTP)
 	}
 }
 
