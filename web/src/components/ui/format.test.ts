@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateValue } from './format';
+import { formatDateValue, formatQuantity } from './format';
 
 // Audit timestamps render in the viewer's local zone. Pin UTC+3 so the
 // midnight rollover is deterministic on any host.
@@ -18,5 +18,26 @@ describe('formatDateValue', () => {
 
   it('renders a calendar-only date without shifting the day', () => {
     expect(formatDateValue('2026-11-20', 'date')).toBe('Nov 20, 2026');
+  });
+});
+
+describe('formatQuantity', () => {
+  it.each([
+    ['2.000', '2'],
+    ['500.000', '500'],
+    ['1.250', '1.25'],
+    ['0.500', '0.5'],
+    ['0.000', '0'],
+    ['7', '7'],
+    ['-2.000', '-2'],
+  ])('strips redundant trailing zeros from %s', (value, expected) => {
+    expect(formatQuantity(value)).toBe(expected);
+  });
+
+  it('uses the fallback for absent or malformed values', () => {
+    expect(formatQuantity(null)).toBe('—');
+    expect(formatQuantity(undefined)).toBe('—');
+    expect(formatQuantity('  ')).toBe('—');
+    expect(formatQuantity('abc', 'N/A')).toBe('N/A');
   });
 });

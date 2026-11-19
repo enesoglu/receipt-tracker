@@ -141,6 +141,32 @@ describe('ProductsListPage', () => {
     ).toHaveAttribute('href', '/upload');
   });
 
+  it('renders package sizes without trailing zeros', async () => {
+    server.use(
+      http.get('/api/v1/products', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: '0193a1b2-0000-7000-8000-000000000409',
+              canonicalName: 'Flour',
+              category: null,
+              sizeValue: '500.000',
+              sizeUnit: 'g',
+              purchaseCount: 1,
+              lastPurchase: null,
+            },
+          ],
+          nextCursor: null,
+        }),
+      ),
+    );
+
+    renderProductsList();
+
+    expect(await screen.findByText('500 g')).toBeInTheDocument();
+    expect(screen.queryByText('500.000 g')).not.toBeInTheDocument();
+  });
+
   it('lists products, searches by query and alias, and filters by category', async () => {
     renderProductsList();
 

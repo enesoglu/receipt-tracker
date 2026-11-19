@@ -22,6 +22,18 @@ export function formatMoney(
   }
 }
 
+/** Strips redundant trailing zeros from a decimal quantity string, keeping only significant decimals. */
+export function formatQuantity(
+  value: string | null | undefined,
+  fallback = '—',
+): string {
+  if (value == null) return fallback;
+  const trimmed = value.trim();
+  if (!trimmed || !/^-?\d+(?:\.\d+)?$/.test(trimmed)) return fallback;
+  if (!trimmed.includes('.')) return trimmed;
+  return trimmed.replace(/\.?0+$/, '');
+}
+
 /** Formats YYYY-MM-DD dates and YYYY-MM months as calendar values and RFC 3339 timestamps in local time. */
 export function formatDateValue(
   value: string | null | undefined,

@@ -109,6 +109,25 @@ describe('ProductDetailPage', () => {
     ).toHaveAttribute('href', '/products');
   });
 
+  it('prefills the package size without trailing zeros', async () => {
+    server.use(
+      http.get('/api/v1/products/:productId', () =>
+        HttpResponse.json({
+          ...mockProduct,
+          sizeValue: '500.000',
+          sizeUnit: 'g',
+        }),
+      ),
+    );
+
+    renderProductDetail();
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Ayran 1 l' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Package size')).toHaveValue('500');
+  });
+
   it('validates and saves updated canonical name, category, and package size', async () => {
     renderProductDetail();
 

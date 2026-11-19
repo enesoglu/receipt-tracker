@@ -9,6 +9,7 @@ import { Card } from '../../components/ui/Card';
 import { DateText } from '../../components/ui/DateText';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
+import { formatQuantity } from '../../components/ui/format';
 import { Input } from '../../components/ui/Input';
 import { Money } from '../../components/ui/Money';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -27,8 +28,8 @@ function formatPackageSize(
   sizeUnit: string | null,
 ): string | null {
   if (!sizeValue && !sizeUnit) return null;
-  if (sizeValue && sizeUnit) return `${sizeValue} ${sizeUnit}`;
-  return sizeValue ?? sizeUnit;
+  if (sizeValue && sizeUnit) return `${formatQuantity(sizeValue)} ${sizeUnit}`;
+  return sizeValue ? formatQuantity(sizeValue) : sizeUnit;
 }
 
 const columns: readonly TableColumn<ProductSummary>[] = [

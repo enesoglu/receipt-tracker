@@ -19,7 +19,7 @@ import { Card } from '../../components/ui/Card';
 import { DateText } from '../../components/ui/DateText';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { formatMoney } from '../../components/ui/format';
+import { formatMoney, formatQuantity } from '../../components/ui/format';
 import { Input } from '../../components/ui/Input';
 import { Money } from '../../components/ui/Money';
 import { Select } from '../../components/ui/Select';
@@ -111,7 +111,7 @@ const pointColumns: readonly TableColumn<PricePointRow>[] = [
     align: 'right',
     cell: (row) => (
       <span className="font-mono tabular-nums text-ink">
-        {row.quantity}
+        {formatQuantity(row.quantity, '')}
         {row.quantityUnit ? ` ${row.quantityUnit}` : ''}
       </span>
     ),
