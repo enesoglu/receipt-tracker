@@ -41,8 +41,9 @@ func receiptScope(userID uuid.UUID, f Filter) string {
 		IDs           []uuid.UUID
 		Status, Month string
 		Store         uuid.NullUUID
-		Search        string
-	}{ids, f.Status, f.Month, f.StoreID, f.Search})
+		Category      uuid.NullUUID
+		Group, Search string
+	}{ids, f.Status, f.Month, f.StoreID, f.CategoryID, f.Group, f.Search})
 }
 
 func cursorScope(kind string, userID uuid.UUID, filters interface{}) string {

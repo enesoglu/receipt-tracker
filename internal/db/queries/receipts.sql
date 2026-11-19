@@ -55,6 +55,30 @@ WHERE r.user_id = @user_id
  AND (cardinality(@ids::uuid[]) = 0 OR r.id = ANY(@ids::uuid[]))
  AND (@status::text = '' OR r.status = @status)
  AND (sqlc.narg(store_id)::uuid IS NULL OR r.store_id = sqlc.narg(store_id))
+ AND (sqlc.narg(category_id)::uuid IS NULL OR EXISTS (
+   SELECT 1 FROM line_items li
+   JOIN products p ON p.user_id = li.user_id AND p.id = li.product_id
+   JOIN categories c ON c.user_id = p.user_id AND c.id = p.category_id
+   WHERE li.user_id = @user_id AND li.receipt_id = r.id
+     AND li.line_total >= 0 AND c.id = sqlc.narg(category_id)::uuid))
+ AND (
+   sqlc.narg(breakdown_group)::text IS NULL OR CASE sqlc.narg(breakdown_group)::text
+     WHEN 'unallocated' THEN r.total IS NOT NULL AND r.total <> COALESCE((
+       SELECT sum(li.line_total) FROM line_items li
+       WHERE li.user_id = r.user_id AND li.receipt_id = r.id AND li.line_total IS NOT NULL), 0)
+     WHEN 'discounts' THEN EXISTS (
+       SELECT 1 FROM line_items li
+       WHERE li.user_id = r.user_id AND li.receipt_id = r.id AND li.line_total < 0)
+     WHEN 'uncategorised' THEN EXISTS (
+       SELECT 1 FROM line_items li
+       WHERE li.user_id = r.user_id AND li.receipt_id = r.id AND li.line_total >= 0
+         AND NOT EXISTS (
+           SELECT 1 FROM products p
+           JOIN categories c ON c.user_id = p.user_id AND c.id = p.category_id
+           WHERE p.user_id = li.user_id AND p.id = li.product_id))
+     WHEN 'no-store' THEN r.store_id IS NULL
+     ELSE FALSE
+   END)
  AND (sqlc.narg(month_start)::date IS NULL OR (r.purchased_on >= sqlc.narg(month_start) AND r.purchased_on < sqlc.narg(month_end)))
  AND (@search::text = '' OR strpos(lower(r.title),lower(@search)) > 0 OR strpos(lower(s.name),lower(@search)) > 0
   OR EXISTS (SELECT 1 FROM line_items l WHERE l.user_id = @user_id AND l.receipt_id = r.id AND strpos(lower(l.name),lower(@search)) > 0))

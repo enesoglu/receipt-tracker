@@ -81,6 +81,15 @@ func (h receiptsHandlers) ListReceipts(ctx context.Context, request ListReceipts
 	if p.StoreId != nil {
 		f.StoreID = uuid.NullUUID{UUID: *p.StoreId, Valid: true}
 	}
+	if p.CategoryId != nil {
+		f.CategoryID = uuid.NullUUID{UUID: *p.CategoryId, Valid: true}
+	}
+	if p.Group != nil {
+		if *p.Group == "" {
+			return nil, apperr.New(apperr.Invalid, "invalid receipt group").WithField("group", "must be one of unallocated, discounts, uncategorised, no-store")
+		}
+		f.Group = string(*p.Group)
+	}
 	if p.Q != nil {
 		if *p.Q == "" {
 			return nil, apperr.New(apperr.Invalid, "search must not be empty")

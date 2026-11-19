@@ -33,13 +33,15 @@ type (
 	}
 	// Filter selects receipts in purchase-date order.
 	Filter struct {
-		IDs     []uuid.UUID
-		Status  string
-		Month   string
-		StoreID uuid.NullUUID
-		Search  string
-		Limit   int
-		Cursor  string
+		IDs        []uuid.UUID
+		Status     string
+		Month      string
+		StoreID    uuid.NullUUID
+		CategoryID uuid.NullUUID
+		Group      string
+		Search     string
+		Limit      int
+		Cursor     string
 	}
 	// Page is one page of receipt summaries.
 	Page struct {
@@ -125,8 +127,14 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID, f Filter) (Page, e
 	if f.Status != "" && !validStatus(f.Status) {
 		return Page{}, apperr.New(apperr.Invalid, "invalid receipt status")
 	}
+	if f.Group != "" && !validGroup(f.Group) {
+		return Page{}, apperr.New(apperr.Invalid, "invalid receipt group").WithField("group", "must be one of unallocated, discounts, uncategorised, no-store")
+	}
 	f.Search = strings.TrimSpace(f.Search)
-	p := sqlc.PageReceiptIDsParams{UserID: userID, Ids: f.IDs, Status: f.Status, StoreID: f.StoreID, Search: f.Search, PageLimit: limit + 1}
+	p := sqlc.PageReceiptIDsParams{UserID: userID, Ids: f.IDs, Status: f.Status, StoreID: f.StoreID, CategoryID: f.CategoryID, Search: f.Search, PageLimit: limit + 1}
+	if f.Group != "" {
+		p.BreakdownGroup = &f.Group
+	}
 	if p.Ids == nil {
 		p.Ids = []uuid.UUID{}
 	}
@@ -177,6 +185,14 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID, f Filter) (Page, e
 func validStatus(s string) bool {
 	switch s {
 	case "queued", "processing", "waiting_quota", "needs_review", "ready", "failed":
+		return true
+	}
+	return false
+}
+
+func validGroup(s string) bool {
+	switch s {
+	case "unallocated", "discounts", "uncategorised", "no-store":
 		return true
 	}
 	return false

@@ -466,6 +466,30 @@ func (e ReceiptChainCaptcha) Valid() bool {
 	}
 }
 
+// Defines values for ReceiptFilterGroup.
+const (
+	ReceiptFilterGroupDiscounts     ReceiptFilterGroup = "discounts"
+	ReceiptFilterGroupNoStore       ReceiptFilterGroup = "no-store"
+	ReceiptFilterGroupUnallocated   ReceiptFilterGroup = "unallocated"
+	ReceiptFilterGroupUncategorised ReceiptFilterGroup = "uncategorised"
+)
+
+// Valid indicates whether the value is a known member of the ReceiptFilterGroup enum.
+func (e ReceiptFilterGroup) Valid() bool {
+	switch e {
+	case ReceiptFilterGroupDiscounts:
+		return true
+	case ReceiptFilterGroupNoStore:
+		return true
+	case ReceiptFilterGroupUnallocated:
+		return true
+	case ReceiptFilterGroupUncategorised:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReceiptImageContentType.
 const (
 	ReceiptImageContentTypeImagejpeg ReceiptImageContentType = "image/jpeg"
@@ -1703,6 +1727,9 @@ type ReceiptChainField struct {
 	Value *string `json:"value"`
 }
 
+// ReceiptFilterGroup A synthetic spending-breakdown group used to filter receipts.
+type ReceiptFilterGroup string
+
 // ReceiptImage defines model for ReceiptImage.
 type ReceiptImage struct {
 	// ContentType Type of the displayable image served by `getReceiptImage`.
@@ -2285,6 +2312,19 @@ type ListReceiptsParams struct {
 
 	// StoreId Only receipts from this store.
 	StoreId *openapi_types.UUID `form:"storeId,omitempty" json:"storeId,omitempty"`
+
+	// CategoryId Only receipts with a priced line whose product belongs to this
+	// category. Negative lines are discounts and do not count. An id that
+	// is not one of your categories yields an empty page.
+	CategoryId *openapi_types.UUID `form:"categoryId,omitempty" json:"categoryId,omitempty"`
+
+	// Group Only receipts that contribute to a synthetic group of a spending
+	// breakdown in the selected month. `unallocated` matches receipts
+	// whose total is not fully covered by their lines; `discounts` matches
+	// receipts with a negative line; `uncategorised` matches receipts with
+	// a line whose product has no category; `no-store` matches receipts
+	// without a store (the store breakdown's `uncategorised` group).
+	Group *ReceiptFilterGroup `form:"group,omitempty" json:"group,omitempty"`
 
 	// Q Case-insensitive text search over the receipt title, the store name
 	// and the names of line items.
@@ -3701,6 +3741,32 @@ func (siw *ServerInterfaceWrapper) ListReceipts(w http.ResponseWriter, r *http.R
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "storeId"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "storeId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "categoryId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "categoryId", r.URL.Query(), &params.CategoryId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "categoryId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "categoryId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "group" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "group", r.URL.Query(), &params.Group, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "group"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group", Err: err})
 		}
 		return
 	}
