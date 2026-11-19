@@ -97,19 +97,22 @@ export function groupPriceHistoryByCurrency(
       }
     }
 
-    const rowByDate = new Map<string, PriceChartRow>();
+    const rowByPurchase = new Map<string, PriceChartRow>();
     for (const point of chronologicalPoints) {
       const info = getStoreSeriesId(point.store);
       const series = seriesByBucket.get(info.bucketKey);
       if (!series) continue;
 
-      let row = rowByDate.get(point.purchasedOn);
+      // One row per purchase, so two purchases on one day are both
+      // plotted instead of the later overwriting the earlier.
+      const rowKey = `${point.purchasedOn}:${point.lineItemId}`;
+      let row = rowByPurchase.get(rowKey);
       if (!row) {
         row = {
           purchasedOn: point.purchasedOn,
           dateLabel: formatDateValue(point.purchasedOn, 'date'),
         };
-        rowByDate.set(point.purchasedOn, row);
+        rowByPurchase.set(rowKey, row);
       }
 
       const numericPrice = Number(point.unitPrice);
@@ -121,7 +124,7 @@ export function groupPriceHistoryByCurrency(
     return {
       currency,
       series: Array.from(seriesByBucket.values()),
-      chartRows: Array.from(rowByDate.values()),
+      chartRows: Array.from(rowByPurchase.values()),
       stores: currencyStores,
       points: newestFirstPoints,
     };
