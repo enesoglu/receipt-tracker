@@ -103,3 +103,26 @@ SELECT * FROM user_settings WHERE user_id = @user_id FOR UPDATE;
 -- name: UpdateOwnedSettings :one
 UPDATE user_settings SET default_currency = @default_currency,default_receipt_title = @default_receipt_title,updated_at = @now
 WHERE user_id = @user_id RETURNING *;
+
+-- name: ListPipelineStages :many
+-- One row per receipt whose stage was asked about, or — without ids — per
+-- receipt still working through the pipeline. Every stage is derived here:
+-- the status column, whether a raw result was already saved (processing
+-- with a saved raw is matching, without one it is extracting), and how many
+-- of this user's queued receipts are ahead. (created_at, id) is a total
+-- order: a batch can share one timestamp.
+SELECT r.id,
+	r.status,
+	r.failure_reason,
+	EXISTS (SELECT 1 FROM extractions e
+		WHERE e.user_id = r.user_id AND e.receipt_id = r.id) AS has_extraction,
+	1 + (SELECT count(*) FROM receipts ahead
+		WHERE ahead.user_id = r.user_id
+			AND ahead.status = 'queued'
+			AND (ahead.created_at, ahead.id) < (r.created_at, r.id)) AS queue_position
+FROM receipts r
+WHERE r.user_id = @user_id
+	AND (cardinality(@ids::uuid[]) = 0 OR r.id = ANY(@ids::uuid[]))
+	AND (cardinality(@ids::uuid[]) > 0 OR r.status IN ('queued', 'processing', 'waiting_quota'))
+ORDER BY r.created_at, r.id
+LIMIT 100;

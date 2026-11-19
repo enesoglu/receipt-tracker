@@ -324,6 +324,69 @@ func (q *Queries) InsertReviewLine(ctx context.Context, arg InsertReviewLinePara
 	return i, err
 }
 
+const listPipelineStages = `-- name: ListPipelineStages :many
+SELECT r.id,
+	r.status,
+	r.failure_reason,
+	EXISTS (SELECT 1 FROM extractions e
+		WHERE e.user_id = r.user_id AND e.receipt_id = r.id) AS has_extraction,
+	1 + (SELECT count(*) FROM receipts ahead
+		WHERE ahead.user_id = r.user_id
+			AND ahead.status = 'queued'
+			AND (ahead.created_at, ahead.id) < (r.created_at, r.id)) AS queue_position
+FROM receipts r
+WHERE r.user_id = $1
+	AND (cardinality($2::uuid[]) = 0 OR r.id = ANY($2::uuid[]))
+	AND (cardinality($2::uuid[]) > 0 OR r.status IN ('queued', 'processing', 'waiting_quota'))
+ORDER BY r.created_at, r.id
+LIMIT 100
+`
+
+type ListPipelineStagesParams struct {
+	UserID uuid.UUID
+	Ids    []uuid.UUID
+}
+
+type ListPipelineStagesRow struct {
+	ID            uuid.UUID
+	Status        string
+	FailureReason *string
+	HasExtraction bool
+	QueuePosition int32
+}
+
+// One row per receipt whose stage was asked about, or — without ids — per
+// receipt still working through the pipeline. Every stage is derived here:
+// the status column, whether a raw result was already saved (processing
+// with a saved raw is matching, without one it is extracting), and how many
+// of this user's queued receipts are ahead. (created_at, id) is a total
+// order: a batch can share one timestamp.
+func (q *Queries) ListPipelineStages(ctx context.Context, arg ListPipelineStagesParams) ([]ListPipelineStagesRow, error) {
+	rows, err := q.db.Query(ctx, listPipelineStages, arg.UserID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPipelineStagesRow{}
+	for rows.Next() {
+		var i ListPipelineStagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.FailureReason,
+			&i.HasExtraction,
+			&i.QueuePosition,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listReceiptImages = `-- name: ListReceiptImages :many
 SELECT id, user_id, receipt_id, position, sha256, content_type, size_bytes, storage_backend, storage_ref, original_ref, original_content_type, original_size_bytes, created_at FROM receipt_images WHERE user_id = $1 AND receipt_id = $2 ORDER BY position
 `
