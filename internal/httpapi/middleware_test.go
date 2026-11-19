@@ -193,6 +193,8 @@ func TestCrossOrigin_RejectsStateChangesFromOtherOrigins(t *testing.T) {
 		{name: "cross-site delete", method: http.MethodDelete, headers: map[string]string{"Sec-Fetch-Site": "cross-site"}},
 		{name: "post with a foreign origin", method: http.MethodPost, headers: map[string]string{"Origin": "https://evil.example"}},
 		{name: "post with the own origin", method: http.MethodPost, headers: map[string]string{"Origin": "https://receipt.example.com"}, allowed: true},
+		// What a same-origin service worker's upload request carries.
+		{name: "service worker upload", method: http.MethodPost, headers: map[string]string{"Origin": "https://receipt.example.com", "Sec-Fetch-Site": "same-origin"}, allowed: true},
 		{name: "post from a non-browser client", method: http.MethodPost, allowed: true},
 		{name: "cross-site get", method: http.MethodGet, headers: map[string]string{"Sec-Fetch-Site": "cross-site"}, allowed: true},
 	}

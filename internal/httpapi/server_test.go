@@ -74,7 +74,7 @@ func TestHandler_SetsSecurityHeadersOnEveryResponse(t *testing.T) {
 				"X-Content-Type-Options":  "nosniff",
 				"X-Frame-Options":         "DENY",
 				"Referrer-Policy":         "no-referrer",
-				"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+				"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
 			} {
 				if got := response.Header().Get(name); got != want {
 					t.Errorf("%s = %q, want %q", name, got, want)
