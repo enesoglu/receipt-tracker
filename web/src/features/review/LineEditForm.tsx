@@ -4,14 +4,28 @@ import { type LineEditValues } from './review-form-values';
 
 interface LineEditFormProps {
   values: LineEditValues;
+  fieldErrors: Record<string, string>;
   isSubmitting: boolean;
   submitLabel: string;
   onChange: (next: LineEditValues) => void;
   onSubmit: () => void;
 }
 
+function pickFieldError(
+  fieldErrors: Record<string, string>,
+  ...keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    if (fieldErrors[key]) {
+      return fieldErrors[key];
+    }
+  }
+  return undefined;
+}
+
 export function LineEditForm({
   values,
+  fieldErrors,
   isSubmitting,
   submitLabel,
   onChange,
@@ -31,6 +45,7 @@ export function LineEditForm({
             label="Item name"
             required
             value={values.name}
+            error={pickFieldError(fieldErrors, 'name')}
             onChange={(event) =>
               onChange({ ...values, name: event.target.value })
             }
@@ -39,6 +54,7 @@ export function LineEditForm({
         <Input
           label="Quantity"
           value={values.quantity}
+          error={pickFieldError(fieldErrors, 'quantity')}
           onChange={(event) =>
             onChange({ ...values, quantity: event.target.value })
           }
@@ -46,6 +62,7 @@ export function LineEditForm({
         <Input
           label="Unit"
           value={values.quantityUnit}
+          error={pickFieldError(fieldErrors, 'quantityUnit')}
           onChange={(event) =>
             onChange({ ...values, quantityUnit: event.target.value })
           }
@@ -53,6 +70,7 @@ export function LineEditForm({
         <Input
           label="Unit price"
           value={values.unitPrice}
+          error={pickFieldError(fieldErrors, 'unitPrice')}
           onChange={(event) =>
             onChange({ ...values, unitPrice: event.target.value })
           }
@@ -61,6 +79,7 @@ export function LineEditForm({
           label="Line total"
           required
           value={values.lineTotal}
+          error={pickFieldError(fieldErrors, 'lineTotal')}
           onChange={(event) =>
             onChange({ ...values, lineTotal: event.target.value })
           }
@@ -69,6 +88,7 @@ export function LineEditForm({
           <Input
             label="Product code"
             value={values.productCode}
+            error={pickFieldError(fieldErrors, 'productCode')}
             onChange={(event) =>
               onChange({ ...values, productCode: event.target.value })
             }

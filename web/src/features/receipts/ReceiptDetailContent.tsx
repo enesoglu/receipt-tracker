@@ -18,6 +18,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Input } from '../../components/ui/Input';
 import { Money } from '../../components/ui/Money';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { normaliseDecimal, validateDecimal } from '../../components/ui/decimal';
 import {
   formatReceiptStatus,
   formatReviewFlagSummary,
@@ -56,6 +57,12 @@ function toNullable(value: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** A decimal field is sent trimmed, in dot form; blank means null. */
+function toNullableAmount(value: string): string | null {
+  const normalised = normaliseDecimal(value);
+  return normalised.length > 0 ? normalised : null;
+}
+
 function toReceiptUpdate(values: ReceiptFormValues): ReceiptUpdate {
   return {
     title: values.title.trim() || 'Home shopping',
@@ -63,9 +70,9 @@ function toReceiptUpdate(values: ReceiptFormValues): ReceiptUpdate {
     purchasedOn: toNullable(values.purchasedOn),
     purchasedTime: toNullable(values.purchasedTime),
     currency: values.currency.trim().toUpperCase() || 'TRY',
-    subtotal: toNullable(values.subtotal),
-    taxTotal: toNullable(values.taxTotal),
-    total: toNullable(values.total),
+    subtotal: toNullableAmount(values.subtotal),
+    taxTotal: toNullableAmount(values.taxTotal),
+    total: toNullableAmount(values.total),
   };
 }
 
@@ -128,6 +135,21 @@ export function ReceiptDetailContent({
     event.preventDefault();
     setSaveError(null);
     setSavedNotice(false);
+    const fieldErrors: Record<string, string> = {};
+    for (const field of ['subtotal', 'taxTotal', 'total'] as const) {
+      const problem = validateDecimal(formValues[field], 'money');
+      if (problem) {
+        fieldErrors[field] = problem;
+      }
+    }
+    if (Object.keys(fieldErrors).length > 0) {
+      setSaveError({
+        title: 'Bad Request',
+        message: 'Check the highlighted fields.',
+        fieldErrors,
+      });
+      return;
+    }
     try {
       const updated = await updateReceipt.mutateAsync(
         toReceiptUpdate(formValues),
@@ -393,7 +415,7 @@ export function ReceiptDetailContent({
               <div className="flex flex-col gap-1.5">
                 <Input
                   label="Purchase date"
-                  placeholder="YYYY-MM-DD"
+                  type="date"
                   value={formValues.purchasedOn}
                   error={pickFieldError(
                     fieldErrors,
@@ -412,7 +434,7 @@ export function ReceiptDetailContent({
 
               <Input
                 label="Purchase time"
-                placeholder="HH:MM"
+                type="time"
                 value={formValues.purchasedTime}
                 error={pickFieldError(
                   fieldErrors,

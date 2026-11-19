@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react';
-import { getErrorMessage } from '../../api/errors';
+import { formatApiError } from '../../api/errors';
 import { useUpdateProduct, type Product } from '../../api/products';
 import { Button } from '../../components/ui/Button';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
+import { normaliseDecimal, validateDecimal } from '../../components/ui/decimal';
 
 interface ProductEditFormProps {
   product: Product;
@@ -23,6 +24,7 @@ export function ProductEditForm({
   const [sizeUnit, setSizeUnit] = useState(product.sizeUnit ?? '');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const updateMutation = useUpdateProduct(product.id);
 
@@ -30,11 +32,12 @@ export function ProductEditForm({
     event.preventDefault();
     setValidationError(null);
     setServerError(null);
+    setFieldErrors({});
 
+    const errors: Record<string, string> = {};
     const trimmedName = canonicalName.trim();
     if (!trimmedName) {
-      setValidationError('Canonical name is required.');
-      return;
+      errors.canonicalName = 'Canonical name is required.';
     }
 
     const trimmedSizeValue = sizeValue.trim();
@@ -48,8 +51,16 @@ export function ProductEditForm({
       );
       return;
     }
-    if (trimmedSizeValue !== '' && !/^\d+(?:\.\d+)?$/.test(trimmedSizeValue)) {
-      setValidationError('Package size must be a positive decimal number.');
+    if (trimmedSizeValue !== '') {
+      const problem = validateDecimal(trimmedSizeValue, 'quantity');
+      if (problem) {
+        errors.sizeValue = problem;
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setValidationError('Check the highlighted fields.');
       return;
     }
 
@@ -57,13 +68,21 @@ export function ProductEditForm({
       await updateMutation.mutateAsync({
         canonicalName: trimmedName,
         categoryId: categoryId || null,
-        sizeValue: trimmedSizeValue || null,
+        sizeValue: trimmedSizeValue ? normaliseDecimal(trimmedSizeValue) : null,
         sizeUnit: trimmedSizeUnit || null,
       });
       onSaveNotice('Product details saved.');
     } catch (error) {
-      setServerError(getErrorMessage(error));
+      const formatted = formatApiError(error);
+      setServerError(formatted.message);
+      setFieldErrors(formatted.fieldErrors);
     }
+  }
+
+  function clearErrors() {
+    setValidationError(null);
+    setServerError(null);
+    setFieldErrors({});
   }
 
   return (
@@ -85,10 +104,10 @@ export function ProductEditForm({
         value={canonicalName}
         required
         maxLength={200}
+        error={fieldErrors.canonicalName}
         onChange={(event) => {
           setCanonicalName(event.target.value);
-          setValidationError(null);
-          setServerError(null);
+          clearErrors();
         }}
       />
 
@@ -99,7 +118,7 @@ export function ProductEditForm({
         options={categoryOptions}
         onChange={(event) => {
           setCategoryId(event.target.value);
-          setServerError(null);
+          clearErrors();
         }}
       />
 
@@ -108,10 +127,10 @@ export function ProductEditForm({
           label="Package size"
           placeholder="e.g. 1 or 350"
           value={sizeValue}
+          error={fieldErrors.sizeValue}
           onChange={(event) => {
             setSizeValue(event.target.value);
-            setValidationError(null);
-            setServerError(null);
+            clearErrors();
           }}
         />
         <Input
@@ -119,10 +138,10 @@ export function ProductEditForm({
           placeholder="e.g. l, kg, g, ml, ad"
           maxLength={20}
           value={sizeUnit}
+          error={fieldErrors.sizeUnit}
           onChange={(event) => {
             setSizeUnit(event.target.value);
-            setValidationError(null);
-            setServerError(null);
+            clearErrors();
           }}
         />
       </div>

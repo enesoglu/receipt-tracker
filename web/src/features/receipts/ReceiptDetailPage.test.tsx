@@ -223,10 +223,14 @@ describe('ReceiptDetailPage', () => {
 
     const titleInput = screen.getByLabelText(/Title/i);
     const dateInput = screen.getByLabelText(/Purchase date/i);
+    const timeInput = screen.getByLabelText(/Purchase time/i);
     const totalInput = screen.getByLabelText(/^Total/i);
 
+    expect(dateInput).toHaveAttribute('type', 'date');
+    expect(timeInput).toHaveAttribute('type', 'time');
+
     fireEvent.change(titleInput, { target: { value: 'Weekend market run' } });
-    fireEvent.change(dateInput, { target: { value: 'invalid-date' } });
+    fireEvent.change(dateInput, { target: { value: '2026-11-10' } });
     fireEvent.change(totalInput, { target: { value: '-10.00' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
@@ -240,11 +244,10 @@ describe('ReceiptDetailPage', () => {
 
     // User input stays intact after validation failure.
     expect(titleInput).toHaveValue('Weekend market run');
-    expect(dateInput).toHaveValue('invalid-date');
+    expect(dateInput).toHaveValue('2026-11-10');
     expect(totalInput).toHaveValue('-10.00');
 
     failNextSave = false;
-    fireEvent.change(dateInput, { target: { value: '2026-11-10' } });
     fireEvent.change(totalInput, { target: { value: '142.50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
 
@@ -256,6 +259,85 @@ describe('ReceiptDetailPage', () => {
       purchasedOn: '2026-11-10',
       total: '142.50',
     });
+  });
+
+  it('normalises decimal commas before saving totals', async () => {
+    let savedPayload: Record<string, unknown> | null = null;
+
+    server.use(
+      http.get('/api/v1/receipts/:receiptId', () =>
+        HttpResponse.json(mockReceipt),
+      ),
+      http.put('/api/v1/receipts/:receiptId', async ({ request }) => {
+        savedPayload = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(mockReceipt);
+      }),
+    );
+
+    renderDetailPage(mockReceipt.id);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Home shopping' }),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByLabelText('Subtotal'), {
+      target: { value: '84,5' },
+    });
+    fireEvent.change(screen.getByLabelText('Tax total'), {
+      target: { value: '10,' },
+    });
+    fireEvent.change(screen.getByLabelText(/^Total/i), {
+      target: { value: '351,9' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Receipt details saved.')).toBeInTheDocument(),
+    );
+    expect(savedPayload).toMatchObject({
+      subtotal: '84.5',
+      taxTotal: '10.',
+      total: '351.9',
+    });
+  });
+
+  it('shows the field message instead of sending a malformed amount', async () => {
+    let saves = 0;
+
+    server.use(
+      http.get('/api/v1/receipts/:receiptId', () =>
+        HttpResponse.json(mockReceipt),
+      ),
+      http.put('/api/v1/receipts/:receiptId', () => {
+        saves += 1;
+        return HttpResponse.json(mockReceipt);
+      }),
+    );
+
+    renderDetailPage(mockReceipt.id);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Home shopping' }),
+      ).toBeInTheDocument(),
+    );
+
+    const totalInput = screen.getByLabelText(/^Total/i);
+    fireEvent.change(totalInput, { target: { value: '1.234,56' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    expect(
+      await screen.findByText(
+        'enter a number with up to two decimal places, using . or , — such as 351.90',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Check the highlighted fields.'),
+    ).toBeInTheDocument();
+    expect(saves).toBe(0);
+    expect(totalInput).toHaveValue('1.234,56');
   });
 
   it('supports adding, editing with validation recovery, and deleting line items', async () => {
@@ -300,26 +382,6 @@ describe('ReceiptDetailPage', () => {
         async ({ request, params }) => {
           const body =
             (await request.json()) as components['schemas']['LineItemInput'];
-          if (body.lineTotal === 'bad') {
-            return HttpResponse.json(
-              {
-                type: 'https://receipt-tracker.example/problems/invalid',
-                title: 'Invalid line item',
-                status: 422,
-                detail: 'Line total is not a valid decimal.',
-                errors: [
-                  {
-                    field: 'lineTotal',
-                    message: 'Enter a valid decimal amount.',
-                  },
-                ],
-              },
-              {
-                status: 422,
-                headers: { 'Content-Type': 'application/problem+json' },
-              },
-            );
-          }
           receiptState = {
             ...receiptState,
             lineItems: receiptState.lineItems.map((item) =>
@@ -367,20 +429,26 @@ describe('ReceiptDetailPage', () => {
       expect(screen.getByText('Olive oil')).toBeInTheDocument(),
     );
 
-    // Inline edit preserves input on 422 and saves on valid input.
+    // Inline edit shows the message before submit and saves on valid input.
     fireEvent.click(screen.getByRole('button', { name: 'Edit Olive oil' }));
     const editTotalInput = screen.getByLabelText(/Line total/i);
     fireEvent.change(editTotalInput, { target: { value: 'bad' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save line' }));
 
-    await waitFor(() =>
-      expect(
-        screen.getByText('Enter a valid decimal amount.'),
-      ).toBeInTheDocument(),
-    );
+    expect(
+      await screen.findByText(
+        'enter a number with up to two decimal places, using . or , — such as 351.90',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Check the highlighted fields.'),
+    ).toBeInTheDocument();
     expect(editTotalInput).toHaveValue('bad');
+    expect(
+      screen.getByRole('button', { name: 'Save line' }),
+    ).toBeInTheDocument();
 
-    fireEvent.change(editTotalInput, { target: { value: '255.00' } });
+    fireEvent.change(editTotalInput, { target: { value: '255,50' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save line' }));
 
     await waitFor(() =>
