@@ -486,6 +486,35 @@ describe('UploadPage', () => {
     expect(pollCount).toBe(1);
   });
 
+  it('tracks at most the most recent hundred receipts because the endpoint caps ids', async () => {
+    const seeded = Array.from({ length: 101 }, (_, index) =>
+      makeItem({
+        id: `q-${index + 1}`,
+        fileName: `receipt-${index}.jpg`,
+        createdAt: index,
+        state: 'done',
+        receiptId: `rec-${index}`,
+        outcome: 'created',
+      }),
+    );
+    fake.queue.seed(seeded);
+
+    let receivedIds: string[] = [];
+    server.use(
+      http.get('/api/v1/pipeline', ({ request }) => {
+        const raw = new URL(request.url).searchParams.get('ids') ?? '';
+        receivedIds = raw.split(',').filter(Boolean);
+        return HttpResponse.json({ items: [] });
+      }),
+    );
+
+    renderUploadPage();
+
+    await waitFor(() => expect(receivedIds).toHaveLength(100));
+    expect(receivedIds[0]).toBe('rec-1');
+    expect(receivedIds[99]).toBe('rec-100');
+  });
+
   it('explains when uploads wait for a fresh sign-in', async () => {
     fake.queue.seed([
       makeItem({

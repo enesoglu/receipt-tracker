@@ -235,7 +235,9 @@ export function UploadPage() {
   );
   const isBusy = isSelecting || hasPendingUploads;
 
-  // Receipts whose stage the screen follows: files the queue landed.
+  // Receipts whose stage the screen follows: files the queue landed. The
+  // pipeline endpoint accepts at most 100 ids, so older receipts fall out of
+  // this window; sending more would fail the request outright.
   const trackedIds = useMemo(() => {
     const seen = new Set<string>();
     const ids: string[] = [];
