@@ -96,7 +96,11 @@ imports `httpapi`.
 
 All ids are `uuid` (`uuidv7()`), all timestamps `timestamptz` in UTC, all money
 `NUMERIC(12,2)`, quantities `NUMERIC(12,3)`. Every user-owned table carries
-`user_id` and every query filters on it.
+`user_id` and every query filters on it. Money and quantity input may use
+`.` or `,` as the decimal separator and up to two (money) or three
+(quantity) places; the API rejects anything else with a field error that
+names the field, normalises to the dot form and stores the canonical
+places. Quantities are positive on every surface, like package sizes.
 
 The pool decodes timestamps in UTC, including arrays, independently of the host
 timezone. Purchase dates and purchase times retain their calendar/wall-clock

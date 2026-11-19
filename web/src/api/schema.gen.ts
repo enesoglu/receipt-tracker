@@ -825,18 +825,24 @@ export interface components {
       field: string;
       /**
        * @description What is wrong with it.
-       * @example must be a decimal amount with two places
+       * @example enter a number with up to two decimal places, using . or , — such as 351.90
        */
       message: string;
     };
     /**
-     * @description An amount of money as a decimal string with exactly two places, in the
-     *     currency of its receipt. Negative amounts are discounts or refunds.
+     * @description An amount of money as a decimal string, in the currency of its
+     *     receipt. Input accepts up to two decimal places with `.` or `,` as
+     *     the separator; `351,9`, `351.9`, `.5` and `351` are all the same
+     *     amount. Storage and responses use exactly two places with a dot.
+     *     Negative amounts are discounts or refunds.
      * @example 84.50
      */
     Money: string;
     /**
-     * @description A quantity or size as a decimal string with up to three places.
+     * @description A quantity or package size as a positive decimal string. Input
+     *     accepts up to three decimal places with `.` or `,` as the separator;
+     *     `1,25`, `1.25` and `.5` are all the same value. Storage and
+     *     responses use exactly three places with a dot.
      * @example 1.250
      */
     Quantity: string;
