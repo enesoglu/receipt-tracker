@@ -23,6 +23,23 @@ describe('Money', () => {
     expect(screen.getByTestId('empty')).toHaveTextContent('—');
   });
 
+  it('keeps two stored decimals regardless of the currency minor unit', () => {
+    render(
+      <div>
+        <div data-testid="jpy">
+          <Money value="84.50" currency="JPY" />
+        </div>
+        <div data-testid="kwd">
+          <Money value="1234.56" currency="KWD" />
+        </div>
+      </div>,
+    );
+
+    expect(screen.getByTestId('jpy')).toHaveTextContent(/84\.50/);
+    expect(screen.getByTestId('kwd')).toHaveTextContent(/1,234\.56(?!\d)/);
+    expect(screen.getByTestId('kwd')).not.toHaveTextContent(/1,234\.560/);
+  });
+
   it('handles unknown currency codes and malformed values safely', () => {
     render(
       <div>
