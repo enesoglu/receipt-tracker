@@ -93,6 +93,43 @@ func (q *Queries) DeleteReviewLine(ctx context.Context, arg DeleteReviewLinePara
 	return err
 }
 
+const fillReceiptIdentity = `-- name: FillReceiptIdentity :execrows
+UPDATE receipts SET
+    invoice_number = COALESCE(invoice_number, $1::text),
+    ettn = COALESCE(ettn, $2::uuid),
+    seller_tax_number = COALESCE(seller_tax_number, $3::text)
+WHERE user_id = $4 AND id = $5
+    AND ((invoice_number IS NULL AND $1::text IS NOT NULL)
+        OR (ettn IS NULL AND $2::uuid IS NOT NULL)
+        OR (seller_tax_number IS NULL AND $3::text IS NOT NULL))
+`
+
+type FillReceiptIdentityParams struct {
+	InvoiceNumber   *string
+	Ettn            uuid.NullUUID
+	SellerTaxNumber *string
+	UserID          uuid.UUID
+	ReceiptID       uuid.UUID
+}
+
+// FillReceiptIdentity fills the identity columns that are still unset and
+// touches nothing else on the receipt: a user-corrected value survives, and
+// a receipt that gains no value matches no rows, so the caller can count it
+// as skipped.
+func (q *Queries) FillReceiptIdentity(ctx context.Context, arg FillReceiptIdentityParams) (int64, error) {
+	result, err := q.db.Exec(ctx, fillReceiptIdentity,
+		arg.InvoiceNumber,
+		arg.Ettn,
+		arg.SellerTaxNumber,
+		arg.UserID,
+		arg.ReceiptID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const findDuplicateReceipts = `-- name: FindDuplicateReceipts :many
 SELECT id FROM receipts WHERE user_id = $1 AND id <> $2
  AND store_id = $3 AND purchased_on = $4 AND total = $5 ORDER BY id LIMIT 1

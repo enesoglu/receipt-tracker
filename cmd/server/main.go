@@ -107,7 +107,9 @@ func run(logger *slog.Logger) error {
 	if destination != nil {
 		backups = backup.New(destination, backup.NewPostgresLock(pool, logger), logger, time.Now, backup.Options{DatabaseURL: cfg.DatabaseURL.Reveal(), HeartbeatURL: cfg.Backup.HeartbeatURL.Reveal()})
 	}
-	if len(os.Args) > 1 {
+	// The backfill-identity pass needs the parsers the receipt service is
+	// built with, so it is dispatched after that construction below, not here.
+	if len(os.Args) > 1 && os.Args[1] != "backfill-identity" {
 		if os.Args[1] == "oauth" {
 			return oauth.CLI(ctx, os.Args[2:], os.Stdout)
 		}
@@ -137,6 +139,14 @@ func run(logger *slog.Logger) error {
 		}
 	}
 	receiptService := receipts.New(pool, time.Now, receipts.Options{Images: images, Parsers: map[string]receipts.ResultParser{extract.ProviderAzure: &azure.Client{}, extract.ProviderFake: fake.New(nil)}})
+	if len(os.Args) > 1 && os.Args[1] == "backfill-identity" {
+		summary, err := receiptService.BackfillIdentity(ctx)
+		if err != nil {
+			return fmt.Errorf("backfill identity: %w", err)
+		}
+		logger.Info("identity backfill complete", "scanned", summary.Scanned, "filled", summary.Filled, "skipped", summary.Skipped)
+		return nil
+	}
 	// Handlers are registered before the worker starts reading them.
 	worker.Register(jobs.KindExtractReceipt, extract.NewJob(pool, images, extractor, usage, receiptService, logger, time.Now))
 	driveDone := make(chan struct{})

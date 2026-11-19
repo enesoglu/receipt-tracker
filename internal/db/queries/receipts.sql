@@ -79,6 +79,20 @@ UPDATE receipts SET title = @title, store_id = sqlc.narg(store_id), purchased_on
  seller_tax_number = sqlc.narg(seller_tax_number), updated_at = @now
 WHERE user_id = @user_id AND id = @receipt_id;
 
+-- FillReceiptIdentity fills the identity columns that are still unset and
+-- touches nothing else on the receipt: a user-corrected value survives, and
+-- a receipt that gains no value matches no rows, so the caller can count it
+-- as skipped.
+-- name: FillReceiptIdentity :execrows
+UPDATE receipts SET
+    invoice_number = COALESCE(invoice_number, sqlc.narg(invoice_number)::text),
+    ettn = COALESCE(ettn, sqlc.narg(ettn)::uuid),
+    seller_tax_number = COALESCE(seller_tax_number, sqlc.narg(seller_tax_number)::text)
+WHERE user_id = @user_id AND id = @receipt_id
+    AND ((invoice_number IS NULL AND sqlc.narg(invoice_number)::text IS NOT NULL)
+        OR (ettn IS NULL AND sqlc.narg(ettn)::uuid IS NOT NULL)
+        OR (seller_tax_number IS NULL AND sqlc.narg(seller_tax_number)::text IS NOT NULL));
+
 -- name: UpdateReviewLine :one
 UPDATE line_items SET name = @name, quantity = sqlc.narg(quantity), quantity_unit = sqlc.narg(quantity_unit),
  unit_price = sqlc.narg(unit_price), line_total = @line_total, product_code = sqlc.narg(product_code),

@@ -43,7 +43,7 @@ Built application with synthetic data:
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md): design, ownership, matching and integrations.
-- [Operations](docs/OPERATIONS.md): production deployment, Google setup, MCP and recovery.
+- [Operations](docs/OPERATIONS.md): production deployment, Google setup, MCP, recovery and the post-deploy identity backfill.
 - [Hardening review](docs/HARDENING.md) and [isolation audit](docs/ISOLATION-AUDIT.md).
 - [Resource measurements and final memory limits](docs/RESOURCES.md).
 - [Changelog](CHANGELOG.md) and [configuration names](.env.example).
