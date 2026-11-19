@@ -12,6 +12,12 @@ SELECT * FROM review_flags WHERE user_id = @user_id AND receipt_id = @receipt_id
 UPDATE review_flags SET resolved_at = @now, resolution = @resolution
 WHERE user_id = @user_id AND id = @flag_id AND resolved_at IS NULL;
 
+-- An accepted or confirmed flag whose cause disappears stops suppressing that
+-- cause, so an edit that brings the cause back raises a fresh flag.
+-- name: SupersedeAcceptedReviewFlag :exec
+UPDATE review_flags SET resolution = 'superseded'
+WHERE user_id = @user_id AND id = @flag_id AND resolution IN ('accepted', 'confirmed');
+
 -- name: RestoreReviewFlag :exec
 INSERT INTO review_flags (id,user_id,receipt_id,line_item_id,kind,detail,created_at,resolved_at,resolution)
 VALUES (@id,@user_id,@receipt_id,sqlc.narg(line_item_id),@kind,@detail,@created_at,sqlc.narg(resolved_at),sqlc.narg(resolution));

@@ -257,3 +257,20 @@ func (q *Queries) RestoreReviewFlag(ctx context.Context, arg RestoreReviewFlagPa
 	)
 	return err
 }
+
+const supersedeAcceptedReviewFlag = `-- name: SupersedeAcceptedReviewFlag :exec
+UPDATE review_flags SET resolution = 'superseded'
+WHERE user_id = $1 AND id = $2 AND resolution IN ('accepted', 'confirmed')
+`
+
+type SupersedeAcceptedReviewFlagParams struct {
+	UserID uuid.UUID
+	FlagID uuid.UUID
+}
+
+// An accepted or confirmed flag whose cause disappears stops suppressing that
+// cause, so an edit that brings the cause back raises a fresh flag.
+func (q *Queries) SupersedeAcceptedReviewFlag(ctx context.Context, arg SupersedeAcceptedReviewFlagParams) error {
+	_, err := q.db.Exec(ctx, supersedeAcceptedReviewFlag, arg.UserID, arg.FlagID)
+	return err
+}

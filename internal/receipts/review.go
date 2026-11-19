@@ -50,10 +50,20 @@ func (s *Service) syncFlags(ctx context.Context, q *unit, userID, receiptID uuid
 	}
 	if !restore {
 		for key, old := range existing {
-			if old.ResolvedAt == nil && !wanted[key] {
+			if wanted[key] {
+				continue
+			}
+			if old.ResolvedAt == nil {
 				if err := s.closeFlag(ctx, q, userID, old.ID, "superseded"); err != nil {
 					return err
 				}
+				continue
+			}
+			// An accepted or confirmed flag is no longer a live cause once
+			// the data changes. Mark it superseded so the same cause can
+			// raise a fresh flag if it comes back.
+			if err := q.SupersedeAcceptedReviewFlag(ctx, sqlc.SupersedeAcceptedReviewFlagParams{UserID: userID, FlagID: old.ID}); err != nil {
+				return err
 			}
 		}
 	}
