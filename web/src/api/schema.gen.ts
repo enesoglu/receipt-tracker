@@ -591,11 +591,18 @@ export interface paths {
     };
     /**
      * List stores
-     * @description Stores ordered by name. Stores are created when a receipt names them.
+     * @description Stores ordered by name. A store is created when a receipt names it, or by hand.
      */
     get: operations['listStores'];
     put?: never;
-    post?: never;
+    /**
+     * Create a store
+     * @description Creates a store by hand, with no receipts and no names; the raw
+     *     names arrive as receipts name the store. `vkn` stays `null` until a
+     *     receipt resolves one. The name is trimmed; `409` when the user
+     *     already has a store with that name.
+     */
+    post: operations['createStore'];
     delete?: never;
     options?: never;
     head?: never;
@@ -615,13 +622,58 @@ export interface paths {
       };
       cookie?: never;
     };
-    get?: never;
+    /**
+     * Get a store
+     * @description The store with every raw name it has been seen under and the branch
+     *     names printed on its receipts, both read-only. A store has few of
+     *     either, so nothing is paginated.
+     */
+    get: operations['getStore'];
     /**
      * Rename a store
      * @description Answers `409` when the user already has a store with that name.
      */
     put: operations['updateStore'];
     post?: never;
+    /**
+     * Delete a store
+     * @description Deletes a store without receipts, together with the product names,
+     *     store codes and rejections bound to it. A store with receipts
+     *     answers `409` with their count; merge it instead.
+     */
+    delete: operations['deleteStore'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/stores/{storeId}/merge': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a store.
+         * @example 0193a1b2-0000-7000-8000-000000000010
+         */
+        storeId: components['parameters']['StoreId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Merge another store into this one
+     * @description Moves the receipts, raw names, store codes and rejections of the
+     *     source store to the store in the path and deletes the source. Raw
+     *     names both stores were seen under are combined. The store in the
+     *     path keeps its tax number and adopts the source's when it has
+     *     none; two different tax numbers answer `409`, because two legal
+     *     entities should not silently become one. A merge cannot be undone;
+     *     it is recorded in the audit log. Merging a store into itself is a
+     *     `400`.
+     */
+    post: operations['mergeStores'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1921,9 +1973,45 @@ export interface components {
       name: string;
       /** @description Number of receipts from this store. */
       receiptCount: number;
+      /** @description The seller tax number the store resolved from, or `null`. */
+      vkn: string | null;
+      /** @description Number of raw names the store has been seen under. */
+      aliasCount: number;
+    };
+    StoreCreate: {
+      name: string;
     };
     StoreUpdate: {
       name: string;
+    };
+    StoreAlias: {
+      /** @description The store's name as the receipt printed it. */
+      rawName: string;
+      /** @description Times a receipt showed this name. */
+      seenCount: number;
+      /** Format: date-time */
+      lastSeenAt: string;
+    };
+    StoreBranch: {
+      /** @description A branch name printed on a receipt of this store. */
+      name: string;
+      /** @description Number of the store's receipts printing it. */
+      receiptCount: number;
+    };
+    /**
+     * @description The store with every raw name it was seen under and the branch
+     *     names its receipts printed, both ordered by name.
+     */
+    StoreDetail: components['schemas']['Store'] & {
+      aliases: components['schemas']['StoreAlias'][];
+      branches: components['schemas']['StoreBranch'][];
+    };
+    StoreMerge: {
+      /**
+       * Format: uuid
+       * @description The store that is merged into the one in the path and then deleted.
+       */
+      sourceId: string;
     };
     StorePage: {
       items: components['schemas']['Store'][];
@@ -3110,6 +3198,64 @@ export interface operations {
       default: components['responses']['Error'];
     };
   };
+  createStore: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StoreCreate'];
+      };
+    };
+    responses: {
+      /** @description The store, with no receipts and no aliases. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Store'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthorized'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  getStore: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a store.
+         * @example 0193a1b2-0000-7000-8000-000000000010
+         */
+        storeId: components['parameters']['StoreId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The store with its aliases and branches. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StoreDetail'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthorized'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
   updateStore: {
     parameters: {
       query?: never;
@@ -3136,6 +3282,70 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Store'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthorized'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  deleteStore: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a store.
+         * @example 0193a1b2-0000-7000-8000-000000000010
+         */
+        storeId: components['parameters']['StoreId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The store is gone. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthorized'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  mergeStores: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a store.
+         * @example 0193a1b2-0000-7000-8000-000000000010
+         */
+        storeId: components['parameters']['StoreId'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['StoreMerge'];
+      };
+    };
+    responses: {
+      /** @description The store in the path after the merge. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['StoreDetail'];
         };
       };
       400: components['responses']['BadRequest'];

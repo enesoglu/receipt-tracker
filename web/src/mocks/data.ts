@@ -500,11 +500,15 @@ export const mockStorePage: components['schemas']['StorePage'] = {
       id: '0193a1b2-0000-7000-8000-000000000011',
       name: 'Corner Shop',
       receiptCount: 3,
+      vkn: null,
+      aliasCount: 0,
     },
     {
       id: '0193a1b2-0000-7000-8000-000000000010',
       name: 'Example Market',
       receiptCount: 14,
+      vkn: '1234567890',
+      aliasCount: 2,
     },
   ],
   nextCursor: null,
@@ -514,6 +518,8 @@ export const mockStore: components['schemas']['Store'] = {
   id: '0193a1b2-0000-7000-8000-000000000010',
   name: 'Example Market',
   receiptCount: 14,
+  vkn: '1234567890',
+  aliasCount: 2,
 };
 
 export const mockCategoryPage: components['schemas']['CategoryPage'] = {

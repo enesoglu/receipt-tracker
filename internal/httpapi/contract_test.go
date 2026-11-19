@@ -90,7 +90,7 @@ func plannedOperations() map[string][]string {
 		"products": {
 			"getProduct", "getProductPriceHistory", "listProducts", "mergeProducts", "splitProduct", "updateProduct",
 		},
-		"stores":     {"listStores", "updateStore"},
+		"stores":     {"createStore", "deleteStore", "getStore", "listStores", "mergeStores", "updateStore"},
 		"categories": {"createCategory", "deleteCategory", "listCategories", "updateCategory"},
 		"reports":    {"getMonthBreakdown", "getMonthlySpending"},
 		"settings":   {"getSettings", "getUsage", "updateSettings"},

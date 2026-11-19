@@ -73,15 +73,23 @@ func (s *Service) transaction(ctx context.Context, fn func(*sqlc.Queries) error)
 	return nil
 }
 
-// audit records what a person did to a store. before and after are the
-// store rows as the change saw them; the detail must explain the change
-// on its own, because the rows it describes may be gone later.
+// audit records what a person did to a store as the store before and
+// after the change. before and after are the store rows as the change saw
+// them; the detail must explain the change on its own, because the rows
+// it describes may be gone later.
 func (s *Service) audit(ctx context.Context, q *sqlc.Queries, userID, storeID uuid.UUID, action string, before, after any) error {
-	detail, err := json.Marshal(map[string]interface{}{"before": before, "after": after})
+	return s.auditDetail(ctx, q, userID, storeID, action, map[string]any{"before": before, "after": after})
+}
+
+// auditDetail records what a person did to a store with a detail the
+// caller built. A merge adds the source it folded in beside before and
+// after, because the source row no longer exists to be read.
+func (s *Service) auditDetail(ctx context.Context, q *sqlc.Queries, userID, storeID uuid.UUID, action string, detail map[string]any) error {
+	encoded, err := json.Marshal(detail)
 	if err != nil {
 		return fmt.Errorf("encode store audit: %w", err)
 	}
-	if err := q.WriteStoreAudit(ctx, sqlc.WriteStoreAuditParams{UserID: userID, EntityID: storeID, Action: action, Detail: detail, Now: s.now().UTC()}); err != nil {
+	if err := q.WriteStoreAudit(ctx, sqlc.WriteStoreAuditParams{UserID: userID, EntityID: storeID, Action: action, Detail: encoded, Now: s.now().UTC()}); err != nil {
 		return fmt.Errorf("write store audit: %w", err)
 	}
 	return nil

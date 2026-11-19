@@ -12,11 +12,15 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/matching"
 )
 
-// Store is one of the user's stores with the number of receipts using it.
+// Store is one of the user's stores with the number of receipts using
+// it, the tax number it resolved from and the number of raw names it was
+// seen under.
 type Store struct {
-	ID    uuid.UUID
-	Name  string
-	Count int
+	ID         uuid.UUID
+	Name       string
+	Count      int
+	VKN        *string
+	AliasCount int
 }
 
 // Page is a cursor page of stores.
@@ -52,7 +56,7 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID, limit int, cursor 
 		rows = rows[:size]
 	}
 	for _, row := range rows {
-		page.Items = append(page.Items, Store{ID: row.ID, Name: row.Name, Count: int(row.ReceiptCount)})
+		page.Items = append(page.Items, Store{ID: row.ID, Name: row.Name, Count: int(row.ReceiptCount), VKN: row.Vkn, AliasCount: int(row.AliasCount)})
 	}
 	if more {
 		last := rows[len(rows)-1]
@@ -82,7 +86,11 @@ func (s *Service) Rename(ctx context.Context, userID, storeID uuid.UUID, name st
 		if err != nil {
 			return err
 		}
-		result = Store{ID: after.ID, Name: after.Name, Count: int(count)}
+		names, err := q.CountStoreAliases(ctx, sqlc.CountStoreAliasesParams{UserID: userID, StoreID: storeID})
+		if err != nil {
+			return err
+		}
+		result = Store{ID: after.ID, Name: after.Name, Count: int(count), VKN: after.Vkn, AliasCount: int(names)}
 		return s.audit(ctx, q, userID, storeID, "updated", before, after)
 	})
 	return result, err

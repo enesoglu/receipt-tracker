@@ -45,6 +45,10 @@ transport test; the E2E test validates its unconfigured and foreign-user errors.
 | splitProduct           | TestProducts_IsolatesSplit                                     | 404 for foreign product or alias            |
 | listStores             | TestStores_ListRenameConflictAndIsolation                      | Own stores only                             |
 | updateStore            | TestStores_ListRenameConflictAndIsolation                      | 404                                         |
+| createStore            | TestStores_CreateDetailMergeDeleteAndIsolation                | Creates only for current user               |
+| getStore               | TestStores_CreateDetailMergeDeleteAndIsolation                | 404                                         |
+| mergeStores            | TestStores_CreateDetailMergeDeleteAndIsolation                | 404 for either foreign participant          |
+| deleteStore            | TestStores_CreateDetailMergeDeleteAndIsolation                | 404                                         |
 | listCategories         | TestCategories_CRUDPagingCountsAndIsolation                    | Own seeded/custom categories only           |
 | createCategory         | TestCategories_CRUDPagingCountsAndIsolation                    | Creates only for current user               |
 | updateCategory         | TestCategories_CRUDPagingCountsAndIsolation                    | 404                                         |
