@@ -29,12 +29,14 @@ SELECT * FROM products WHERE user_id = @user_id AND id = @product_id;
 -- name: RememberReviewAlias :exec
 INSERT INTO product_aliases (user_id, product_id, raw_name, normalized_name, store_id, last_seen_at, created_at)
 VALUES (@user_id, @product_id, @raw_name, @normalized_name, sqlc.narg(store_id), @now, @now)
-ON CONFLICT (product_id, normalized_name, store_id) DO NOTHING;
+ON CONFLICT (product_id, normalized_name, store_id) DO UPDATE
+SET seen_count = product_aliases.seen_count + 1, last_seen_at = @now;
 
 -- name: RememberReviewCode :exec
 INSERT INTO product_codes (user_id, product_id, code, kind, store_id, created_at)
 VALUES (@user_id, @product_id, @code, @kind, sqlc.narg(store_id), @now)
-ON CONFLICT (product_id, code, kind, store_id) DO NOTHING;
+ON CONFLICT (product_id, code, kind, store_id) DO UPDATE
+SET seen_count = product_codes.seen_count + 1;
 
 -- name: FindDuplicateReceipts :many
 SELECT id FROM receipts WHERE user_id = @user_id AND id <> @receipt_id

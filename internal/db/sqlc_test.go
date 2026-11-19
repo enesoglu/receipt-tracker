@@ -1,6 +1,7 @@
 package db_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -107,5 +108,114 @@ func TestGeneratedTypes_RoundTripThroughPostgres(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantLine, line); diff != "" {
 		t.Errorf("line item mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// RememberReviewAlias and RememberReviewCode are called on every review
+// sighting, so a repeated name or code must grow its seen count and, for an
+// alias, move its last-seen time forward.
+func TestRememberReview_RepeatedSightingGrowsSeenCount(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := t.Context()
+	q := sqlc.New(pool)
+
+	user, err := q.CreateAuthUser(ctx, sqlc.CreateAuthUserParams{
+		GoogleSub: uuid.NewString(), Email: "synthetic@example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	product, err := q.CreateReviewProduct(ctx, sqlc.CreateReviewProductParams{
+		UserID: user.ID, CanonicalName: "BREAD",
+		Now: time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	second := first.Add(3 * time.Hour)
+
+	tests := []struct {
+		name     string
+		remember func(now time.Time) error
+		read     func() (seen int32, lastSeen time.Time, err error)
+		hasTime  bool
+	}{
+		{
+			name: "alias",
+			remember: func(now time.Time) error {
+				return q.RememberReviewAlias(ctx, sqlc.RememberReviewAliasParams{
+					UserID: user.ID, ProductID: product.ID,
+					RawName: "EKMEK", NormalizedName: "ekmek", Now: now,
+				})
+			},
+			read: func() (int32, time.Time, error) {
+				rows, err := q.ListProductAliases(ctx, sqlc.ListProductAliasesParams{
+					UserID: user.ID, ProductID: product.ID,
+				})
+				if err != nil {
+					return 0, time.Time{}, err
+				}
+				if len(rows) != 1 {
+					return 0, time.Time{}, fmt.Errorf("aliases = %d, want 1", len(rows))
+				}
+				return rows[0].ProductAlias.SeenCount, rows[0].ProductAlias.LastSeenAt, nil
+			},
+			hasTime: true,
+		},
+		{
+			name: "code",
+			remember: func(now time.Time) error {
+				return q.RememberReviewCode(ctx, sqlc.RememberReviewCodeParams{
+					UserID: user.ID, ProductID: product.ID,
+					Code: "76543212", Kind: "gtin", Now: now,
+				})
+			},
+			read: func() (int32, time.Time, error) {
+				rows, err := q.ListProductCodes(ctx, sqlc.ListProductCodesParams{
+					UserID: user.ID, ProductID: product.ID,
+				})
+				if err != nil {
+					return 0, time.Time{}, err
+				}
+				if len(rows) != 1 {
+					return 0, time.Time{}, fmt.Errorf("codes = %d, want 1", len(rows))
+				}
+				return rows[0].ProductCode.SeenCount, time.Time{}, nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.remember(first); err != nil {
+				t.Fatal(err)
+			}
+			seen, lastSeen, err := tt.read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if seen != 1 {
+				t.Fatalf("after first sighting seen_count = %d, want 1", seen)
+			}
+			if tt.hasTime && !lastSeen.Equal(first) {
+				t.Fatalf("after first sighting last_seen_at = %v, want %v", lastSeen, first)
+			}
+
+			if err := tt.remember(second); err != nil {
+				t.Fatal(err)
+			}
+			seen, lastSeen, err = tt.read()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if seen != 2 {
+				t.Errorf("after second sighting seen_count = %d, want 2", seen)
+			}
+			if tt.hasTime && !lastSeen.Equal(second) {
+				t.Errorf("after second sighting last_seen_at = %v, want %v", lastSeen, second)
+			}
+		})
 	}
 }

@@ -610,7 +610,8 @@ func (q *Queries) RefreshReviewStatus(ctx context.Context, arg RefreshReviewStat
 const rememberReviewAlias = `-- name: RememberReviewAlias :exec
 INSERT INTO product_aliases (user_id, product_id, raw_name, normalized_name, store_id, last_seen_at, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $6)
-ON CONFLICT (product_id, normalized_name, store_id) DO NOTHING
+ON CONFLICT (product_id, normalized_name, store_id) DO UPDATE
+SET seen_count = product_aliases.seen_count + 1, last_seen_at = $6
 `
 
 type RememberReviewAliasParams struct {
@@ -637,7 +638,8 @@ func (q *Queries) RememberReviewAlias(ctx context.Context, arg RememberReviewAli
 const rememberReviewCode = `-- name: RememberReviewCode :exec
 INSERT INTO product_codes (user_id, product_id, code, kind, store_id, created_at)
 VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (product_id, code, kind, store_id) DO NOTHING
+ON CONFLICT (product_id, code, kind, store_id) DO UPDATE
+SET seen_count = product_codes.seen_count + 1
 `
 
 type RememberReviewCodeParams struct {
