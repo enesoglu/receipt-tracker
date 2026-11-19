@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Environment says how the server is being run.
@@ -70,6 +71,18 @@ const (
 	BackupNone BackupDestination = "none"
 )
 
+// LLMProtocol names the wire protocol of the suggestion model.
+type LLMProtocol string
+
+// The LLM wire protocols.
+const (
+	// LLMOpenAI posts to /chat/completions and reads
+	// choices[0].message.content.
+	LLMOpenAI LLMProtocol = "openai"
+	// LLMOllama posts to /api/chat and reads message.content.
+	LLMOllama LLMProtocol = "ollama"
+)
+
 // TimeOfDay is a wall-clock time in UTC with minute precision.
 type TimeOfDay struct {
 	Hour   int
@@ -111,6 +124,24 @@ type Extraction struct {
 	MonthlyPages int
 }
 
+// LLM holds the optional self-hosted suggestion model (ARCHITECTURE
+// §5.8). An empty BaseURL or Model leaves the feature off.
+type LLM struct {
+	Protocol LLMProtocol
+	// BaseURL is the endpoint origin with an optional path prefix, used
+	// verbatim with only the documented path appended.
+	BaseURL string
+	// Model names the model the endpoint serves.
+	Model string
+	// APIKey is the optional bearer token of a protected endpoint.
+	APIKey Secret
+	// Timeout bounds one request. Local models can be slow.
+	Timeout time.Duration
+}
+
+// Configured reports whether a suggestion endpoint is available.
+func (l LLM) Configured() bool { return l.BaseURL != "" && l.Model != "" }
+
 // Backup holds the database backup settings.
 type Backup struct {
 	Destination BackupDestination
@@ -148,6 +179,7 @@ type Config struct {
 	Google            Google
 	Storage           Storage
 	Extraction        Extraction
+	LLM               LLM
 	Backup            Backup
 }
 
@@ -168,6 +200,8 @@ const (
 	defaultDriveRootFolder   = "receipt-tracker"
 	defaultMonthlyPages      = 500
 	defaultMCPBrowserOrigins = "https://claude.ai,https://gemini.google.com"
+	defaultLLMProtocol       = LLMOpenAI
+	defaultLLMTimeout        = 300 * time.Second
 	encryptionKeyBytes       = 32
 )
 
@@ -202,6 +236,8 @@ func New(ctx context.Context) (Config, error) {
 	usesAzure := cfg.Extraction.Extractor == ExtractorAzure
 	cfg.Extraction.AzureEndpoint = l.httpsURL("AZURE_DI_ENDPOINT", usesAzure, "EXTRACTOR=azure")
 	cfg.Extraction.AzureKey = Secret(l.requiredWhen("AZURE_DI_KEY", usesAzure, "EXTRACTOR=azure"))
+
+	cfg.LLM = l.llm()
 
 	cfg.Backup = Backup{
 		Destination: BackupDestination(l.oneOf("BACKUP_DESTINATION", string(BackupDrive), string(BackupLocal), string(BackupNone))),
@@ -239,8 +275,10 @@ func variables() []string {
 		"GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "STORAGE_BACKEND",
 		"STORAGE_LOCAL_DIR", "DRIVE_ROOT_FOLDER", "DRIVE_ROOT_FOLDER_ID", "EXTRACTOR",
 		"AZURE_DI_ENDPOINT", "AZURE_DI_KEY", "AZURE_DI_MONTHLY_PAGES",
-		"BACKUP_DESTINATION", "BACKUP_LOCAL_DIR", "BACKUP_SCHEDULE",
-		"BACKUP_HEARTBEAT_URL", "DEV_LOGIN_EMAIL", "MCP_BROWSER_ORIGINS",
+		"LLM_PROTOCOL", "LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY",
+		"LLM_TIMEOUT", "BACKUP_DESTINATION", "BACKUP_LOCAL_DIR",
+		"BACKUP_SCHEDULE", "BACKUP_HEARTBEAT_URL", "DEV_LOGIN_EMAIL",
+		"MCP_BROWSER_ORIGINS",
 	}
 }
 
@@ -304,6 +342,20 @@ func (l *loader) oneOf(name string, allowed ...string) string {
 	value, ok := l.required(name)
 	if !ok {
 		return ""
+	}
+	if !slices.Contains(allowed, value) {
+		l.fail(name, "must be one of: "+strings.Join(allowed, ", "))
+		return ""
+	}
+	return value
+}
+
+// oneOfDefault returns the variable or the fallback when it is empty, and
+// accepts only the allowed values.
+func (l *loader) oneOfDefault(name, fallback string, allowed ...string) string {
+	value := l.value(name)
+	if value == "" {
+		return fallback
 	}
 	if !slices.Contains(allowed, value) {
 		l.fail(name, "must be one of: "+strings.Join(allowed, ", "))
@@ -510,6 +562,37 @@ func (l *loader) google(needed bool) Google {
 	return Google{ClientID: id, ClientSecret: Secret(secret)}
 }
 
+// llm reads the optional suggestion model (docs/ARCHITECTURE.md §5.8). An
+// empty LLM_BASE_URL leaves the feature off, and nothing else is then
+// required.
+func (l *loader) llm() LLM {
+	var cfg LLM
+	cfg.Protocol = LLMProtocol(l.oneOfDefault("LLM_PROTOCOL", string(defaultLLMProtocol), string(LLMOpenAI), string(LLMOllama)))
+	base := l.value("LLM_BASE_URL")
+	if base != "" {
+		parsed, err := url.Parse(base)
+		switch {
+		case err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https"):
+			l.fail("LLM_BASE_URL", "must be an absolute http or https URL")
+		case parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "":
+			l.fail("LLM_BASE_URL", "must not carry credentials, a query or a fragment")
+		default:
+			cfg.BaseURL = strings.TrimSuffix(parsed.Scheme+"://"+parsed.Host+parsed.EscapedPath(), "/")
+		}
+	}
+	model := l.value("LLM_MODEL")
+	switch {
+	case model == "" && base != "":
+		l.fail("LLM_MODEL", "is required when LLM_BASE_URL is set")
+	case model != "" && base == "":
+		l.fail("LLM_BASE_URL", "is required when LLM_MODEL is set")
+	}
+	cfg.Model = model
+	cfg.APIKey = Secret(l.value("LLM_API_KEY"))
+	cfg.Timeout = l.duration("LLM_TIMEOUT", defaultLLMTimeout)
+	return cfg
+}
+
 func (l *loader) folderName(name, fallback string) string {
 	value := l.value(name)
 	if value == "" {
@@ -559,6 +642,21 @@ func (l *loader) positiveInt(name string, fallback int) int {
 		return 0
 	}
 	return number
+}
+
+// duration returns a time.ParseDuration value, or the fallback when the
+// variable is empty.
+func (l *loader) duration(name string, fallback time.Duration) time.Duration {
+	value := l.value(name)
+	if value == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil || parsed < time.Second {
+		l.fail(name, "must be a duration of at least 1s, for example 300s")
+		return 0
+	}
+	return parsed
 }
 
 // webURL returns an optional absolute http or https URL.

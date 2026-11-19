@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -31,6 +32,7 @@ const (
 	syntheticClientValue   = "synthetic-google-client-value"
 	syntheticAzureValue    = "synthetic-azure-value"
 	syntheticHeartbeat     = "https://heartbeat.example/ping/synthetic-check-id"
+	syntheticLLMKey        = "synthetic-llm-key"
 )
 
 // syntheticKey is 32 fixed bytes; the real key is random.
@@ -137,6 +139,7 @@ func TestNew_LoadsProductionConfiguration(t *testing.T) {
 			AzureKey:      syntheticAzureValue,
 			MonthlyPages:  500,
 		},
+		LLM: config.LLM{Protocol: config.LLMOpenAI, Timeout: 300 * time.Second},
 		Backup: config.Backup{
 			Destination:  config.BackupDrive,
 			Schedule:     config.TimeOfDay{Hour: 3, Minute: 15},
@@ -174,6 +177,7 @@ func TestNew_LoadsDevelopmentConfigurationWithDefaults(t *testing.T) {
 		MCPBrowserOrigins: []string{"https://claude.ai", "https://gemini.google.com"},
 		Storage:           config.Storage{Backend: config.StorageLocal, LocalDir: "data/images", DriveRootFolder: "receipt-tracker"},
 		Extraction:        config.Extraction{Extractor: config.ExtractorFake, MonthlyPages: 500},
+		LLM:               config.LLM{Protocol: config.LLMOpenAI, Timeout: 300 * time.Second},
 		Backup:            config.Backup{Destination: config.BackupNone},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
@@ -381,6 +385,53 @@ func TestNew_ReportsProblems(t *testing.T) {
 			want: []string{"AZURE_DI_MONTHLY_PAGES must be a whole number greater than zero"},
 		},
 		{
+			name: "llm model without a base URL",
+			env:  with(productionEnv(), map[string]string{"LLM_MODEL": "synthetic-model"}),
+			want: []string{"LLM_BASE_URL is required when LLM_MODEL is set"},
+		},
+		{
+			name: "llm base URL without a model",
+			env:  with(productionEnv(), map[string]string{"LLM_BASE_URL": "http://llm.relay.example"}),
+			want: []string{"LLM_MODEL is required when LLM_BASE_URL is set"},
+		},
+		{
+			name: "llm base URL that is not a URL",
+			env: with(productionEnv(), map[string]string{
+				"LLM_BASE_URL": "llm.relay.example", "LLM_MODEL": "synthetic-model",
+			}),
+			want: []string{"LLM_BASE_URL must be an absolute http or https URL"},
+		},
+		{
+			name: "llm base URL with a query",
+			env: with(productionEnv(), map[string]string{
+				"LLM_BASE_URL": "http://llm.relay.example?token=1", "LLM_MODEL": "synthetic-model",
+			}),
+			want: []string{"LLM_BASE_URL must not carry credentials, a query or a fragment"},
+		},
+		{
+			name: "unknown llm protocol",
+			env:  with(productionEnv(), map[string]string{"LLM_PROTOCOL": "anthropic"}),
+			want: []string{"LLM_PROTOCOL must be one of: openai, ollama"},
+		},
+		{
+			name: "llm timeout that is not a duration",
+			env: with(productionEnv(), map[string]string{
+				"LLM_BASE_URL": "http://llm.relay.example", "LLM_MODEL": "synthetic-model", "LLM_TIMEOUT": "soon",
+			}),
+			want: []string{"LLM_TIMEOUT must be a duration of at least 1s, for example 300s"},
+		},
+		{
+			name: "llm problems in documentation order",
+			env: with(productionEnv(), map[string]string{
+				"LLM_TIMEOUT": "soon", "LLM_PROTOCOL": "anthropic", "LLM_MODEL": "synthetic-model",
+			}),
+			want: []string{
+				"LLM_PROTOCOL must be one of: openai, ollama",
+				"LLM_BASE_URL is required when LLM_MODEL is set",
+				"LLM_TIMEOUT must be a duration of at least 1s, for example 300s",
+			},
+		},
+		{
 			name: "unknown backup destination",
 			env:  with(productionEnv(), map[string]string{"BACKUP_DESTINATION": "s3"}),
 			want: []string{"BACKUP_DESTINATION must be one of: drive, local, none"},
@@ -486,6 +537,50 @@ func TestNew_LoadsConfiguredBrowserOrigins(t *testing.T) {
 	}
 }
 
+func TestNew_LoadsOptionalLLM(t *testing.T) {
+	setEnv(t, with(productionEnv(), map[string]string{
+		"LLM_PROTOCOL": "ollama",
+		"LLM_BASE_URL": "http://llm.relay.example:11436/",
+		"LLM_MODEL":    "synthetic-model",
+		"LLM_API_KEY":  syntheticLLMKey,
+		"LLM_TIMEOUT":  "90s",
+	}))
+	got, err := config.New(context.Background())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	want := config.LLM{
+		Protocol: config.LLMOllama,
+		BaseURL:  "http://llm.relay.example:11436",
+		Model:    "synthetic-model",
+		APIKey:   syntheticLLMKey,
+		Timeout:  90 * time.Second,
+	}
+	if diff := cmp.Diff(want, got.LLM); diff != "" {
+		t.Errorf("llm mismatch (-want +got):\n%s", diff)
+	}
+	if !got.LLM.Configured() {
+		t.Error("Configured() = false, want true")
+	}
+	if output := fmt.Sprintf("%+v", got.LLM); !strings.Contains(output, "[redacted]") || strings.Contains(output, syntheticLLMKey) {
+		t.Errorf("%+v hides the llm key: %s", got.LLM, output)
+	}
+}
+
+func TestNew_LeavesLLMOffByDefault(t *testing.T) {
+	setEnv(t, productionEnv())
+	got, err := config.New(context.Background())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if got.LLM.Configured() {
+		t.Error("Configured() = true without LLM_BASE_URL and LLM_MODEL")
+	}
+	if got.LLM.Protocol != config.LLMOpenAI || got.LLM.Timeout != 300*time.Second {
+		t.Errorf("defaults not applied: %+v", got.LLM)
+	}
+}
+
 func TestNew_ProblemsNeverQuoteValues(t *testing.T) {
 	values := map[string]string{
 		"APP_ENV":              "prod",
@@ -498,6 +593,7 @@ func TestNew_ProblemsNeverQuoteValues(t *testing.T) {
 		"STORAGE_BACKEND":      "leaked-backend",
 		"EXTRACTOR":            "azure",
 		"AZURE_DI_ENDPOINT":    "http://leaked-endpoint.example",
+		"LLM_BASE_URL":         "leaked-llm-host",
 		"BACKUP_DESTINATION":   "none",
 		"BACKUP_HEARTBEAT_URL": "leaked-heartbeat",
 		"DEV_LOGIN_EMAIL":      "leaked-login",
@@ -537,8 +633,8 @@ func TestVariables_MatchTheExampleFile(t *testing.T) {
 			t.Errorf("%s is read by the loader but missing from .env.example", name)
 		}
 	}
-	if len(listed) != 23 {
-		t.Errorf(".env.example lists %d variables, want the 23 of ARCHITECTURE §6", len(listed))
+	if len(listed) != 28 {
+		t.Errorf(".env.example lists %d variables, want the 28 of ARCHITECTURE §6", len(listed))
 	}
 }
 
