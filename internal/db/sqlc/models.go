@@ -73,6 +73,21 @@ type LineItem struct {
 	UpdatedAt    time.Time
 }
 
+type LineSuggestion struct {
+	ID                  uuid.UUID
+	UserID              uuid.UUID
+	ReceiptID           uuid.UUID
+	LineItemID          uuid.UUID
+	RawName             string
+	Status              string
+	SuggestedName       string
+	SuggestedCategoryID uuid.NullUUID
+	Model               string
+	PromptVersion       int32
+	CreatedAt           time.Time
+	DecidedAt           *time.Time
+}
+
 type MatchRejection struct {
 	ID             uuid.UUID
 	UserID         uuid.UUID
@@ -247,8 +262,9 @@ type User struct {
 }
 
 type UserSetting struct {
-	UserID              uuid.UUID
-	DefaultCurrency     string
-	DefaultReceiptTitle string
-	UpdatedAt           time.Time
+	UserID                uuid.UUID
+	DefaultCurrency       string
+	DefaultReceiptTitle   string
+	UpdatedAt             time.Time
+	LlmSuggestionsEnabled bool
 }
