@@ -251,8 +251,38 @@ func (s *Service) Update(ctx context.Context, userID, receiptID uuid.UUID, input
 		if err := s.writeReceipt(ctx, q, userID, receiptID, input); err != nil {
 			return err
 		}
-		return s.refresh(ctx, q, userID, receiptID, map[string]bool{"store": true, "purchased_on": true, "total": true}, nil, nil)
+		after, err := q.GetReviewReceipt(ctx, sqlc.GetReviewReceiptParams{UserID: userID, ReceiptID: receiptID})
+		if err != nil {
+			return err
+		}
+		// Only a field the user actually edited loses its extraction
+		// confidence; a no-op save must leave an open flag open.
+		dropFields := map[string]bool{}
+		if before.Receipt.StoreID != after.StoreID {
+			dropFields["store"] = true
+		}
+		if !sameOptionalTime(before.Receipt.PurchasedOn, after.PurchasedOn) {
+			dropFields["purchased_on"] = true
+		}
+		if !sameAmount(before.Receipt.Total, after.Total) {
+			dropFields["total"] = true
+		}
+		return s.refresh(ctx, q, userID, receiptID, dropFields, nil, nil)
 	})
+}
+
+func sameOptionalTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
+}
+
+func sameAmount(a, b decimal.NullDecimal) bool {
+	if a.Valid != b.Valid {
+		return false
+	}
+	return !a.Valid || a.Decimal.Equal(b.Decimal)
 }
 
 // Reprocess maps the latest stored extraction without access to an extractor's network method.
