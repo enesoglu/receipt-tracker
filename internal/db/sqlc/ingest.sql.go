@@ -367,6 +367,68 @@ func (q *Queries) GetUploadDefaults(ctx context.Context, userID uuid.UUID) (GetU
 	return i, err
 }
 
+const listIdentityBacklog = `-- name: ListIdentityBacklog :many
+SELECT DISTINCT user_id, receipt_id FROM extractions WHERE user_id = $1 ORDER BY user_id, receipt_id
+`
+
+type ListIdentityBacklogRow struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+}
+
+// ListIdentityBacklog pairs one user with each receipt of theirs that has a
+// stored extraction; the caller binds the user from ListUserIds. Only the
+// operator-run backfill-identity subcommand reaches every user this way, to
+// fill empty identity columns on receipts extracted before those columns
+// existed.
+func (q *Queries) ListIdentityBacklog(ctx context.Context, userID uuid.UUID) ([]ListIdentityBacklogRow, error) {
+	rows, err := q.db.Query(ctx, listIdentityBacklog, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIdentityBacklogRow{}
+	for rows.Next() {
+		var i ListIdentityBacklogRow
+		if err := rows.Scan(&i.UserID, &i.ReceiptID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserIds = `-- name: ListUserIds :many
+SELECT id FROM users ORDER BY id
+`
+
+// ListUserIds pairs with ListIdentityBacklog: every query on a user-owned
+// table must carry a bound user_id predicate, so the operator-run
+// backfill-identity subcommand enumerates the users here (users is not
+// user-owned) and then reads each user's own extractions.
+func (q *Queries) ListUserIds(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listUserIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setExtractionStatus = `-- name: SetExtractionStatus :exec
 UPDATE receipts SET status = $1, failure_reason = NULL, updated_at = $2
 WHERE user_id = $3 AND id = $4

@@ -55,6 +55,21 @@ LIMIT 1;
 INSERT INTO extractions (user_id, receipt_id, provider, model, raw, created_at)
 VALUES (@user_id, @receipt_id, @provider, @model, @raw, @now);
 
+-- ListUserIds pairs with ListIdentityBacklog: every query on a user-owned
+-- table must carry a bound user_id predicate, so the operator-run
+-- backfill-identity subcommand enumerates the users here (users is not
+-- user-owned) and then reads each user's own extractions.
+-- name: ListUserIds :many
+SELECT id FROM users ORDER BY id;
+
+-- ListIdentityBacklog pairs one user with each receipt of theirs that has a
+-- stored extraction; the caller binds the user from ListUserIds. Only the
+-- operator-run backfill-identity subcommand reaches every user this way, to
+-- fill empty identity columns on receipts extracted before those columns
+-- existed.
+-- name: ListIdentityBacklog :many
+SELECT DISTINCT user_id, receipt_id FROM extractions WHERE user_id = @user_id ORDER BY user_id, receipt_id;
+
 -- name: UpsertExtractedStore :one
 INSERT INTO stores (user_id, name, normalized_name, created_at, updated_at)
 VALUES (@user_id, @name, @normalized_name, @now, @now)
@@ -96,8 +111,11 @@ INSERT INTO line_items (
 --
 -- Tables: receipts, receipt_images, extractions, provider_usage.
 --
--- Rules: every query on a user-owned table filters by user_id; query names
--- are unique across all files; run `task generate` after editing.
+-- Rules: every query on a user-owned table filters by user_id; the
+-- operator's backfill-identity subcommand reaches every user by pairing
+-- ListUserIds (users is not user-owned) with the user-bound
+-- ListIdentityBacklog; query names are unique
+-- across all files; run `task generate` after editing.
 --
 -- Add queries above this description: sqlc copies the comment that precedes
 -- a file's first query into that query's Go documentation.

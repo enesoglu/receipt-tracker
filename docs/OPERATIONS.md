@@ -258,6 +258,20 @@ curl --fail http://127.0.0.1:8087/livez
 curl --fail https://receipt.enesoglu.com/healthz
 ```
 
+The first update that carries the receipt identity columns (invoice number,
+ETTN, seller tax number) also fills them on receipts extracted before those
+columns existed, using the raw results already stored. Run the one-shot
+subcommand after `pull app` and before `up -d --wait app`:
+
+```sh
+sudo docker compose -f compose.yaml run --rm app backfill-identity
+```
+
+The pass is idempotent and spends no Azure quota: every stored extraction is
+mapped, only still-empty columns are filled, user corrections survive, and
+one summary line is logged with `scanned`, `filled` and `skipped`. Re-running
+it later changes nothing.
+
 Migrations run at startup. For a code rollback, put the previous SHA back and
 repeat pull/up. Confirm the old image supports the current schema: image
 rollback does not undo migrations. Otherwise restore a pre-update dump into a
