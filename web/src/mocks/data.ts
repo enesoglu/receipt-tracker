@@ -121,7 +121,7 @@ export const mockReceiptPage: components['schemas']['ReceiptPage'] = {
       status: 'needs_review',
       failureReason: null,
       source: 'web',
-      openFlagCount: 2,
+      openFlagCount: 3,
       createdAt: '2026-11-02T16:05:12Z',
     },
   ],
@@ -149,7 +149,7 @@ export const mockReceipt: components['schemas']['Receipt'] = {
   status: 'needs_review',
   failureReason: null,
   source: 'web',
-  openFlagCount: 2,
+  openFlagCount: 3,
   createdAt: '2026-11-02T16:05:12Z',
   updatedAt: '2026-11-02T16:05:31Z',
   lineItems: [
@@ -266,6 +266,20 @@ export const mockReceipt: components['schemas']['Receipt'] = {
         ],
       },
     },
+    {
+      id: '0193a1b2-0000-7000-8000-000000000303',
+      receiptId: '0193a1b2-0000-7000-8000-000000000100',
+      lineItemId: null,
+      createdAt: '2026-11-02T16:05:31Z',
+      resolvedAt: null,
+      resolution: null,
+      kind: 'new_store',
+      detail: {
+        field: 'store',
+        name: 'Example Market',
+        storeId: '0193a1b2-0000-7000-8000-000000000010',
+      },
+    },
   ],
   images: [
     {
@@ -290,7 +304,7 @@ export const mockReviewFlagPage: components['schemas']['ReviewFlagPage'] = {
     },
   ],
   nextCursor: 'eyJ2IjoxfQ',
-  totalOpen: 2,
+  totalOpen: 3,
 };
 
 export const mockProductPage: components['schemas']['ProductPage'] = {
@@ -1123,7 +1137,11 @@ export function getMockReceiptById(
 
 /** Returns remaining open mock review flags for the interactive review queue. */
 export function queryMockReviewFlags(): components['schemas']['ReviewFlagPage'] {
-  const orderedFlags = [mockReceipt.flags[1], mockReceipt.flags[0]];
+  const orderedFlags = [
+    mockReceipt.flags[1],
+    mockReceipt.flags[0],
+    mockReceipt.flags[2],
+  ];
   const openItems: components['schemas']['ReviewFlagEntry'][] = [];
   for (const flag of orderedFlags) {
     if (!flag || resolvedMockFlagIds.has(flag.id)) continue;

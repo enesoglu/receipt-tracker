@@ -146,6 +146,14 @@ export function FlagResolutionCard({
   const [headerFieldError, setHeaderFieldError] = useState<string | null>(null);
   const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
   const [headerFieldValue, setHeaderFieldValue] = useState<string>(() => {
+    if (flag.kind === 'new_store') {
+      // The correction starts from the name the receipt printed; when
+      // the flag carries none, it starts from the store resolution
+      // created for it.
+      return flag.detail.name.length > 0
+        ? flag.detail.name
+        : (receipt.store?.name ?? '');
+    }
     if (flag.kind === 'low_confidence') {
       if (flag.detail.field === 'store') return receipt.store?.name ?? '';
       if (flag.detail.field === 'purchased_on')
@@ -224,7 +232,7 @@ export function FlagResolutionCard({
   }
 
   function getPrimaryConfirmAction(): (() => void) | null {
-    if (flag.kind === 'low_confidence') {
+    if (flag.kind === 'low_confidence' || flag.kind === 'new_store') {
       return () => void submitResolution({ action: 'confirm' });
     }
     if (
@@ -337,6 +345,63 @@ export function FlagResolutionCard({
             <p className="text-caption text-muted">
               Shortcut: press <kbd className="font-mono font-semibold">C</kbd>{' '}
               to confirm as extracted.
+            </p>
+          </div>
+        );
+      }
+
+      case 'new_store': {
+        return (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-border bg-surface-subtle p-3">
+              <div>
+                <div className="text-caption font-medium text-muted">
+                  Printed store name
+                </div>
+                <div className="text-body font-medium text-ink">
+                  {flag.detail.name}
+                </div>
+              </div>
+              <Button
+                loading={resolveMutation.isPending}
+                onClick={() => void submitResolution({ action: 'confirm' })}
+              >
+                Confirm new store
+              </Button>
+            </div>
+
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitHeaderCorrection('store');
+              }}
+              className="flex flex-col gap-3 rounded-control border border-border bg-surface-subtle p-4"
+            >
+              <Input
+                label="Correct store name"
+                required
+                type="text"
+                error={headerFieldError ?? undefined}
+                value={headerFieldValue}
+                onChange={(event) => {
+                  setHeaderFieldValue(event.target.value);
+                  setHeaderFieldError(null);
+                }}
+              />
+              <div className="flex justify-end">
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  loading={resolveMutation.isPending}
+                >
+                  Save correction
+                </Button>
+              </div>
+            </form>
+
+            <p className="text-caption text-muted">
+              Shortcut: press <kbd className="font-mono font-semibold">C</kbd>{' '}
+              to confirm the new store.
             </p>
           </div>
         );

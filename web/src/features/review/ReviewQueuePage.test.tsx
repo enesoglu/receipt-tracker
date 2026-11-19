@@ -137,7 +137,7 @@ describe('ReviewQueuePage', () => {
     ).toHaveAttribute('href', '/receipts');
   });
 
-  it('resolves all seven flag kinds with tailored controls, live previews, and ambiguous_code copy', async () => {
+  it('resolves all eight flag kinds with tailored controls, live previews, and ambiguous_code copy', async () => {
     const receiptId = BASE_RECEIPT_SUMMARY.id;
     const queue: ReviewFlagEntry[] = [
       makeEntry(
@@ -181,6 +181,24 @@ describe('ReviewQueuePage', () => {
           lineItemId: null,
           kind: 'low_confidence',
           detail: { field: 'store', confidence: 0.61 },
+          resolvedAt: null,
+          resolution: null,
+          createdAt: '2026-11-02T16:05:31Z',
+        },
+        null,
+      ),
+      makeEntry(
+        '0193a1b2-0000-7000-8000-000000000908',
+        {
+          id: '0193a1b2-0000-7000-8000-000000000908',
+          receiptId,
+          lineItemId: null,
+          kind: 'new_store',
+          detail: {
+            field: 'store',
+            name: 'Migros Jet Şişli',
+            storeId: '0193a1b2-0000-7000-8000-000000000012',
+          },
           resolvedAt: null,
           resolution: null,
           createdAt: '2026-11-02T16:05:31Z',
@@ -316,7 +334,7 @@ describe('ReviewQueuePage', () => {
 
     // 1. uncertain_match (ambiguous_code) + live preview when switching to new product
     await waitFor(() =>
-      expect(screen.getByText('Flag 1 of 7')).toBeInTheDocument(),
+      expect(screen.getByText('Flag 1 of 8')).toBeInTheDocument(),
     );
     // The receipt context shows the printed identity beside the image preview.
     await waitFor(() =>
@@ -346,13 +364,20 @@ describe('ReviewQueuePage', () => {
 
     // 2. low_confidence
     await waitFor(() =>
-      expect(screen.getByText('Flag 1 of 6')).toBeInTheDocument(),
+      expect(screen.getByText('Flag 1 of 7')).toBeInTheDocument(),
     );
     fireEvent.click(
       screen.getByRole('button', { name: 'Confirm as extracted' }),
     );
 
-    // 3. missing_field
+    // 3. new_store
+    await waitFor(() =>
+      expect(screen.getByText('Flag 1 of 6')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('Migros Jet Şişli')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm new store' }));
+
+    // 4. missing_field
     await waitFor(() =>
       expect(screen.getByText('Flag 1 of 5')).toBeInTheDocument(),
     );
@@ -361,7 +386,7 @@ describe('ReviewQueuePage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save field' }));
 
-    // 4. line_math
+    // 5. line_math
     await waitFor(() =>
       expect(screen.getByText('Flag 1 of 4')).toBeInTheDocument(),
     );
@@ -369,7 +394,7 @@ describe('ReviewQueuePage', () => {
       screen.getByRole('button', { name: 'Accept printed total' }),
     );
 
-    // 5. sum_mismatch
+    // 6. sum_mismatch
     await waitFor(() =>
       expect(screen.getByText('Flag 1 of 3')).toBeInTheDocument(),
     );
@@ -378,14 +403,14 @@ describe('ReviewQueuePage', () => {
     ).toHaveAttribute('href', `/receipts/${receiptId}`);
     fireEvent.click(screen.getByRole('button', { name: 'Accept difference' }));
 
-    // 6. code_conflict (choose second option nameProduct)
+    // 7. code_conflict (choose second option nameProduct)
     await waitFor(() =>
       expect(screen.getByText('Flag 1 of 2')).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByLabelText(/White loaf 350 g/i));
     fireEvent.click(screen.getByRole('button', { name: 'Apply choice' }));
 
-    // 7. possible_duplicate
+    // 8. possible_duplicate
     await waitFor(() =>
       expect(screen.getByText('Flag 1 of 1')).toBeInTheDocument(),
     );
@@ -408,6 +433,10 @@ describe('ReviewQueuePage', () => {
       },
       {
         flagId: '0193a1b2-0000-7000-8000-000000000902',
+        body: { action: 'confirm' },
+      },
+      {
+        flagId: '0193a1b2-0000-7000-8000-000000000908',
         body: { action: 'confirm' },
       },
       {
@@ -792,5 +821,147 @@ describe('ReviewQueuePage', () => {
     expect(
       screen.getByText('Model suggestion for "EKMEK"'),
     ).toBeInTheDocument();
+  });
+
+  it('corrects a new store starting from the printed name it was saved under', async () => {
+    const submitted: Array<{ flagId: string; body: unknown }> = [];
+    const entry = makeEntry(
+      '0193a1b2-0000-7000-8000-000000000924',
+      {
+        id: '0193a1b2-0000-7000-8000-000000000924',
+        receiptId: BASE_RECEIPT_SUMMARY.id,
+        lineItemId: null,
+        kind: 'new_store',
+        detail: {
+          field: 'store',
+          name: 'Migros Jet Şişli',
+          storeId: '0193a1b2-0000-7000-8000-000000000012',
+        },
+        resolvedAt: null,
+        resolution: null,
+        createdAt: '2026-11-02T16:05:31Z',
+      },
+      null,
+    );
+
+    server.use(
+      http.get('/api/v1/review-flags', () =>
+        HttpResponse.json({ items: [entry], nextCursor: null, totalOpen: 1 }),
+      ),
+      http.post(
+        '/api/v1/review-flags/:flagId/resolve',
+        async ({ request, params }) => {
+          submitted.push({
+            flagId: String(params.flagId),
+            body: await request.json(),
+          });
+          return HttpResponse.json({ ...mockReceipt, openFlagCount: 0 });
+        },
+      ),
+    );
+
+    renderReviewPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Flag 1 of 1')).toBeInTheDocument(),
+    );
+    // The correction input starts from the name the receipt printed.
+    const nameInput = screen.getByLabelText(/Correct store name/i);
+    expect(nameInput).toHaveValue('Migros Jet Şişli');
+    fireEvent.change(nameInput, { target: { value: 'Migros Jet' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toEqual({
+      flagId: '0193a1b2-0000-7000-8000-000000000924',
+      body: { action: 'correct', storeName: 'Migros Jet' },
+    });
+  });
+
+  it('confirms a new store with the c keyboard shortcut', async () => {
+    const submitted: Array<{ flagId: string; body: unknown }> = [];
+    const entry = makeEntry(
+      '0193a1b2-0000-7000-8000-000000000925',
+      {
+        id: '0193a1b2-0000-7000-8000-000000000925',
+        receiptId: BASE_RECEIPT_SUMMARY.id,
+        lineItemId: null,
+        kind: 'new_store',
+        detail: {
+          field: 'store',
+          name: 'Migros Jet Şişli',
+          storeId: '0193a1b2-0000-7000-8000-000000000012',
+        },
+        resolvedAt: null,
+        resolution: null,
+        createdAt: '2026-11-02T16:05:31Z',
+      },
+      null,
+    );
+
+    server.use(
+      http.get('/api/v1/review-flags', () =>
+        HttpResponse.json({ items: [entry], nextCursor: null, totalOpen: 1 }),
+      ),
+      http.post(
+        '/api/v1/review-flags/:flagId/resolve',
+        async ({ request, params }) => {
+          submitted.push({
+            flagId: String(params.flagId),
+            body: await request.json(),
+          });
+          return HttpResponse.json({ ...mockReceipt, openFlagCount: 0 });
+        },
+      ),
+    );
+
+    renderReviewPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Flag 1 of 1')).toBeInTheDocument(),
+    );
+    fireEvent.keyDown(document.body, { key: 'c' });
+
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toEqual({
+      flagId: '0193a1b2-0000-7000-8000-000000000925',
+      body: { action: 'confirm' },
+    });
+  });
+
+  it('falls back to the receipt store name when the new-store flag carries none', async () => {
+    const entry = makeEntry(
+      '0193a1b2-0000-7000-8000-000000000926',
+      {
+        id: '0193a1b2-0000-7000-8000-000000000926',
+        receiptId: BASE_RECEIPT_SUMMARY.id,
+        lineItemId: null,
+        kind: 'new_store',
+        detail: {
+          field: 'store',
+          name: '',
+          storeId: '0193a1b2-0000-7000-8000-000000000012',
+        },
+        resolvedAt: null,
+        resolution: null,
+        createdAt: '2026-11-02T16:05:31Z',
+      },
+      null,
+    );
+
+    server.use(
+      http.get('/api/v1/review-flags', () =>
+        HttpResponse.json({ items: [entry], nextCursor: null, totalOpen: 1 }),
+      ),
+    );
+
+    renderReviewPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Flag 1 of 1')).toBeInTheDocument(),
+    );
+    expect(screen.getByLabelText(/Correct store name/i)).toHaveValue(
+      'Example Market',
+    );
   });
 });

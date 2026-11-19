@@ -132,7 +132,7 @@ describe('MSW API handlers', () => {
     );
 
     const flags = await unwrap(api.GET('/review-flags'));
-    expect(flags.totalOpen).toBe(2);
+    expect(flags.totalOpen).toBe(3);
 
     const resolved = await unwrap(
       api.POST('/review-flags/{flagId}/resolve', {
@@ -140,7 +140,7 @@ describe('MSW API handlers', () => {
         body: { action: 'accept' },
       }),
     );
-    expect(resolved.openFlagCount).toBe(1);
+    expect(resolved.openFlagCount).toBe(2);
 
     const products = await unwrap(api.GET('/products'));
     expect(products.items).toHaveLength(2);
@@ -303,7 +303,7 @@ describe('MSW API handlers', () => {
       ).toBeInTheDocument(),
     );
     await waitFor(() =>
-      expect(screen.getByLabelText('Open review items')).toHaveTextContent('2'),
+      expect(screen.getByLabelText('Open review items')).toHaveTextContent('3'),
     );
 
     fireEvent.click(screen.getByRole('link', { name: 'Settings' }));
