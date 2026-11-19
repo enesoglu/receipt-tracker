@@ -40,6 +40,22 @@ function renderSpendingPage() {
 }
 
 describe('spending helpers', () => {
+  it('defaults to the local current month during the first hours of a month', () => {
+    const originalTz = process.env.TZ;
+    process.env.TZ = 'Europe/Istanbul';
+    try {
+      expect(
+        getDefaultMonthRange(new Date('2026-12-01T00:30:00+03:00')),
+      ).toEqual({ from: '2026-01', to: '2026-12' });
+    } finally {
+      if (originalTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = originalTz;
+      }
+    }
+  });
+
   it('computes a 12-month default range across year boundaries and validates spans', () => {
     expect(getDefaultMonthRange(new Date('2026-11-15T00:00:00Z'))).toEqual({
       from: '2025-12',

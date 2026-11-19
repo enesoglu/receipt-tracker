@@ -26,13 +26,13 @@ export interface BreakdownChartRow {
   itemCount: number;
 }
 
-/** Returns the default inclusive last-12-month UTC range ending at the current month. */
+/** Returns the default inclusive last-12-month range ending at the user's current local month. */
 export function getDefaultMonthRange(now = new Date()): {
   from: string;
   to: string;
 } {
-  const endYear = now.getUTCFullYear();
-  const endMonth = now.getUTCMonth() + 1;
+  const endYear = now.getFullYear();
+  const endMonth = now.getMonth() + 1;
   const endTotalMonths = endYear * 12 + (endMonth - 1);
   const startTotalMonths = endTotalMonths - 11;
   const startYear = Math.floor(startTotalMonths / 12);
