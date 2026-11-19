@@ -710,15 +710,16 @@ type BackupStatus struct {
 
 // BreakdownGroup defines model for BreakdownGroup.
 type BreakdownGroup struct {
-	// Amount An amount of money as a decimal string, in the currency of its
-	// receipt. Input accepts up to two decimal places with `.` or `,` as
-	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// Amount An amount the server computes from stored money: a sum or
+	// difference of `Money` values, or a per-unit price, as a decimal
+	// string with exactly two places and a dot. Unlike `Money` the
+	// integer part has no fixed bound: adding valid amounts can need
+	// more digits than any one of them, so a client must accept any
+	// number of integer digits.
 	//
 	//
-	// Example: 84.50
-	Amount Money `json:"amount"`
+	// Example: 19999999999.98
+	Amount DerivedMoney `json:"amount"`
 
 	// Id Id of the category or store; `null` for the other kinds.
 	Id *openapi_types.UUID `json:"id"`
@@ -833,8 +834,9 @@ type CorrectResolution struct {
 	// Total An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50
@@ -860,20 +862,13 @@ type CurrencyBreakdown struct {
 	Groups []BreakdownGroup `json:"groups"`
 
 	// Total The month's total in this currency; the groups add up to it.
-	Total Money `json:"total"`
+	Total DerivedMoney `json:"total"`
 }
 
 // CurrencyTotal defines model for CurrencyTotal.
 type CurrencyTotal struct {
-	// Amount An amount of money as a decimal string, in the currency of its
-	// receipt. Input accepts up to two decimal places with `.` or `,` as
-	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
-	//
-	//
-	// Example: 84.50
-	Amount Money `json:"amount"`
+	// Amount The month's total in this currency.
+	Amount DerivedMoney `json:"amount"`
 
 	// Currency ISO 4217 currency code.
 	//
@@ -881,6 +876,16 @@ type CurrencyTotal struct {
 	Currency     Currency `json:"currency"`
 	ReceiptCount int      `json:"receiptCount"`
 }
+
+// DerivedMoney An amount the server computes from stored money: a sum or
+// difference of `Money` values, or a per-unit price, as a decimal
+// string with exactly two places and a dot. Unlike `Money` the
+// integer part has no fixed bound: adding valid amounts can need
+// more digits than any one of them, so a client must accept any
+// number of integer digits.
+//
+// Example: 19999999999.98
+type DerivedMoney = string
 
 // DifferentProductResolution The line is none of the suggested products. A new product is created
 // for it, and the suggestions are remembered as wrong for this name.
@@ -931,8 +936,9 @@ type LastPurchase struct {
 	// UnitPrice An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50
@@ -987,8 +993,9 @@ type LineItemInput struct {
 	// LineTotal An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50
@@ -1003,13 +1010,14 @@ type LineItemInput struct {
 // LineMathDetail defines model for LineMathDetail.
 type LineMathDetail struct {
 	// ExpectedTotal Quantity times unit price.
-	ExpectedTotal Money `json:"expectedTotal"`
+	ExpectedTotal DerivedMoney `json:"expectedTotal"`
 
 	// LineTotal An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50
@@ -1027,8 +1035,9 @@ type LineMathDetail struct {
 	// UnitPrice An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50
@@ -1200,8 +1209,9 @@ type MixedSizes struct {
 // Money An amount of money as a decimal string, in the currency of its
 // receipt. Input accepts up to two decimal places with `.` or `,` as
 // the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-// amount. Storage and responses use exactly two places with a dot.
-// Negative amounts are discounts or refunds.
+// amount. Storage and responses use exactly two places with a dot, and
+// a stored amount stays within ten integer digits. Negative amounts
+// are discounts or refunds.
 //
 // Example: 84.50
 type Money = string
@@ -1362,7 +1372,7 @@ type PricePoint struct {
 	// for a counted line by the quantity (1 when absent) times the size
 	// printed in the line's name. `null` for an `item` product, for a
 	// line without a usable size, and for a size of another dimension.
-	BasisPrice *Money `json:"basisPrice"`
+	BasisPrice *DerivedMoney `json:"basisPrice"`
 
 	// Currency ISO 4217 currency code.
 	//
@@ -1381,8 +1391,9 @@ type PricePoint struct {
 	// UnitPrice An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50
@@ -1821,7 +1832,8 @@ type Settings struct {
 // Share A group's amount divided by the total, as a decimal string with four
 // places. It is negative for `discounts` and can exceed 1 for a category
 // when discounts lower the total; the shares of a currency add up to 1.
-// It is `0.0000` when the total is zero.
+// When the total is close to zero the ratio can need any number of
+// integer digits, and it is `0.0000` when the total is zero.
 //
 // Example: 0.6530
 type Share = string
@@ -1884,8 +1896,9 @@ type StorePriceSummary struct {
 	// Latest An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50
@@ -1895,8 +1908,9 @@ type StorePriceSummary struct {
 	// Max An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50
@@ -1905,8 +1919,9 @@ type StorePriceSummary struct {
 	// Min An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50
@@ -1931,16 +1946,17 @@ type StoreUpdate struct {
 // SumMismatchDetail defines model for SumMismatchDetail.
 type SumMismatchDetail struct {
 	// Difference Receipt total minus the sum of the lines.
-	Difference Money `json:"difference"`
+	Difference DerivedMoney `json:"difference"`
 
 	// LineSum Sum of the line totals, discounts included.
-	LineSum Money `json:"lineSum"`
+	LineSum DerivedMoney `json:"lineSum"`
 
 	// Total An amount of money as a decimal string, in the currency of its
 	// receipt. Input accepts up to two decimal places with `.` or `,` as
 	// the separator; `351,9`, `351.9`, `.5` and `351` are all the same
-	// amount. Storage and responses use exactly two places with a dot.
-	// Negative amounts are discounts or refunds.
+	// amount. Storage and responses use exactly two places with a dot, and
+	// a stored amount stays within ten integer digits. Negative amounts
+	// are discounts or refunds.
 	//
 	//
 	// Example: 84.50

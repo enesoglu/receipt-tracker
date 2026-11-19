@@ -289,6 +289,27 @@ func TestProducts_IsolatesPriceHistory(t *testing.T) {
 	decodeProblem(t, response)
 }
 
+func TestProducts_PriceHistoryHugeBasisPriceStaysInContract(t *testing.T) {
+	s := newProductServer(t)
+	// A kg product bought as a thousandth of a kilogram at the largest
+	// amount the API accepts: the per-kilogram price needs more integer
+	// digits than any stored amount.
+	cheese := s.id(`INSERT INTO products (user_id, canonical_name, price_basis) VALUES ($1, 'Cheese', 'kg') RETURNING id`, s.alice)
+	receipt := s.id(`INSERT INTO receipts (user_id, title, purchased_on, total, currency, status) VALUES ($1, 'Synthetic receipt', '2026-11-02', 9999999999.99, 'TRY', 'ready') RETURNING id`, s.alice)
+	s.exec(`INSERT INTO line_items (user_id, receipt_id, position, raw_name, name, quantity, quantity_unit, unit_price, line_total, product_id, match_status)
+		VALUES ($1, $2, 0, 'CHEESE', 'CHEESE', 0.001, 'KG', 9999999999.99, 9999999999.99, $3, 'auto_linked')`, s.alice, receipt, cheese)
+
+	history := decodeAs[httpapi.PriceHistory](t, s.get(s.alice, "/products/"+cheese.String()+"/price-history"), http.StatusOK, "PriceHistory")
+
+	if len(history.Points) != 1 {
+		t.Fatalf("history = %+v", history.Points)
+	}
+	point := history.Points[0]
+	if point.BasisPrice == nil || *point.BasisPrice != "9999999999990.00" {
+		t.Errorf("basisPrice = %v, want the price of one kilogram", point.BasisPrice)
+	}
+}
+
 func TestProducts_MergeFollowsTheContract(t *testing.T) {
 	s := newProductServer(t)
 	milk := s.seedMilk(s.alice)
