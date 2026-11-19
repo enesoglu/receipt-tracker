@@ -318,6 +318,15 @@ describe('ReviewQueuePage', () => {
     await waitFor(() =>
       expect(screen.getByText('Flag 1 of 7')).toBeInTheDocument(),
     );
+    // The receipt context shows the printed identity beside the image preview.
+    await waitFor(() =>
+      expect(screen.getByText('T112026000000000')).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText('1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('1234567890')).toBeInTheDocument();
+    expect(screen.getByText(/Invoice number:/i)).toBeInTheDocument();
     expect(
       screen.getByText(
         /product code is shared by more than one existing product/i,

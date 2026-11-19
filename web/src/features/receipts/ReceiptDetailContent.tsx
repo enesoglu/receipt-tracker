@@ -38,6 +38,9 @@ interface ReceiptFormValues {
   subtotal: string;
   taxTotal: string;
   total: string;
+  invoiceNumber: string;
+  ettn: string;
+  sellerTaxNumber: string;
 }
 
 function toReceiptFormValues(receipt: Receipt): ReceiptFormValues {
@@ -50,6 +53,9 @@ function toReceiptFormValues(receipt: Receipt): ReceiptFormValues {
     subtotal: receipt.subtotal ?? '',
     taxTotal: receipt.taxTotal ?? '',
     total: receipt.total ?? '',
+    invoiceNumber: receipt.invoiceNumber ?? '',
+    ettn: receipt.ettn ?? '',
+    sellerTaxNumber: receipt.sellerTaxNumber ?? '',
   };
 }
 
@@ -74,6 +80,10 @@ function toReceiptUpdate(values: ReceiptFormValues): ReceiptUpdate {
     subtotal: toNullableAmount(values.subtotal),
     taxTotal: toNullableAmount(values.taxTotal),
     total: toNullableAmount(values.total),
+    // The server replaces every field, so an emptied box clears the column.
+    invoiceNumber: toNullable(values.invoiceNumber),
+    ettn: toNullable(values.ettn),
+    sellerTaxNumber: toNullable(values.sellerTaxNumber),
   };
 }
 
@@ -446,6 +456,42 @@ export function ReceiptDetailContent({
                   setFormValues({
                     ...formValues,
                     purchasedTime: event.target.value,
+                  })
+                }
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Input
+                label="Invoice number"
+                hint="Printed as FATURA NO / BELGE NO"
+                value={formValues.invoiceNumber}
+                error={pickFieldError(fieldErrors, 'invoiceNumber')}
+                onChange={(event) =>
+                  setFormValues({
+                    ...formValues,
+                    invoiceNumber: event.target.value,
+                  })
+                }
+              />
+              <Input
+                label="ETTN"
+                hint="Printed invoice UUID, hyphenated or compact"
+                value={formValues.ettn}
+                error={pickFieldError(fieldErrors, 'ettn')}
+                onChange={(event) =>
+                  setFormValues({ ...formValues, ettn: event.target.value })
+                }
+              />
+              <Input
+                label="Seller tax number"
+                hint="Seller VKN, exactly ten digits"
+                value={formValues.sellerTaxNumber}
+                error={pickFieldError(fieldErrors, 'sellerTaxNumber')}
+                onChange={(event) =>
+                  setFormValues({
+                    ...formValues,
+                    sellerTaxNumber: event.target.value,
                   })
                 }
               />

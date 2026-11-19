@@ -126,6 +126,10 @@ export const handlers = [
       subtotal: body.subtotal ?? mockReceipt.subtotal,
       taxTotal: body.taxTotal ?? mockReceipt.taxTotal,
       total: body.total ?? mockReceipt.total,
+      // The API replaces every identity field, so an explicit null clears it.
+      invoiceNumber: body.invoiceNumber ?? null,
+      ettn: body.ettn ?? null,
+      sellerTaxNumber: body.sellerTaxNumber ?? null,
     });
   }),
 

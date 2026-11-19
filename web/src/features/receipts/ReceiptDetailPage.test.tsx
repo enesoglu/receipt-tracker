@@ -361,6 +361,114 @@ describe('ReceiptDetailPage', () => {
     expect(totalInput).toHaveValue('1.234,56');
   });
 
+  it('round-trips identity fields with server field errors and clearing', async () => {
+    let failNextSave = true;
+    let savedPayload: unknown = null;
+    let receiptState = structuredClone(mockReceipt);
+
+    server.use(
+      http.get('/api/v1/receipts/:receiptId', () =>
+        HttpResponse.json(receiptState),
+      ),
+      http.put('/api/v1/receipts/:receiptId', async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>;
+        if (failNextSave) {
+          return HttpResponse.json(
+            {
+              type: 'https://receipt-tracker.example/problems/invalid',
+              title: 'Invalid receipt details',
+              status: 422,
+              detail: 'Please check the highlighted fields.',
+              errors: [
+                {
+                  field: 'invoiceNumber',
+                  message:
+                    'The invoice number must be up to 32 letters or digits.',
+                },
+              ],
+            },
+            {
+              status: 422,
+              headers: { 'Content-Type': 'application/problem+json' },
+            },
+          );
+        }
+        savedPayload = body;
+        receiptState = {
+          ...receiptState,
+          invoiceNumber: (body.invoiceNumber as string | null) ?? null,
+          ettn: (body.ettn as string | null) ?? null,
+          sellerTaxNumber: (body.sellerTaxNumber as string | null) ?? null,
+        };
+        return HttpResponse.json(receiptState);
+      }),
+    );
+
+    renderDetailPage(mockReceipt.id);
+
+    const invoiceInput = await screen.findByLabelText(/Invoice number/i);
+    expect(invoiceInput).toHaveValue('T112026000000000');
+    expect(screen.getByLabelText(/^ETTN/i)).toHaveValue(
+      '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
+    );
+    expect(screen.getByLabelText(/Seller tax number/i)).toHaveValue(
+      '1234567890',
+    );
+
+    // The server rejects the typed value and names the field.
+    fireEvent.change(invoiceInput, { target: { value: 'not a printed no!' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'The invoice number must be up to 32 letters or digits.',
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(invoiceInput).toHaveValue('not a printed no!');
+
+    // A corrected save round-trips the typed values into the request body.
+    failNextSave = false;
+    fireEvent.change(invoiceInput, { target: { value: ' t112026000000002 ' } });
+    fireEvent.change(screen.getByLabelText(/^ETTN/i), {
+      target: { value: '0a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5e' },
+    });
+    fireEvent.change(screen.getByLabelText(/Seller tax number/i), {
+      target: { value: '1234567891' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Receipt details saved.')).toBeInTheDocument(),
+    );
+    expect(savedPayload).toMatchObject({
+      invoiceNumber: 't112026000000002',
+      ettn: '0a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5e',
+      sellerTaxNumber: '1234567891',
+    });
+
+    // Emptying a box clears the column: the update carries null.
+    fireEvent.change(invoiceInput, { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText(/^ETTN/i), {
+      target: { value: '' },
+    });
+    fireEvent.change(screen.getByLabelText(/Seller tax number/i), {
+      target: { value: '' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Receipt details saved.')).toBeInTheDocument(),
+    );
+    expect(savedPayload).toMatchObject({
+      invoiceNumber: null,
+      ettn: null,
+      sellerTaxNumber: null,
+    });
+    expect(invoiceInput).toHaveValue('');
+  });
+
   it('supports adding, editing with validation recovery, and deleting line items', async () => {
     let receiptState = structuredClone(mockReceipt);
 
