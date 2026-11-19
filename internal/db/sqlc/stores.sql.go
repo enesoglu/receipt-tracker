@@ -12,6 +12,39 @@ import (
 	"github.com/google/uuid"
 )
 
+const adoptOwnedStoreVKN = `-- name: AdoptOwnedStoreVKN :one
+UPDATE stores SET vkn = $1::text, updated_at = $2
+WHERE user_id = $3 AND id = $4 AND vkn IS NULL
+RETURNING id, user_id, name, normalized_name, created_at, updated_at, vkn
+`
+
+type AdoptOwnedStoreVKNParams struct {
+	Vkn     string
+	Now     time.Time
+	UserID  uuid.UUID
+	StoreID uuid.UUID
+}
+
+func (q *Queries) AdoptOwnedStoreVKN(ctx context.Context, arg AdoptOwnedStoreVKNParams) (Store, error) {
+	row := q.db.QueryRow(ctx, adoptOwnedStoreVKN,
+		arg.Vkn,
+		arg.Now,
+		arg.UserID,
+		arg.StoreID,
+	)
+	var i Store
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.NormalizedName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Vkn,
+	)
+	return i, err
+}
+
 const countStoreReceipts = `-- name: CountStoreReceipts :one
 SELECT count(*)::integer FROM receipts WHERE user_id = $1 AND store_id = $2
 `
@@ -28,8 +61,139 @@ func (q *Queries) CountStoreReceipts(ctx context.Context, arg CountStoreReceipts
 	return column_1, err
 }
 
+const createOwnedStore = `-- name: CreateOwnedStore :one
+INSERT INTO stores (user_id, name, normalized_name, vkn, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $5)
+RETURNING id, user_id, name, normalized_name, created_at, updated_at, vkn
+`
+
+type CreateOwnedStoreParams struct {
+	UserID         uuid.UUID
+	Name           string
+	NormalizedName string
+	Vkn            *string
+	Now            time.Time
+}
+
+func (q *Queries) CreateOwnedStore(ctx context.Context, arg CreateOwnedStoreParams) (Store, error) {
+	row := q.db.QueryRow(ctx, createOwnedStore,
+		arg.UserID,
+		arg.Name,
+		arg.NormalizedName,
+		arg.Vkn,
+		arg.Now,
+	)
+	var i Store
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.NormalizedName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Vkn,
+	)
+	return i, err
+}
+
+const getOwnedStoreByKey = `-- name: GetOwnedStoreByKey :one
+SELECT id, user_id, name, normalized_name, created_at, updated_at, vkn FROM stores WHERE user_id = $1 AND normalized_name = $2
+`
+
+type GetOwnedStoreByKeyParams struct {
+	UserID         uuid.UUID
+	NormalizedName string
+}
+
+func (q *Queries) GetOwnedStoreByKey(ctx context.Context, arg GetOwnedStoreByKeyParams) (Store, error) {
+	row := q.db.QueryRow(ctx, getOwnedStoreByKey, arg.UserID, arg.NormalizedName)
+	var i Store
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.NormalizedName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Vkn,
+	)
+	return i, err
+}
+
+const getOwnedStoreByVKN = `-- name: GetOwnedStoreByVKN :one
+SELECT id, user_id, name, normalized_name, created_at, updated_at, vkn FROM stores WHERE user_id = $1 AND vkn = $2::text
+`
+
+type GetOwnedStoreByVKNParams struct {
+	UserID uuid.UUID
+	Vkn    string
+}
+
+func (q *Queries) GetOwnedStoreByVKN(ctx context.Context, arg GetOwnedStoreByVKNParams) (Store, error) {
+	row := q.db.QueryRow(ctx, getOwnedStoreByVKN, arg.UserID, arg.Vkn)
+	var i Store
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.NormalizedName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Vkn,
+	)
+	return i, err
+}
+
+const listNearestOwnedStoreNames = `-- name: ListNearestOwnedStoreNames :many
+SELECT n.store_id, n.normalized_name, similarity(n.normalized_name, $1::text)::float8 AS score
+FROM (
+    SELECT s.id AS store_id, s.normalized_name FROM stores s WHERE s.user_id = $2
+    UNION ALL
+    SELECT a.store_id, a.normalized_name FROM store_aliases a WHERE a.user_id = $2
+) n
+ORDER BY n.normalized_name <-> $1::text, n.store_id, n.normalized_name
+LIMIT $3
+`
+
+type ListNearestOwnedStoreNamesParams struct {
+	Name    string
+	UserID  uuid.UUID
+	MaxRows int32
+}
+
+type ListNearestOwnedStoreNamesRow struct {
+	StoreID        uuid.UUID
+	NormalizedName string
+	Score          float64
+}
+
+// ListNearestOwnedStoreNames returns one row per store name and per alias
+// name of the user's, nearest to name by trigram distance — the <->
+// ordering walks the GiST index on (user_id, normalized_name) — each
+// carrying its own similarity to it. A store's score is the maximum among
+// its rows, which the caller aggregates.
+func (q *Queries) ListNearestOwnedStoreNames(ctx context.Context, arg ListNearestOwnedStoreNamesParams) ([]ListNearestOwnedStoreNamesRow, error) {
+	rows, err := q.db.Query(ctx, listNearestOwnedStoreNames, arg.Name, arg.UserID, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNearestOwnedStoreNamesRow{}
+	for rows.Next() {
+		var i ListNearestOwnedStoreNamesRow
+		if err := rows.Scan(&i.StoreID, &i.NormalizedName, &i.Score); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockOwnedStore = `-- name: LockOwnedStore :one
-SELECT id, user_id, name, normalized_name, created_at, updated_at FROM stores WHERE user_id = $1 AND id = $2 FOR UPDATE
+SELECT id, user_id, name, normalized_name, created_at, updated_at, vkn FROM stores WHERE user_id = $1 AND id = $2 FOR UPDATE
 `
 
 type LockOwnedStoreParams struct {
@@ -47,12 +211,13 @@ func (q *Queries) LockOwnedStore(ctx context.Context, arg LockOwnedStoreParams) 
 		&i.NormalizedName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Vkn,
 	)
 	return i, err
 }
 
 const pageOwnedStores = `-- name: PageOwnedStores :many
-SELECT s.id, s.user_id, s.name, s.normalized_name, s.created_at, s.updated_at, (SELECT count(*)::integer FROM receipts r WHERE r.user_id = $1 AND r.store_id = s.id) AS receipt_count
+SELECT s.id, s.user_id, s.name, s.normalized_name, s.created_at, s.updated_at, s.vkn, (SELECT count(*)::integer FROM receipts r WHERE r.user_id = $1 AND r.store_id = s.id) AS receipt_count
 FROM stores s WHERE s.user_id = $1
  AND (NOT $2::boolean OR (lower(s.name),s.id) > (lower($3::text),$4::uuid))
 ORDER BY lower(s.name),s.id LIMIT $5
@@ -73,6 +238,7 @@ type PageOwnedStoresRow struct {
 	NormalizedName string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	Vkn            *string
 	ReceiptCount   int32
 }
 
@@ -98,6 +264,7 @@ func (q *Queries) PageOwnedStores(ctx context.Context, arg PageOwnedStoresParams
 			&i.NormalizedName,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Vkn,
 			&i.ReceiptCount,
 		); err != nil {
 			return nil, err
@@ -112,7 +279,7 @@ func (q *Queries) PageOwnedStores(ctx context.Context, arg PageOwnedStoresParams
 
 const renameOwnedStore = `-- name: RenameOwnedStore :one
 UPDATE stores SET name = $1,normalized_name = $2,updated_at = $3
-WHERE user_id = $4 AND id = $5 RETURNING id, user_id, name, normalized_name, created_at, updated_at
+WHERE user_id = $4 AND id = $5 RETURNING id, user_id, name, normalized_name, created_at, updated_at, vkn
 `
 
 type RenameOwnedStoreParams struct {
@@ -139,6 +306,7 @@ func (q *Queries) RenameOwnedStore(ctx context.Context, arg RenameOwnedStorePara
 		&i.NormalizedName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Vkn,
 	)
 	return i, err
 }
