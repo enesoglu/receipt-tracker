@@ -198,3 +198,55 @@ DELETE FROM product_codes WHERE user_id = @user_id AND store_id = @store_id;
 
 -- name: DeleteStoreRejections :exec
 DELETE FROM match_rejections WHERE user_id = @user_id AND store_id = @store_id;
+
+-- The one-shot backfill-stores subcommand moves receipts onto the
+-- stores their seller tax numbers name. The operator runs it, not a
+-- request, so it reaches every user: the users are enumerated through
+-- ListUserIds (users is not user-owned) and every query below stays
+-- user-bound, as the ownership guard requires of every user-owned
+-- table.
+--
+-- Tables: stores, store_aliases, receipts.
+
+-- CountUserVKNReceipts sizes the pass's work for one user.
+-- name: CountUserVKNReceipts :one
+SELECT count(*)::integer FROM receipts
+WHERE user_id = @user_id AND seller_tax_number IS NOT NULL;
+
+-- CountVKNReceipts tells whether the user's receipts print vkn, before
+-- the pass creates a store for the chain it belongs to.
+-- name: CountVKNReceipts :one
+SELECT count(*)::integer FROM receipts
+WHERE user_id = @user_id AND seller_tax_number = sqlc.arg(vkn)::text;
+
+-- ListVKNStoreSources returns the stores the user's receipts printing
+-- vkn currently point at, one row each.
+-- name: ListVKNStoreSources :many
+SELECT DISTINCT s.* FROM stores s
+JOIN receipts r ON r.user_id = s.user_id AND r.store_id = s.id
+WHERE r.user_id = @user_id AND r.seller_tax_number = sqlc.arg(vkn)::text;
+
+-- RepointVKNReceipts moves every receipt printing vkn onto the store the
+-- tax number resolves to, whatever store it pointed at before.
+-- Receipts already there are left untouched, so a re-run changes
+-- nothing.
+-- name: RepointVKNReceipts :execrows
+UPDATE receipts SET store_id = @store_id, updated_at = @now
+WHERE user_id = @user_id AND seller_tax_number = sqlc.arg(vkn)::text
+  AND store_id IS DISTINCT FROM @store_id;
+
+-- ListVKNStoreGroups pairs one seller tax number with each store the
+-- user's receipts printing it point at, with the receipts counted: the
+-- pass reads from it which numbers are unambiguous.
+-- name: ListVKNStoreGroups :many
+SELECT seller_tax_number AS vkn, store_id, count(*)::integer AS receipt_count
+FROM receipts
+WHERE user_id = @user_id AND seller_tax_number IS NOT NULL AND store_id IS NOT NULL
+GROUP BY seller_tax_number, store_id
+ORDER BY seller_tax_number, store_id;
+
+-- LinkVKNReceipts gives the store to the receipts printing vkn that have
+-- none, once the number's group agreed on that store.
+-- name: LinkVKNReceipts :execrows
+UPDATE receipts SET store_id = @store_id, updated_at = @now
+WHERE user_id = @user_id AND seller_tax_number = sqlc.arg(vkn)::text AND store_id IS NULL;

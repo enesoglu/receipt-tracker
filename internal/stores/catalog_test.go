@@ -2,6 +2,7 @@ package stores
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,6 +56,11 @@ func TestService_ListOrdersPagesAndCounts(t *testing.T) {
 	}
 	if _, err := service.List(ctx, user, 101, ""); !errors.Is(err, apperr.Invalid) {
 		t.Fatalf("limit error = %v, want invalid", err)
+	}
+	// A cursor longer than any the list issues rejects the read before
+	// it reaches the database.
+	if _, err := service.List(ctx, user, 10, strings.Repeat("x", 513)); !errors.Is(err, apperr.Invalid) {
+		t.Fatalf("overlong cursor error = %v, want invalid", err)
 	}
 }
 
