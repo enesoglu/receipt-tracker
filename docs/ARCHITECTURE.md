@@ -189,6 +189,13 @@ per receipt later without a schema change.
    it (`3%01` keeps `3`), while `raw_name` keeps the printed text.
    Unreadable characters are never guessed, and a weight/price row that
    Azure attaches to the wrong item is left to the `line_math` flag.
+   The e-archive identity printed on chain receipts — `FATURA NO` /
+   `BELGE NO`, `ETTN` and the seller VKN — is not a receipt field of the
+   service, so label-anchored rules read it from the stored OCR text: a
+   tax number must pass the VKN check digit, the ETTN must be a UUID in
+   either printed spelling, and an unreadable value stays null rather
+   than being guessed. The raw is stored as received, so a reprocess
+   reads the identity again the same way.
 6. The UI polls `GET /api/v1/pipeline` every 2 s while any receipt is
    `queued`, `extracting` or `matching`: with `ids` for the receipts an
    upload produced, without ids for everything of this user still

@@ -1,0 +1,27 @@
+{
+  "status": "succeeded",
+  "createdDateTime": "2026-11-14T19:30:01Z",
+  "lastUpdatedDateTime": "2026-11-14T19:30:04Z",
+  "analyzeResult": {
+    "apiVersion": "2024-11-30",
+    "modelId": "prebuilt-receipt",
+    "stringIndexType": "textElements",
+    "content": "SYNTHETIC MARKET\nFATURA NO: T112026000000000\nETTN: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d\nVKN: 1234567890\nMAYONEZ 840G BOLBOL\nODENECEK KDV DAHIL TUTAR 149,00",
+    "pages": [
+      {"pageNumber": 1, "spans": [{"offset": 0, "length": 139}]}
+    ],
+    "documents": [
+      {
+        "docType": "receipt.retailMeal",
+        "spans": [{"offset": 0, "length": 139}],
+        "confidence": 0.971,
+        "fields": {
+          "MerchantName": {"type": "string", "valueString": "SYNTHETIC MARKET", "content": "SYNTHETIC MARKET", "confidence": 0.973},
+          "TransactionDate": {"type": "date", "valueDate": "2026-11-14", "content": "14.11.2026", "confidence": 0.981},
+          "TransactionTime": {"type": "time", "valueTime": "19:26:32", "content": "19:26", "confidence": 0.941},
+          "Total": {"type": "currency", "valueCurrency": {"amount": 149.0, "currencySymbol": "₺", "currencyCode": "TRY"}, "content": "149,00", "confidence": 0.969}
+        }
+      }
+    ]
+  }
+}

@@ -18,6 +18,7 @@ type operation struct {
 	Error         *serviceError `json:"error"`
 	AnalyzeResult *struct {
 		ModelID   string     `json:"modelId"`
+		Content   string     `json:"content"`
 		Documents []document `json:"documents"`
 	} `json:"analyzeResult"`
 }
@@ -88,8 +89,13 @@ func parse(raw json.RawMessage) (extract.Result, error) {
 		}
 	}
 	// A photo in which no receipt was found yields an empty result; the
-	// review rules then flag the missing fields.
+	// review rules then flag the missing fields. The e-archive identity is
+	// read from the printed text whenever the response carries it, with or
+	// without a recognised receipt document.
 	result := extract.Result{Lines: []extract.Line{}}
+	if op.AnalyzeResult != nil {
+		result.InvoiceNumber, result.Ettn, result.SellerTaxNumber = readIdentity(op.AnalyzeResult.Content)
+	}
 	if fields == nil {
 		return result, nil
 	}

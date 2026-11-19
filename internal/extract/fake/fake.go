@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
 	"github.com/enesoglu/receipt-tracker/internal/extract"
@@ -39,6 +40,11 @@ const model = "fake-receipt"
 type raw struct {
 	Sample int            `json:"sample"`
 	Result extract.Result `json:"result"`
+}
+
+// uuidOf builds a found identity UUID for a sample.
+func uuidOf(value string) extract.Field[uuid.UUID] {
+	return extract.Field[uuid.UUID]{Value: uuid.MustParse(value), Found: true}
 }
 
 // Provider implements [extract.Extractor].
@@ -91,7 +97,9 @@ func line(name, quantity, unitPrice, total string, confidence float64) extract.L
 
 // samples are synthetic receipts. They exercise what the review rules look
 // at: a clean receipt, one with a discount line and a low-confidence total,
-// and one with no date.
+// and one with no date. The first carries a synthetic e-archive identity,
+// so the whole identity path is covered in development too; the other two
+// print none, as an ordinary shop's receipts do.
 func samples() []extract.Result {
 	day := func(d int) extract.Field[time.Time] {
 		return extract.Field[time.Time]{Value: time.Date(2026, 11, d, 0, 0, 0, 0, time.UTC), Confidence: 0.98, Found: true}
@@ -102,6 +110,7 @@ func samples() []extract.Result {
 	return []extract.Result{
 		{
 			StoreName: text("SYNTHETIC MARKET", 0.97), Date: day(3), Time: at(18, 42), Currency: text("TRY", 0.9),
+			InvoiceNumber: text("T112026000000000", 0), Ettn: uuidOf("1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"), SellerTaxNumber: text("1234567890", 0),
 			Subtotal: amount("112.50", 0.96), Tax: amount("8.33", 0.93), Total: amount("120.83", 0.98),
 			Lines: []extract.Line{
 				line("SUT 1LT", "2", "32.50", "65.00", 0.95),
