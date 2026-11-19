@@ -100,7 +100,9 @@ VALUES (@user_id, 'product', @product_id, @action, @detail, @now);
 -- name: ListProductPricePoints :many
 -- ListProductPricePoints returns one row per purchase of a product, oldest
 -- first, by the rules of ListProductPurchaseStats, optionally within a date
--- range and at one store.
+-- range and at one store. A purchase without a time sorts after every
+-- purchase of the same day with one, so an unknown time can neither jump
+-- ahead of a known one nor change which purchase is the latest.
 SELECT l.id AS line_item_id, r.id AS receipt_id, r.purchased_on::date AS purchased_on,
        r.store_id, s.name AS store_name, r.currency, l.quantity, l.quantity_unit,
        l.name, l.line_total,
@@ -118,7 +120,7 @@ WHERE l.user_id = @user_id
   AND (sqlc.narg(from_date)::date IS NULL OR r.purchased_on >= sqlc.narg(from_date)::date)
   AND (sqlc.narg(to_date)::date IS NULL OR r.purchased_on <= sqlc.narg(to_date)::date)
   AND (sqlc.narg(store_id)::uuid IS NULL OR r.store_id = sqlc.narg(store_id)::uuid)
-ORDER BY r.purchased_on, r.purchased_time NULLS FIRST, r.created_at, r.id, l.position;
+ORDER BY r.purchased_on, r.purchased_time NULLS LAST, r.created_at, r.id, l.position;
 
 -- name: ListProductRejections :many
 SELECT * FROM match_rejections
