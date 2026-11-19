@@ -8,7 +8,7 @@ export interface DateTextProps {
   className?: string;
 }
 
-/** Formats YYYY-MM-DD dates, YYYY-MM months, and RFC 3339 timestamps in UTC. */
+/** Formats calendar dates and months exactly, and RFC 3339 timestamps in local time. */
 export function DateText({
   value,
   format = 'date',
