@@ -63,8 +63,9 @@ type Handler struct {
 	reports  Reports
 }
 
-// New registers exactly seven read tools and binds each HTTP session to its user.
-func New(tokens Tokens, receiptService Receipts, productService Products, reportService Reports, baseURL string, logger *slog.Logger, options Options) *Handler {
+// New registers exactly seven read tools, binds each HTTP session to its user
+// and accepts browser requests only from baseURL or the given browser origins.
+func New(tokens Tokens, receiptService Receipts, productService Products, reportService Reports, baseURL string, browserOrigins []string, logger *slog.Logger, options Options) *Handler {
 	h := &Handler{logger: logger, receipts: receiptService, products: productService, reports: reportService}
 	server := mcp.NewServer(&mcp.Implementation{Name: "receipt-tracker", Version: "1.0.0"}, &mcp.ServerOptions{Capabilities: &mcp.ServerCapabilities{}, SupportedProtocolVersions: []string{"2025-11-25", "2025-06-18"}})
 	h.register(server)
@@ -72,7 +73,7 @@ func New(tokens Tokens, receiptService Receipts, productService Products, report
 	streams := keepalive(transport, options)
 	protected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin != "" && origin != baseURL && origin != "https://claude.ai" && origin != "https://gemini.google.com" {
+		if origin != "" && origin != baseURL && !slices.Contains(browserOrigins, origin) {
 			http.Error(w, "origin is not allowed", http.StatusForbidden)
 			return
 		}

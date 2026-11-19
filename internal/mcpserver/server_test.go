@@ -41,6 +41,10 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/testutil"
 )
 
+// allowedBrowserOrigins is the synthetic policy the test handler is built
+// with; chatgpt.com stands in for a browser client outside the defaults.
+var allowedBrowserOrigins = []string{"https://claude.ai", "https://gemini.google.com", "https://chatgpt.com"}
+
 type switcher struct {
 	mu      sync.RWMutex
 	handler http.Handler
@@ -122,7 +126,7 @@ func setup(t *testing.T, options mcpserver.Options) *fixture {
 }
 
 func (f *fixture) reset() {
-	f.gate.set(mcpserver.New(f.oauth, f.receipts, f.products, f.reports, f.base, f.logger, f.options))
+	f.gate.set(mcpserver.New(f.oauth, f.receipts, f.products, f.reports, f.base, allowedBrowserOrigins, f.logger, f.options))
 }
 
 type testResponse struct {
@@ -408,7 +412,7 @@ func TestMCP_BearerOnlyMetadataChallengeAndNoRESTAuthority(t *testing.T) {
 	read(t, f.request(t, "POST", "/mcp", "{}", "application/json", "", "", cookie), 401)
 	read(t, f.request(t, "GET", "/api/v1/me", "", "", tokens.AccessToken, "", nil), 401)
 	wrongResource := oauthserver.New(f.pool, auth.New(f.pool, config.Config{AllowedEmails: []string{"alice@example.test"}}, nil, time.Now), f.base+"/other", time.Now)
-	f.gate.set(mcpserver.New(wrongResource, f.receipts, f.products, f.reports, f.base, f.logger, mcpserver.Options{}))
+	f.gate.set(mcpserver.New(wrongResource, f.receipts, f.products, f.reports, f.base, allowedBrowserOrigins, f.logger, mcpserver.Options{}))
 	read(t, f.request(t, "POST", "/mcp", "{}", "application/json", tokens.AccessToken, "", nil), 401)
 }
 
@@ -592,7 +596,7 @@ func (h hugeReports) MonthlySpending(_ context.Context, _ uuid.UUID, from, to re
 func TestMCP_EveryToolBoundsItsSerializedOutput(t *testing.T) {
 	f := setup(t, mcpserver.Options{})
 	big := strings.Repeat("oversized synthetic data ", 10000)
-	f.gate.set(mcpserver.New(f.oauth, hugeReceipts{f.receipts, big}, hugeProducts{f.products, big}, hugeReports{big}, f.base, f.logger, mcpserver.Options{}))
+	f.gate.set(mcpserver.New(f.oauth, hugeReceipts{f.receipts, big}, hugeProducts{f.products, big}, hugeReports{big}, f.base, allowedBrowserOrigins, f.logger, mcpserver.Options{}))
 	tokens := f.tokens(t, f.user)
 	session := f.initialize(t, tokens.AccessToken)
 	for name, args := range tools(f) {
@@ -616,7 +620,7 @@ func (unavailableTokens) VerifyAccess(context.Context, string) (oauthserver.Prin
 
 func TestMCP_UnexpectedAuthFailureIsGenericAndProtocolContractIsValid(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := mcpserver.New(unavailableTokens{}, nil, nil, nil, "https://example.test", logger, mcpserver.Options{})
+	handler := mcpserver.New(unavailableTokens{}, nil, nil, nil, "https://example.test", allowedBrowserOrigins, logger, mcpserver.Options{})
 	req := httptest.NewRequestWithContext(t.Context(), "POST", "https://example.test/mcp", strings.NewReader("{}"))
 	req.Header.Set("Authorization", "Bearer synthetic")
 	res := httptest.NewRecorder()
@@ -641,12 +645,45 @@ func (s scopeTokens) VerifyAccess(context.Context, string) (oauthserver.Principa
 
 func TestMCP_ReadScopeIsEnforcedWithoutNarrowingDiscovery(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := mcpserver.New(scopeTokens{"offline_access"}, nil, nil, nil, "https://example.test", logger, mcpserver.Options{})
+	handler := mcpserver.New(scopeTokens{"offline_access"}, nil, nil, nil, "https://example.test", allowedBrowserOrigins, logger, mcpserver.Options{})
 	request := httptest.NewRequestWithContext(t.Context(), "POST", "https://example.test/mcp", strings.NewReader("{}"))
 	request.Header.Set("Authorization", "Bearer synthetic")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != 401 || strings.Contains(response.Header().Get("WWW-Authenticate"), "scope=") {
 		t.Fatal("read scope enforcement or discovery challenge is incorrect")
+	}
+}
+
+func TestMCP_BrowserOriginPolicy(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := mcpserver.New(scopeTokens{"receipts:read"}, nil, nil, nil, "https://example.test", allowedBrowserOrigins, logger, mcpserver.Options{})
+	for _, tc := range []struct {
+		name   string
+		origin string
+		want   int
+	}{
+		{name: "configured browser origin", origin: "https://chatgpt.com", want: http.StatusOK},
+		{name: "default browser origin", origin: "https://claude.ai", want: http.StatusOK},
+		{name: "own base origin", origin: "https://example.test", want: http.StatusOK},
+		{name: "no origin is allowed", origin: "", want: http.StatusOK},
+		{name: "unconfigured browser origin", origin: "https://evil.example.test", want: http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://example.test/mcp",
+				strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`))
+			req.Header.Set("Authorization", "Bearer synthetic")
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			req.Header.Set("Mcp-Protocol-Version", "2025-11-25")
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			res := httptest.NewRecorder()
+			handler.ServeHTTP(res, req)
+			if res.Code != tc.want {
+				t.Fatalf("origin %q: status=%d want=%d body=%s", tc.origin, res.Code, tc.want, res.Body.String())
+			}
+		})
 	}
 }

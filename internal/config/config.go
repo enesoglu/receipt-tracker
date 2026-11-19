@@ -142,10 +142,13 @@ type Config struct {
 	// DevLoginEmail enables the development sign-in for that user when it is
 	// not empty. It is only ever set when Environment is EnvDev.
 	DevLoginEmail string
-	Google        Google
-	Storage       Storage
-	Extraction    Extraction
-	Backup        Backup
+	// MCPBrowserOrigins are the browser origins allowed to call /mcp. A
+	// browser request from any other origin is rejected.
+	MCPBrowserOrigins []string
+	Google            Google
+	Storage           Storage
+	Extraction        Extraction
+	Backup            Backup
 }
 
 // Error reports everything that is wrong with the environment.
@@ -161,10 +164,11 @@ func (e *Error) Error() string {
 }
 
 const (
-	defaultListenAddr      = ":8080"
-	defaultDriveRootFolder = "receipt-tracker"
-	defaultMonthlyPages    = 500
-	encryptionKeyBytes     = 32
+	defaultListenAddr        = ":8080"
+	defaultDriveRootFolder   = "receipt-tracker"
+	defaultMonthlyPages      = 500
+	defaultMCPBrowserOrigins = "https://claude.ai,https://gemini.google.com"
+	encryptionKeyBytes       = 32
 )
 
 // New reads and validates the environment. On failure the error is an
@@ -208,6 +212,7 @@ func New(ctx context.Context) (Config, error) {
 	cfg.Backup.HeartbeatURL = Secret(l.webURL("BACKUP_HEARTBEAT_URL"))
 
 	cfg.DevLoginEmail = l.devLoginEmail("DEV_LOGIN_EMAIL", cfg.Environment, cfg.AllowedEmails)
+	cfg.MCPBrowserOrigins = l.browserOrigins("MCP_BROWSER_ORIGINS")
 
 	// Google is needed for real sign-in and for Drive. A developer who
 	// signs in through the development sign-in and uses neither may leave
@@ -235,7 +240,7 @@ func variables() []string {
 		"STORAGE_LOCAL_DIR", "DRIVE_ROOT_FOLDER", "DRIVE_ROOT_FOLDER_ID", "EXTRACTOR",
 		"AZURE_DI_ENDPOINT", "AZURE_DI_KEY", "AZURE_DI_MONTHLY_PAGES",
 		"BACKUP_DESTINATION", "BACKUP_LOCAL_DIR", "BACKUP_SCHEDULE",
-		"BACKUP_HEARTBEAT_URL", "DEV_LOGIN_EMAIL",
+		"BACKUP_HEARTBEAT_URL", "DEV_LOGIN_EMAIL", "MCP_BROWSER_ORIGINS",
 	}
 }
 
@@ -343,6 +348,39 @@ func (l *loader) baseURL(name string, environment Environment) string {
 		return ""
 	}
 	return parsed.Scheme + "://" + parsed.Host
+}
+
+// browserOrigins returns the browser origins allowed to call /mcp, defaulting
+// to the known browser clients. Each value is an origin only: a path, query or
+// credential could never match a browser's Origin header and would silently
+// leave a client blocked, so it is reported at startup instead.
+func (l *loader) browserOrigins(name string) []string {
+	value := l.value(name)
+	if value == "" {
+		value = defaultMCPBrowserOrigins
+	}
+	var origins []string
+	for part := range strings.SplitSeq(value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		parsed, err := url.Parse(part)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+			strings.Trim(parsed.Path, "/") != "" {
+			l.fail(name, "must be a comma-separated list of http or https origins without credentials, paths, queries or fragments")
+			return nil
+		}
+		origin := parsed.Scheme + "://" + parsed.Host
+		if !slices.Contains(origins, origin) {
+			origins = append(origins, origin)
+		}
+	}
+	if len(origins) == 0 {
+		l.fail(name, "must name at least one origin")
+	}
+	return origins
 }
 
 func (l *loader) databaseURL(name string) string {

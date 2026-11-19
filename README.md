@@ -148,30 +148,31 @@ startup the server checks all variables and, if anything is wrong, exits with
 one error that lists every problem. Messages name the variable and the rule,
 never the value.
 
-| Variable                 | Required                         | Value                                                     |
-| ------------------------ | -------------------------------- | --------------------------------------------------------- |
-| `APP_ENV`                | yes                              | `dev` or `prod`                                           |
-| `APP_LISTEN_ADDR`        | no, default `:8080`              | `host:port` or `:port`                                    |
-| `APP_BASE_URL`           | yes                              | Public origin without a path; `https` when `APP_ENV=prod` |
-| `DATABASE_URL`           | yes                              | `postgres://user:password@host:port/database`             |
-| `APP_ENCRYPTION_KEY`     | yes                              | 32 random bytes in base64: `openssl rand -base64 32`      |
-| `ALLOWED_EMAILS`         | yes                              | Comma-separated addresses that may sign in                |
-| `ADMIN_EMAIL`            | yes                              | One of `ALLOWED_EMAILS`                                   |
-| `GOOGLE_CLIENT_ID`       | yes, except as noted below       | OAuth client for sign-in and Drive                        |
-| `GOOGLE_CLIENT_SECRET`   | yes, except as noted below       | Its secret                                                |
-| `STORAGE_BACKEND`        | yes                              | `local` or `drive`                                        |
-| `STORAGE_LOCAL_DIR`      | when `STORAGE_BACKEND=local`     | Directory for images                                      |
-| `DRIVE_ROOT_FOLDER`      | no, default `receipt-tracker`    | Folder name in My Drive, used when no folder id is set    |
-| `DRIVE_ROOT_FOLDER_ID`   | no                               | Id of the app-created folder, wherever it now lives       |
-| `EXTRACTOR`              | yes                              | `azure` or `fake`                                         |
-| `AZURE_DI_ENDPOINT`      | when `EXTRACTOR=azure`           | `https` endpoint of the Document Intelligence resource    |
-| `AZURE_DI_KEY`           | when `EXTRACTOR=azure`           | Its key                                                   |
-| `AZURE_DI_MONTHLY_PAGES` | no, default `500`                | Pages allowed per month                                   |
-| `BACKUP_DESTINATION`     | yes                              | `drive`, `local` or `none`                                |
-| `BACKUP_LOCAL_DIR`       | when `BACKUP_DESTINATION=local`  | Directory for dumps                                       |
-| `BACKUP_SCHEDULE`        | unless `BACKUP_DESTINATION=none` | Daily start time in UTC as `HH:MM`                        |
-| `BACKUP_HEARTBEAT_URL`   | no                               | Pinged after each backup run                              |
-| `DEV_LOGIN_EMAIL`        | no; refused unless `APP_ENV=dev` | Enables the development sign-in for that address          |
+| Variable                 | Required                                                 | Value                                                     |
+| ------------------------ | -------------------------------------------------------- | --------------------------------------------------------- |
+| `APP_ENV`                | yes                                                      | `dev` or `prod`                                           |
+| `APP_LISTEN_ADDR`        | no, default `:8080`                                      | `host:port` or `:port`                                    |
+| `APP_BASE_URL`           | yes                                                      | Public origin without a path; `https` when `APP_ENV=prod` |
+| `DATABASE_URL`           | yes                                                      | `postgres://user:password@host:port/database`             |
+| `APP_ENCRYPTION_KEY`     | yes                                                      | 32 random bytes in base64: `openssl rand -base64 32`      |
+| `ALLOWED_EMAILS`         | yes                                                      | Comma-separated addresses that may sign in                |
+| `ADMIN_EMAIL`            | yes                                                      | One of `ALLOWED_EMAILS`                                   |
+| `GOOGLE_CLIENT_ID`       | yes, except as noted below                               | OAuth client for sign-in and Drive                        |
+| `GOOGLE_CLIENT_SECRET`   | yes, except as noted below                               | Its secret                                                |
+| `STORAGE_BACKEND`        | yes                                                      | `local` or `drive`                                        |
+| `STORAGE_LOCAL_DIR`      | when `STORAGE_BACKEND=local`                             | Directory for images                                      |
+| `DRIVE_ROOT_FOLDER`      | no, default `receipt-tracker`                            | Folder name in My Drive, used when no folder id is set    |
+| `DRIVE_ROOT_FOLDER_ID`   | no                                                       | Id of the app-created folder, wherever it now lives       |
+| `EXTRACTOR`              | yes                                                      | `azure` or `fake`                                         |
+| `AZURE_DI_ENDPOINT`      | when `EXTRACTOR=azure`                                   | `https` endpoint of the Document Intelligence resource    |
+| `AZURE_DI_KEY`           | when `EXTRACTOR=azure`                                   | Its key                                                   |
+| `AZURE_DI_MONTHLY_PAGES` | no, default `500`                                        | Pages allowed per month                                   |
+| `BACKUP_DESTINATION`     | yes                                                      | `drive`, `local` or `none`                                |
+| `BACKUP_LOCAL_DIR`       | when `BACKUP_DESTINATION=local`                          | Directory for dumps                                       |
+| `BACKUP_SCHEDULE`        | unless `BACKUP_DESTINATION=none`                         | Daily start time in UTC as `HH:MM`                        |
+| `BACKUP_HEARTBEAT_URL`   | no                                                       | Pinged after each backup run                              |
+| `DEV_LOGIN_EMAIL`        | no; refused unless `APP_ENV=dev`                         | Enables the development sign-in for that address          |
+| `MCP_BROWSER_ORIGINS`    | no, default `https://claude.ai,https://gemini.google.com` | Comma-separated browser origins allowed to call `/mcp`    |
 
 The Google client may be left out only when `APP_ENV=dev`, `DEV_LOGIN_EMAIL`
 is set and neither images nor backups use Drive.

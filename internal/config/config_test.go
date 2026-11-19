@@ -122,14 +122,15 @@ func TestNew_LoadsProductionConfiguration(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	want := config.Config{
-		Environment:   config.EnvProd,
-		ListenAddr:    ":8087",
-		BaseURL:       "https://receipt.example.com",
-		DatabaseURL:   syntheticDatabaseURL,
-		AllowedEmails: []string{"ada@example.com", "grace@example.com"},
-		AdminEmail:    "ada@example.com",
-		Google:        config.Google{ClientID: "synthetic-client-id.apps.example", ClientSecret: syntheticClientValue},
-		Storage:       config.Storage{Backend: config.StorageDrive, DriveRootFolder: "receipt-tracker"},
+		Environment:       config.EnvProd,
+		ListenAddr:        ":8087",
+		BaseURL:           "https://receipt.example.com",
+		DatabaseURL:       syntheticDatabaseURL,
+		AllowedEmails:     []string{"ada@example.com", "grace@example.com"},
+		AdminEmail:        "ada@example.com",
+		MCPBrowserOrigins: []string{"https://claude.ai", "https://gemini.google.com"},
+		Google:            config.Google{ClientID: "synthetic-client-id.apps.example", ClientSecret: syntheticClientValue},
+		Storage:           config.Storage{Backend: config.StorageDrive, DriveRootFolder: "receipt-tracker"},
 		Extraction: config.Extraction{
 			Extractor:     config.ExtractorAzure,
 			AzureEndpoint: "https://synthetic.cognitiveservices.example",
@@ -162,17 +163,18 @@ func TestNew_LoadsDevelopmentConfigurationWithDefaults(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	want := config.Config{
-		Environment:   config.EnvDev,
-		ListenAddr:    ":8080",
-		BaseURL:       "http://localhost:8080",
-		DatabaseURL:   developmentDatabaseURL,
-		EncryptionKey: got.EncryptionKey,
-		AllowedEmails: []string{"ada@example.com"},
-		AdminEmail:    "ada@example.com",
-		DevLoginEmail: "ada@example.com",
-		Storage:       config.Storage{Backend: config.StorageLocal, LocalDir: "data/images", DriveRootFolder: "receipt-tracker"},
-		Extraction:    config.Extraction{Extractor: config.ExtractorFake, MonthlyPages: 500},
-		Backup:        config.Backup{Destination: config.BackupNone},
+		Environment:       config.EnvDev,
+		ListenAddr:        ":8080",
+		BaseURL:           "http://localhost:8080",
+		DatabaseURL:       developmentDatabaseURL,
+		EncryptionKey:     got.EncryptionKey,
+		AllowedEmails:     []string{"ada@example.com"},
+		AdminEmail:        "ada@example.com",
+		DevLoginEmail:     "ada@example.com",
+		MCPBrowserOrigins: []string{"https://claude.ai", "https://gemini.google.com"},
+		Storage:           config.Storage{Backend: config.StorageLocal, LocalDir: "data/images", DriveRootFolder: "receipt-tracker"},
+		Extraction:        config.Extraction{Extractor: config.ExtractorFake, MonthlyPages: 500},
+		Backup:            config.Backup{Destination: config.BackupNone},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("config mismatch (-want +got):\n%s", diff)
@@ -409,6 +411,21 @@ func TestNew_ReportsProblems(t *testing.T) {
 			want: []string{"BACKUP_HEARTBEAT_URL must be an absolute http or https URL"},
 		},
 		{
+			name: "browser origin with a path",
+			env:  with(productionEnv(), map[string]string{"MCP_BROWSER_ORIGINS": "https://chatgpt.com/callback"}),
+			want: []string{"MCP_BROWSER_ORIGINS must be a comma-separated list of http or https origins without credentials, paths, queries or fragments"},
+		},
+		{
+			name: "browser origin that is not a URL",
+			env:  with(productionEnv(), map[string]string{"MCP_BROWSER_ORIGINS": "chatgpt.com"}),
+			want: []string{"MCP_BROWSER_ORIGINS must be a comma-separated list of http or https origins without credentials, paths, queries or fragments"},
+		},
+		{
+			name: "browser origins with no valid entry",
+			env:  with(productionEnv(), map[string]string{"MCP_BROWSER_ORIGINS": ",,,"}),
+			want: []string{"MCP_BROWSER_ORIGINS must name at least one origin"},
+		},
+		{
 			name: "several problems in documentation order",
 			env: with(productionEnv(), map[string]string{
 				"BACKUP_SCHEDULE": "", "APP_ENV": "", "EXTRACTOR": "tesseract", "ADMIN_EMAIL": "",
@@ -452,6 +469,20 @@ func TestNew_AcceptsOptionalAndOverriddenValues(t *testing.T) {
 	want := config.Backup{Destination: config.BackupLocal, LocalDir: "data/backups", Schedule: config.TimeOfDay{Hour: 23, Minute: 59}}
 	if diff := cmp.Diff(want, got.Backup); diff != "" {
 		t.Errorf("backup mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestNew_LoadsConfiguredBrowserOrigins(t *testing.T) {
+	setEnv(t, with(developmentEnv(), map[string]string{
+		"MCP_BROWSER_ORIGINS": " https://chatgpt.com/ , https://chatgpt.com , http://localhost:5173",
+	}))
+	got, err := config.New(context.Background())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	want := []string{"https://chatgpt.com", "http://localhost:5173"}
+	if diff := cmp.Diff(want, got.MCPBrowserOrigins); diff != "" {
+		t.Errorf("browser origins mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -506,8 +537,8 @@ func TestVariables_MatchTheExampleFile(t *testing.T) {
 			t.Errorf("%s is read by the loader but missing from .env.example", name)
 		}
 	}
-	if len(listed) != 22 {
-		t.Errorf(".env.example lists %d variables, want the 22 of ARCHITECTURE §6", len(listed))
+	if len(listed) != 23 {
+		t.Errorf(".env.example lists %d variables, want the 23 of ARCHITECTURE §6", len(listed))
 	}
 }
 

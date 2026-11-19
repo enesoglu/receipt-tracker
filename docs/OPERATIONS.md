@@ -556,8 +556,11 @@ supplements the SDK's initial GET comment; its RPC ping option does not send
 periodic SSE bytes. Stream writes clear the normal 30-second HTTP write
 deadline and disable proxy buffering. Each new HTTP request verifies the
 bearer token again, and SDK sessions are bound to that user. Origin checks
-accept the app origin and official Claude/Gemini web origins; the Inspector's
-local proxy and CLI do not require cross-origin browser access to `/mcp`.
+accept the app origin and the browser origins listed in `MCP_BROWSER_ORIGINS`
+(by default the official Claude and Gemini web origins); any other browser
+origin gets 403. Add a new browser-based client to that comma-separated
+variable explicitly and restart. The Inspector's local proxy and CLI do not
+require cross-origin browser access to `/mcp`.
 
 
 The initial 401 challenge advertises the metadata URL without narrowing its
