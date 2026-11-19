@@ -74,6 +74,7 @@ export function ProductDetailPage() {
     productId: string;
     text: string;
     createdProduct?: { id: string; canonicalName: string };
+    mixedSizes?: components['schemas']['MixedSizes'];
   } | null>(null);
 
   // Split selection & dialog state.
@@ -216,7 +217,7 @@ export function ProductDetailPage() {
     const sourceName =
       sourceProductQuery.data?.canonicalName ?? 'selected product';
     try {
-      await mergeMutation.mutateAsync({
+      const merged = await mergeMutation.mutateAsync({
         sourceProductId: selectedSourceId,
       });
       setMergeDialogOpen(false);
@@ -225,6 +226,7 @@ export function ProductDetailPage() {
       setStatusMessage({
         productId: product.id,
         text: `Merged ${sourceName} into ${product.canonicalName}.`,
+        mixedSizes: merged.mixedSizes ?? undefined,
       });
     } catch (error) {
       setMergeError(getErrorMessage(error));
@@ -305,6 +307,17 @@ export function ProductDetailPage() {
               </Link>
               <span>.</span>
             </>
+          ) : null}
+          {activeStatus.mixedSizes ? (
+            <div
+              role="alert"
+              className="mt-2 rounded-control border border-warning bg-warning-soft px-3 py-2 text-small text-warning"
+            >
+              The product now prints different sizes (
+              {activeStatus.mixedSizes.sizes.join(', ')}). Consider price basis{' '}
+              {activeStatus.mixedSizes.basis} to compare prices per{' '}
+              {activeStatus.mixedSizes.basis === 'kg' ? 'kilogram' : 'litre'}.
+            </div>
           ) : null}
         </div>
       ) : null}

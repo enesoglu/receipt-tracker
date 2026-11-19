@@ -406,6 +406,67 @@ describe('ProductDetailPage', () => {
     );
   });
 
+  it('warns about mixed sizes after a merge', async () => {
+    server.use(
+      http.post('/api/v1/products/:productId/merge', () =>
+        HttpResponse.json({
+          ...mockProduct,
+          aliases: [
+            ...mockProduct.aliases,
+            {
+              id: '0193a1b2-0000-7000-8000-000000000503',
+              rawName: 'PEYNIR 1KG',
+              normalizedName: 'peynir 1 kg',
+              store: {
+                id: '0193a1b2-0000-7000-8000-000000000010',
+                name: 'Example Market',
+              },
+              seenCount: 1,
+              lastSeenAt: '2026-11-01T14:20:00Z',
+            },
+          ],
+          mixedSizes: { basis: 'kg', sizes: ['500 g', '1 kg'] },
+        }),
+      ),
+    );
+
+    renderProductDetail();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Ayran 1 l' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Merge another product…' }),
+    );
+    const dialog = await screen.findByRole('dialog');
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('option', { name: 'Ekmek 350 g' }),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.change(within(dialog).getByLabelText('Product to merge'), {
+      target: { value: '0193a1b2-0000-7000-8000-000000000403' },
+    });
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByText('Summary of items moving from Ekmek 350 g'),
+      ).toBeInTheDocument(),
+    );
+
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'Confirm merge' }),
+    );
+
+    const warning = await screen.findByRole('alert');
+    expect(warning).toHaveTextContent('500 g');
+    expect(warning).toHaveTextContent('1 kg');
+    expect(warning).toHaveTextContent(/price basis kg/i);
+    expect(warning).toHaveTextContent(/per kilogram/i);
+  });
+
   it('supports splitting selected aliases with confirmation summary and server error handling', async () => {
     let failSplitOnce = true;
     server.use(
