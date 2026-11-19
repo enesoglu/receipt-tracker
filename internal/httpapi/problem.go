@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/enesoglu/receipt-tracker/internal/apperr"
 )
@@ -158,8 +159,9 @@ func statusOf(kind apperr.Kind) (int, bool) {
 }
 
 // parameterProblem recognises the errors the generated router reports when
-// a path, query, header or cookie parameter cannot be bound. The messages
-// are fixed: the router's own texts name Go types.
+// a path, query, header or cookie parameter cannot be bound. A format failure
+// names the expected format when the binding error reveals it, instead of
+// echoing the router's Go type names.
 func parameterProblem(err error) (field, message string, ok bool) {
 	var (
 		format   *InvalidParamFormatError
@@ -171,20 +173,30 @@ func parameterProblem(err error) (field, message string, ok bool) {
 	)
 	switch {
 	case errors.As(err, &format):
-		return format.ParamName, "is not valid", true
+		return format.ParamName, parameterFormat(format.Err), true
 	case errors.As(err, &required):
 		return required.ParamName, "is required", true
 	case errors.As(err, &header):
 		return header.ParamName, "is required", true
 	case errors.As(err, &decode):
-		return decode.ParamName, "is not valid", true
+		return decode.ParamName, parameterFormat(decode.Err), true
 	case errors.As(err, &count):
 		return count.ParamName, "must be given once", true
 	case errors.As(err, &cookie):
-		return cookie.ParamName, "is not valid", true
+		return cookie.ParamName, parameterFormat(cookie.Err), true
 	default:
 		return "", "", false
 	}
+}
+
+// parameterFormat names the format a value must have when the wrapped binding
+// error reveals it. The generated error types carry only the parameter name,
+// so the type text in the wrapped error is the available source.
+func parameterFormat(err error) string {
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "uuid") {
+		return "must be a UUID"
+	}
+	return "is not valid"
 }
 
 // newProblem builds the document every problem starts from: the type is
