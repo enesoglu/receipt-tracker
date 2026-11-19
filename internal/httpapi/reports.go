@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 
+	"github.com/enesoglu/receipt-tracker/internal/apperr"
 	"github.com/enesoglu/receipt-tracker/internal/reports"
 )
 
@@ -10,6 +12,16 @@ import (
 // It holds what those operations need and nothing else, so each tag is
 // built and changed in its own file.
 type reportsHandlers struct{ reports *reports.Service }
+
+// monthProblem names the month parameter a client could not write, keeping
+// the message of the shared parser.
+func monthProblem(err error, field string) error {
+	var classified *apperr.Error
+	if errors.As(err, &classified) {
+		return classified.WithField(field, "must be written as YYYY-MM")
+	}
+	return err
+}
 
 // GetMonthlySpending returns the spending of every month in a range.
 func (h reportsHandlers) GetMonthlySpending(ctx context.Context, request GetMonthlySpendingRequestObject) (GetMonthlySpendingResponseObject, error) {
@@ -22,11 +34,11 @@ func (h reportsHandlers) GetMonthlySpending(ctx context.Context, request GetMont
 	}
 	from, err := reports.ParseMonth(request.Params.From)
 	if err != nil {
-		return nil, err
+		return nil, monthProblem(err, "from")
 	}
 	to, err := reports.ParseMonth(request.Params.To)
 	if err != nil {
-		return nil, err
+		return nil, monthProblem(err, "to")
 	}
 	spending, err := h.reports.MonthlySpending(ctx, userID, from, to)
 	if err != nil {
@@ -57,7 +69,7 @@ func (h reportsHandlers) GetMonthBreakdown(ctx context.Context, request GetMonth
 	}
 	month, err := reports.ParseMonth(request.Params.Month)
 	if err != nil {
-		return nil, err
+		return nil, monthProblem(err, "month")
 	}
 	breakdown, err := h.reports.MonthBreakdown(ctx, userID, month, reports.Grouping(request.Params.GroupBy))
 	if err != nil {
