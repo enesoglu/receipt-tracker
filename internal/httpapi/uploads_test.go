@@ -14,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alexedwards/scs/v2"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/enesoglu/receipt-tracker/internal/auth"
 	"github.com/enesoglu/receipt-tracker/internal/config"
@@ -27,11 +29,13 @@ import (
 )
 
 type uploadServer struct {
-	t      *testing.T
-	server *httpapi.Server
-	call   func(user uuid.UUID, body io.Reader, contentType string) *httptest.ResponseRecorder
-	alice  uuid.UUID
-	bob    uuid.UUID
+	t        *testing.T
+	pool     *pgxpool.Pool
+	server   *httpapi.Server
+	sessions *scs.SessionManager
+	call     func(user uuid.UUID, body io.Reader, contentType string) *httptest.ResponseRecorder
+	alice    uuid.UUID
+	bob      uuid.UUID
 }
 
 func newUploadServer(t *testing.T) uploadServer {
@@ -54,7 +58,7 @@ func newUploadServer(t *testing.T) uploadServer {
 	t.Cleanup(func() { _ = store.Close() })
 	service := ingest.New(pool, store, "local", ingest.NewHEICConverter(logger), notifier{}, logger, time.Now)
 	server := httpapi.New(":0", logger, http.NotFoundHandler(), users, sessions, nil, httpapi.Ingestion{Uploads: service}, nil, nil, nil, nil)
-	s := uploadServer{t: t, server: server, alice: alice, bob: bob}
+	s := uploadServer{t: t, pool: pool, server: server, sessions: sessions, alice: alice, bob: bob}
 	s.call = func(user uuid.UUID, body io.Reader, contentType string) *httptest.ResponseRecorder {
 		t.Helper()
 		request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/receipts", body)
@@ -220,6 +224,14 @@ func TestUploadReceipts_RefusesMoreThanTwentyFiles(t *testing.T) {
 	response := s.call(s.alice, body, contentType)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400; body: %s", response.Code, response.Body)
+	}
+	// The over-limit request must not have committed any receipt.
+	var count int
+	if err := s.pool.QueryRow(t.Context(), "SELECT count(*) FROM receipts WHERE user_id = $1", s.alice).Scan(&count); err != nil {
+		t.Fatalf("count receipts: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("receipts created = %d, want 0", count)
 	}
 }
 
