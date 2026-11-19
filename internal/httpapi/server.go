@@ -42,7 +42,20 @@ func New(address string, logger *slog.Logger, spa http.Handler, users *auth.Serv
 		authentication.oauth = oauth
 	}
 	if sessions != nil {
-		sessions.ErrorFunc = func(w http.ResponseWriter, r *http.Request, _ error) {
+		sessions.ErrorFunc = func(w http.ResponseWriter, r *http.Request, err error) {
+			// A cancelled request never gets a session save; reporting that as
+			// "session storage failed" would mask the real (non-500) outcome.
+			if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+				return
+			}
+			if r.Context().Err() != nil {
+				// The request is already gone; do not write a response, but keep
+				// a genuine store outage observable instead of swallowing it.
+				if err != nil {
+					logger.Warn("session storage failed on canceled request", "error", err)
+				}
+				return
+			}
 			problems.write(w, r, errors.New("session storage failed"))
 		}
 	}
