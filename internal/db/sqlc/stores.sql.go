@@ -145,6 +145,47 @@ func (q *Queries) CountStoreReceipts(ctx context.Context, arg CountStoreReceipts
 	return column_1, err
 }
 
+const countUserVKNReceipts = `-- name: CountUserVKNReceipts :one
+
+SELECT count(*)::integer FROM receipts
+WHERE user_id = $1 AND seller_tax_number IS NOT NULL
+`
+
+// The one-shot backfill-stores subcommand moves receipts onto the
+// stores their seller tax numbers name. The operator runs it, not a
+// request, so it reaches every user: the users are enumerated through
+// ListUserIds (users is not user-owned) and every query below stays
+// user-bound, as the ownership guard requires of every user-owned
+// table.
+//
+// Tables: stores, store_aliases, receipts.
+// CountUserVKNReceipts sizes the pass's work for one user.
+func (q *Queries) CountUserVKNReceipts(ctx context.Context, userID uuid.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countUserVKNReceipts, userID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countVKNReceipts = `-- name: CountVKNReceipts :one
+SELECT count(*)::integer FROM receipts
+WHERE user_id = $1 AND seller_tax_number = $2::text
+`
+
+type CountVKNReceiptsParams struct {
+	UserID uuid.UUID
+	Vkn    string
+}
+
+// CountVKNReceipts tells whether the user's receipts print vkn, before
+// the pass creates a store for the chain it belongs to.
+func (q *Queries) CountVKNReceipts(ctx context.Context, arg CountVKNReceiptsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countVKNReceipts, arg.UserID, arg.Vkn)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createOwnedStore = `-- name: CreateOwnedStore :one
 INSERT INTO stores (user_id, name, normalized_name, vkn, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $5)
@@ -397,6 +438,33 @@ func (q *Queries) GetOwnedStoreByVKN(ctx context.Context, arg GetOwnedStoreByVKN
 	return i, err
 }
 
+const linkVKNReceipts = `-- name: LinkVKNReceipts :execrows
+UPDATE receipts SET store_id = $1, updated_at = $2
+WHERE user_id = $3 AND seller_tax_number = $4::text AND store_id IS NULL
+`
+
+type LinkVKNReceiptsParams struct {
+	StoreID uuid.NullUUID
+	Now     time.Time
+	UserID  uuid.UUID
+	Vkn     string
+}
+
+// LinkVKNReceipts gives the store to the receipts printing vkn that have
+// none, once the number's group agreed on that store.
+func (q *Queries) LinkVKNReceipts(ctx context.Context, arg LinkVKNReceiptsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, linkVKNReceipts,
+		arg.StoreID,
+		arg.Now,
+		arg.UserID,
+		arg.Vkn,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listNearestOwnedStoreNames = `-- name: ListNearestOwnedStoreNames :many
 SELECT n.store_id, n.normalized_name, similarity(n.normalized_name, $1::text)::float8 AS score
 FROM (
@@ -516,6 +584,84 @@ func (q *Queries) ListStoreBranches(ctx context.Context, arg ListStoreBranchesPa
 	for rows.Next() {
 		var i ListStoreBranchesRow
 		if err := rows.Scan(&i.Name, &i.ReceiptCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVKNStoreGroups = `-- name: ListVKNStoreGroups :many
+SELECT seller_tax_number AS vkn, store_id, count(*)::integer AS receipt_count
+FROM receipts
+WHERE user_id = $1 AND seller_tax_number IS NOT NULL AND store_id IS NOT NULL
+GROUP BY seller_tax_number, store_id
+ORDER BY seller_tax_number, store_id
+`
+
+type ListVKNStoreGroupsRow struct {
+	Vkn          *string
+	StoreID      uuid.NullUUID
+	ReceiptCount int32
+}
+
+// ListVKNStoreGroups pairs one seller tax number with each store the
+// user's receipts printing it point at, with the receipts counted: the
+// pass reads from it which numbers are unambiguous.
+func (q *Queries) ListVKNStoreGroups(ctx context.Context, userID uuid.UUID) ([]ListVKNStoreGroupsRow, error) {
+	rows, err := q.db.Query(ctx, listVKNStoreGroups, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListVKNStoreGroupsRow{}
+	for rows.Next() {
+		var i ListVKNStoreGroupsRow
+		if err := rows.Scan(&i.Vkn, &i.StoreID, &i.ReceiptCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVKNStoreSources = `-- name: ListVKNStoreSources :many
+SELECT DISTINCT s.id, s.user_id, s.name, s.normalized_name, s.created_at, s.updated_at, s.vkn FROM stores s
+JOIN receipts r ON r.user_id = s.user_id AND r.store_id = s.id
+WHERE r.user_id = $1 AND r.seller_tax_number = $2::text
+`
+
+type ListVKNStoreSourcesParams struct {
+	UserID uuid.UUID
+	Vkn    string
+}
+
+// ListVKNStoreSources returns the stores the user's receipts printing
+// vkn currently point at, one row each.
+func (q *Queries) ListVKNStoreSources(ctx context.Context, arg ListVKNStoreSourcesParams) ([]Store, error) {
+	rows, err := q.db.Query(ctx, listVKNStoreSources, arg.UserID, arg.Vkn)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Store{}
+	for rows.Next() {
+		var i Store
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.NormalizedName,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Vkn,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -762,6 +908,36 @@ func (q *Queries) RenameOwnedStore(ctx context.Context, arg RenameOwnedStorePara
 		&i.Vkn,
 	)
 	return i, err
+}
+
+const repointVKNReceipts = `-- name: RepointVKNReceipts :execrows
+UPDATE receipts SET store_id = $1, updated_at = $2
+WHERE user_id = $3 AND seller_tax_number = $4::text
+  AND store_id IS DISTINCT FROM $1
+`
+
+type RepointVKNReceiptsParams struct {
+	StoreID uuid.NullUUID
+	Now     time.Time
+	UserID  uuid.UUID
+	Vkn     string
+}
+
+// RepointVKNReceipts moves every receipt printing vkn onto the store the
+// tax number resolves to, whatever store it pointed at before.
+// Receipts already there are left untouched, so a re-run changes
+// nothing.
+func (q *Queries) RepointVKNReceipts(ctx context.Context, arg RepointVKNReceiptsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, repointVKNReceipts,
+		arg.StoreID,
+		arg.Now,
+		arg.UserID,
+		arg.Vkn,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const touchStore = `-- name: TouchStore :exec

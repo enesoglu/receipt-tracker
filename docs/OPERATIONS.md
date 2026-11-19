@@ -287,6 +287,24 @@ mapped, only still-empty columns are filled, user corrections survive, and
 one summary line is logged with `scanned`, `filled` and `skipped`. Re-running
 it later changes nothing.
 
+The update that carries store resolution (tax numbers on stores, branch
+names, raw-name aliases) also links the stores that receipts already carry a
+seller tax number for. Run its one-shot subcommand after `backfill-identity`,
+still before `up -d --wait app`:
+
+```sh
+sudo docker compose -f compose.yaml run --rm app backfill-stores
+```
+
+The pass is idempotent and spends no Azure quota: every receipt whose tax
+number names a registered chain moves onto that chain's one store —
+including receipts whose store was set by hand — and each displaced store's
+name becomes an alias of the chain store, so it keeps matching; the
+displaced stores stay for users to merge or delete. A tax number all of one
+store's receipts print is adopted by that store, and groups that disagree
+are skipped and counted. One summary line is logged with `scanned`, `moved`
+and `skipped`. Re-running it later changes nothing.
+
 Migrations run at startup. For a code rollback, put the previous SHA back and
 repeat pull/up. Confirm the old image supports the current schema: image
 rollback does not undo migrations. Otherwise restore a pre-update dump into a

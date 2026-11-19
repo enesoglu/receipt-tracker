@@ -286,6 +286,19 @@ func TestResolve(t *testing.T) {
 			wantCalls: []string{"key", "nearest"},
 		},
 		{
+			name:  "the runner-up scores the maximum among its rows",
+			input: Input{Name: "Kasap Aliye"},
+			source: fakeSource{
+				nearest: []NameScore{
+					{StoreID: kasap, Name: "kasap ali", Score: 0.88},
+					{StoreID: other, Name: "kasap aliye", Score: 0.72},
+					{StoreID: other, Name: "kasap aliye store", Score: 0.75},
+				},
+			},
+			want:      Decision{Outcome: OutcomeExisting, StoreID: kasap, Reason: ReasonSimilarName},
+			wantCalls: []string{"key", "nearest"},
+		},
+		{
 			name:      "no store matches",
 			input:     Input{Name: "Yeni Kasap"},
 			want:      Decision{Outcome: OutcomeNew, Reason: ReasonNewStore},
@@ -397,5 +410,15 @@ func TestChainByKeyword_TieGoesToTheEarlierEntry(t *testing.T) {
 	}
 	if got.ID != "first" || keyword != "market" {
 		t.Errorf("chainByKeyword = %q/%q, want first/market", got.ID, keyword)
+	}
+}
+
+// TestChainVKN pins the keyword path for a registry chain with no tax
+// numbers of its own — the case the committed registry cannot reach,
+// because every entry carries its numbers: the chain still resolves,
+// with an empty vkn naming no store of its own.
+func TestChainVKN(t *testing.T) {
+	if got := chainVKN(chains.Chain{ID: "kwonly", Name: "Keyword Mart", Keywords: []string{"kwonly"}}); got != "" {
+		t.Errorf("chainVKN of a chain without tax numbers = %q, want empty", got)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/backup"
 	backupdrive "github.com/enesoglu/receipt-tracker/internal/backup/drive"
 	backuplocal "github.com/enesoglu/receipt-tracker/internal/backup/local"
+	"github.com/enesoglu/receipt-tracker/internal/chains"
 	"github.com/enesoglu/receipt-tracker/internal/config"
 	"github.com/enesoglu/receipt-tracker/internal/db"
 	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
@@ -110,9 +111,10 @@ func run(logger *slog.Logger) error {
 	if destination != nil {
 		backups = backup.New(destination, backup.NewPostgresLock(pool, logger), logger, time.Now, backup.Options{DatabaseURL: cfg.DatabaseURL.Reveal(), HeartbeatURL: cfg.Backup.HeartbeatURL.Reveal()})
 	}
-	// The backfill-identity pass needs the parsers the receipt service is
-	// built with, so it is dispatched after that construction below, not here.
-	if len(os.Args) > 1 && os.Args[1] != "backfill-identity" {
+	// The backfill passes need what is built below — identity needs the
+	// receipt service's parsers, stores needs the store service — so both
+	// are dispatched after those constructions, not here.
+	if len(os.Args) > 1 && os.Args[1] != "backfill-identity" && os.Args[1] != "backfill-stores" {
 		if os.Args[1] == "oauth" {
 			return oauth.CLI(ctx, os.Args[2:], os.Stdout)
 		}
@@ -188,6 +190,14 @@ func run(logger *slog.Logger) error {
 	uploads := ingest.New(pool, images, string(cfg.Storage.Backend), ingest.NewHEICConverter(logger), worker, logger, time.Now)
 	productService := products.New(pool, time.Now)
 	storeService := stores.New(pool, time.Now)
+	if len(os.Args) > 1 && os.Args[1] == "backfill-stores" {
+		summary, err := storeService.Backfill(ctx, chains.All())
+		if err != nil {
+			return fmt.Errorf("backfill stores: %w", err)
+		}
+		logger.Info("stores backfill complete", "scanned", summary.Scanned, "moved", summary.Moved, "skipped", summary.Skipped)
+		return nil
+	}
 	reportService := reports.New(pool)
 	mcp := mcpserver.New(oauth, receiptService, productService, storeService, reportService, cfg.BaseURL, cfg.MCPBrowserOrigins, logger, mcpserver.Options{})
 	serveErr := httpapi.New(cfg.ListenAddr, logger, spa, users, sessions, driveStorage, httpapi.Ingestion{Uploads: uploads, Usage: usage}, reportService, productService, storeService, oauthHandler, mcp, receiptService).Run(ctx)

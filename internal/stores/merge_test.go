@@ -1,6 +1,7 @@
 package stores
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -134,5 +135,30 @@ func TestService_MergeRejectsSelfForeignAndDifferentVKNs(t *testing.T) {
 	}
 	if _, err := service.Merge(ctx, user, left, uuid.New()); !errors.Is(err, apperr.NotFound) {
 		t.Fatalf("missing source error = %v, want not found", err)
+	}
+}
+
+// TestService_MergeLocksThePairInIdOrder pins the swap lockPair makes
+// before locking: a merge whose target id sorts after its source's runs
+// the same way, because the pair always locks in id order so two merges
+// of the same stores in opposite directions cannot deadlock.
+func TestService_MergeLocksThePairInIdOrder(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	user := f.user("a")
+	service := New(f.pool, func() time.Time { return time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC) })
+	target := f.store(user, "High Market", "high market", nil)
+	source := f.store(user, "Low Market", "low market", nil)
+	// Name the pair so the target's id sorts after the source's, driving
+	// the swap inside lockPair whatever ids the stores drew.
+	if bytes.Compare(target[:], source[:]) < 0 {
+		target, source = source, target
+	}
+	if _, err := service.Merge(ctx, user, target, source); err != nil {
+		t.Fatal(err)
+	}
+	// The source folded into the target, whichever id came first.
+	if got := f.storeCount(user); got != 1 {
+		t.Fatalf("stores after the merge = %d, want the target alone", got)
 	}
 }
