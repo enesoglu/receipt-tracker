@@ -18,6 +18,8 @@ are in [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES).
   values and edit receipts or line items. Saved raw results can be
   reprocessed. Follow each receipt through queued, extracting and matching
   stages, on the upload screen and in a global processing indicator.
+  For known chains, an e-archive panel shows the portal link and the invoice
+  values ready to copy; every lookup and captcha is completed by the user.
 - Match products across receipts using names, sizes, stores and codes. Confirm
   uncertain matches, merge duplicates or split products that were joined wrongly.
 - Compare product price history and monthly spending, with currencies kept separate.
