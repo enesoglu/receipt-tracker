@@ -34,6 +34,12 @@ import {
 import { useMonthBreakdown, useMonthlySpending } from './reports';
 import { usePipeline } from './pipeline';
 import { useResolveReviewFlag, useReviewFlags } from './review';
+import {
+  useAcceptReceiptSuggestion,
+  useIgnoreReceiptSuggestion,
+  useReceiptSuggestions,
+  useSuggestionsStatus,
+} from './suggestions';
 import { useSettings, useUpdateSettings, useUsage } from './settings';
 import { useDisconnectStorage, useStorageStatus } from './storage';
 import { useStores, useUpdateStore } from './stores';
@@ -342,6 +348,106 @@ describe('API query and mutation hooks', () => {
         llmSuggestionsEnabled: true,
       });
       await hooks.storageDisconnect.result.current.mutateAsync();
+    });
+  });
+
+  it('covers suggestion hooks with exact request targets and cache updates', async () => {
+    const getSpy = vi.spyOn(api, 'GET').mockImplementation((path) => {
+      if (path === '/suggestions/status') {
+        return okResult({ available: true, offline: false }) as never;
+      }
+      return okResult({ items: [] }) as never;
+    });
+    const postSpy = vi.spyOn(api, 'POST').mockImplementation((path) => {
+      if (path === '/receipts/{receiptId}/suggestions/{suggestionId}/accept') {
+        return okResult({ id: 'rec-1', lineItems: [] }) as never;
+      }
+      return okResult({
+        id: 'sug-2',
+        receiptId: 'rec-1',
+        status: 'ignored',
+      }) as never;
+    });
+
+    const { client, Wrapper } = createWrapper();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    const listHook = renderHook(() => useReceiptSuggestions('rec-1'), {
+      wrapper: Wrapper,
+    });
+    const statusHook = renderHook(() => useSuggestionsStatus(true), {
+      wrapper: Wrapper,
+    });
+    const disabledStatusHook = renderHook(() => useSuggestionsStatus(false), {
+      wrapper: Wrapper,
+    });
+
+    await waitFor(() => expect(listHook.result.current.isSuccess).toBe(true));
+    expect(getSpy).toHaveBeenCalledWith('/receipts/{receiptId}/suggestions', {
+      params: { path: { receiptId: 'rec-1' } },
+    });
+
+    await waitFor(() => expect(statusHook.result.current.isSuccess).toBe(true));
+    expect(getSpy).toHaveBeenCalledWith('/suggestions/status');
+    expect(disabledStatusHook.result.current.fetchStatus).toBe('idle');
+
+    // Seed the receipt's suggestion list, then detach the query so cache
+    // updates from the mutations below are observable without a refetch.
+    listHook.unmount();
+    client.setQueryData(queryKeys.suggestions.forReceipt('rec-1'), {
+      items: [{ id: 'sug-2', receiptId: 'rec-1', status: 'pending' }],
+    });
+
+    const acceptHook = renderHook(() => useAcceptReceiptSuggestion(), {
+      wrapper: Wrapper,
+    });
+    const ignoreHook = renderHook(() => useIgnoreReceiptSuggestion(), {
+      wrapper: Wrapper,
+    });
+
+    await act(async () => {
+      await acceptHook.result.current.mutateAsync({
+        receiptId: 'rec-1',
+        suggestionId: 'sug-1',
+      });
+      await ignoreHook.result.current.mutateAsync({
+        receiptId: 'rec-1',
+        suggestionId: 'sug-2',
+      });
+    });
+
+    expect(postSpy).toHaveBeenCalledWith(
+      '/receipts/{receiptId}/suggestions/{suggestionId}/accept',
+      { params: { path: { receiptId: 'rec-1', suggestionId: 'sug-1' } } },
+    );
+    expect(postSpy).toHaveBeenCalledWith(
+      '/receipts/{receiptId}/suggestions/{suggestionId}/ignore',
+      { params: { path: { receiptId: 'rec-1', suggestionId: 'sug-2' } } },
+    );
+    expect(client.getQueryData(queryKeys.receipts.detail('rec-1'))).toEqual({
+      id: 'rec-1',
+      lineItems: [],
+    });
+    const ignoredItem = (
+      client.getQueryData(queryKeys.suggestions.forReceipt('rec-1')) as {
+        items: Array<{ id: string; status: string }>;
+      }
+    ).items[0];
+    expect(ignoredItem).toMatchObject({ id: 'sug-2', status: 'ignored' });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.suggestions.all,
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.receipts.all,
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.reviewFlags.all,
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.products.all,
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.reports.all,
     });
   });
 });

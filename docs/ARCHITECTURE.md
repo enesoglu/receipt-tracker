@@ -524,9 +524,11 @@ product creation, alias and code learning); for `unmatched` the product is
 created and confirmed. Ignoring only records the decision. Neither path
 calls the LLM. Suggestions do not survive a reprocess: the line items are
 re-created, the cascade clears their rows, and the re-enqueued job
-regenerates only the still-eligible lines. The settings page shows Off /
-Online / LLM offline, derived from the newest `suggest_lines` job; error
-text never leaves the server.
+regenerates only the still-eligible lines. Pending suggestions show under
+their line on the receipt page and in the review queue's line context,
+each with Accept and Ignore. The settings page carries the per-user switch
+and shows Off / Online / LLM offline, derived from the newest
+`suggest_lines` job; error text never leaves the server.
 
 ## 6. Configuration
 

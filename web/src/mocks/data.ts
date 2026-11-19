@@ -616,6 +616,49 @@ export const mockStorageStatus: components['schemas']['StorageStatus'] = {
   },
 };
 
+export const mockSuggestions: components['schemas']['ReceiptSuggestions'] = {
+  items: [
+    {
+      id: '0193a1b2-0000-7000-8000-000000000921',
+      receiptId: '0193a1b2-0000-7000-8000-000000000100',
+      lineItemId: '0193a1b2-0000-7000-8000-000000000202',
+      rawName: 'EKMEK',
+      status: 'pending',
+      suggestedName: 'Beyaz ekmek 500 g',
+      category: {
+        id: '0193a1b2-0000-7000-8000-000000000021',
+        name: 'Bakery',
+      },
+      model: 'qwen3.5:4b',
+      promptVersion: 1,
+      createdAt: '2026-11-02T16:07:12Z',
+      decidedAt: null,
+    },
+    {
+      id: '0193a1b2-0000-7000-8000-000000000922',
+      receiptId: '0193a1b2-0000-7000-8000-000000000100',
+      lineItemId: '0193a1b2-0000-7000-8000-000000000203',
+      rawName: 'SUT 1LT TAM YAGLI',
+      status: 'pending',
+      suggestedName: 'Tam yağlı süt 1 l',
+      category: {
+        id: '0193a1b2-0000-7000-8000-000000000020',
+        name: 'Dairy',
+      },
+      model: 'qwen3.5:4b',
+      promptVersion: 1,
+      createdAt: '2026-11-02T16:07:12Z',
+      decidedAt: null,
+    },
+  ],
+};
+
+export const mockSuggestionsStatus: components['schemas']['SuggestionsStatus'] =
+  {
+    available: true,
+    offline: false,
+  };
+
 export const mockProblemUnauthorized: components['schemas']['Problem'] = {
   type: 'about:blank',
   title: 'Unauthorized',
@@ -679,6 +722,8 @@ let mockSettingsState: components['schemas']['Settings'] =
   structuredClone(mockSettings);
 let mockStorageState: components['schemas']['StorageStatus'] =
   structuredClone(mockStorageStatus);
+let mockSuggestionsState: components['schemas']['LineSuggestion'][] =
+  structuredClone(mockSuggestions.items);
 
 /** Clears runtime mock state created during uploads and reviews so tests stay isolated. */
 export function resetMockState(): void {
@@ -694,6 +739,7 @@ export function resetMockState(): void {
   nextMockCategoryIndex = 29;
   mockSettingsState = structuredClone(mockSettings);
   mockStorageState = structuredClone(mockStorageStatus);
+  mockSuggestionsState = structuredClone(mockSuggestions.items);
 }
 
 function hasAllowedUploadType(file: { name: string; type: string }): boolean {
@@ -1097,6 +1143,68 @@ export function resolveMockReviewFlag(
 ): components['schemas']['Receipt'] {
   resolvedMockFlagIds.add(flagId);
   return getMockReceiptById(mockReceipt.id) ?? mockReceipt;
+}
+
+/** Returns the pending and decided mock suggestions of one receipt, in line order. */
+export function queryMockSuggestions(
+  receiptId: string,
+): components['schemas']['ReceiptSuggestions'] | null {
+  if (receiptId === 'missing') return null;
+  return {
+    items: mockSuggestionsState.filter(
+      (suggestion) => suggestion.receiptId === receiptId,
+    ),
+  };
+}
+
+function findPendingMockSuggestion(
+  receiptId: string,
+  suggestionId: string,
+): number {
+  return mockSuggestionsState.findIndex(
+    (suggestion) =>
+      suggestion.id === suggestionId && suggestion.receiptId === receiptId,
+  );
+}
+
+/** Accepts a pending mock suggestion and returns the receipt after the change. */
+export function acceptMockSuggestion(
+  receiptId: string,
+  suggestionId: string,
+):
+  | { ok: true; receipt: components['schemas']['Receipt'] }
+  | { ok: false; reason: 'not_found' | 'conflict' } {
+  const index = findPendingMockSuggestion(receiptId, suggestionId);
+  if (index === -1) return { ok: false, reason: 'not_found' };
+  if (mockSuggestionsState[index].status !== 'pending') {
+    return { ok: false, reason: 'conflict' };
+  }
+  mockSuggestionsState[index] = {
+    ...mockSuggestionsState[index],
+    status: 'accepted',
+    decidedAt: new Date().toISOString(),
+  };
+  return { ok: true, receipt: getMockReceiptById(receiptId) ?? mockReceipt };
+}
+
+/** Ignores a pending mock suggestion and returns the ignored suggestion. */
+export function ignoreMockSuggestion(
+  receiptId: string,
+  suggestionId: string,
+):
+  | { ok: true; suggestion: components['schemas']['LineSuggestion'] }
+  | { ok: false; reason: 'not_found' | 'conflict' } {
+  const index = findPendingMockSuggestion(receiptId, suggestionId);
+  if (index === -1) return { ok: false, reason: 'not_found' };
+  if (mockSuggestionsState[index].status !== 'pending') {
+    return { ok: false, reason: 'conflict' };
+  }
+  mockSuggestionsState[index] = {
+    ...mockSuggestionsState[index],
+    status: 'ignored',
+    decidedAt: new Date().toISOString(),
+  };
+  return { ok: true, suggestion: mockSuggestionsState[index] };
 }
 
 function normalizeSearchText(value: string): string {

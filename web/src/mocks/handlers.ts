@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import type { components } from '../api/schema.gen';
 import {
+  acceptMockSuggestion,
   createMockCategory,
   deleteMockCategory,
   disconnectMockStorage,
@@ -10,6 +11,7 @@ import {
   getMockReceiptById,
   getMockSettings,
   getMockStorageStatus,
+  ignoreMockSuggestion,
   mergeMockProducts,
   mockImageBytes,
   mockProblemForbidden,
@@ -18,6 +20,7 @@ import {
   mockReceipt,
   mockStore,
   mockStorePage,
+  mockSuggestionsStatus,
   mockUploadResponse,
   mockUsage,
   mockUser,
@@ -28,6 +31,7 @@ import {
   queryMockProducts,
   queryMockReceipts,
   queryMockReviewFlags,
+  queryMockSuggestions,
   registerMockUploads,
   resolveMockReviewFlag,
   setMockAuthMode,
@@ -237,6 +241,62 @@ export const handlers = [
           (item) => item.id !== String(params.lineItemId),
         ),
       });
+    },
+  ),
+
+  http.get('/api/v1/receipts/:receiptId/suggestions', ({ params }) => {
+    const blocked = guardSignedIn();
+    if (blocked) return blocked;
+    const suggestions = queryMockSuggestions(String(params.receiptId));
+    if (!suggestions) {
+      return problemJson(404, mockProblemNotFound);
+    }
+    return HttpResponse.json(suggestions);
+  }),
+
+  http.post(
+    '/api/v1/receipts/:receiptId/suggestions/:suggestionId/accept',
+    ({ params }) => {
+      const blocked = guardSignedIn();
+      if (blocked) return blocked;
+      const result = acceptMockSuggestion(
+        String(params.receiptId),
+        String(params.suggestionId),
+      );
+      if (!result.ok) {
+        return result.reason === 'not_found'
+          ? problemJson(404, mockProblemNotFound)
+          : problemJson(409, {
+              ...mockProblemNotFound,
+              title: 'Conflict',
+              status: 409,
+              detail: 'suggestion is no longer pending',
+            });
+      }
+      return HttpResponse.json(result.receipt);
+    },
+  ),
+
+  http.post(
+    '/api/v1/receipts/:receiptId/suggestions/:suggestionId/ignore',
+    ({ params }) => {
+      const blocked = guardSignedIn();
+      if (blocked) return blocked;
+      const result = ignoreMockSuggestion(
+        String(params.receiptId),
+        String(params.suggestionId),
+      );
+      if (!result.ok) {
+        return result.reason === 'not_found'
+          ? problemJson(404, mockProblemNotFound)
+          : problemJson(409, {
+              ...mockProblemNotFound,
+              title: 'Conflict',
+              status: 409,
+              detail: 'suggestion is no longer pending',
+            });
+      }
+      return HttpResponse.json(result.suggestion);
     },
   ),
 
@@ -494,6 +554,12 @@ export const handlers = [
     const blocked = guardSignedIn();
     if (blocked) return blocked;
     return HttpResponse.json(mockUsage);
+  }),
+
+  http.get('/api/v1/suggestions/status', () => {
+    const blocked = guardSignedIn();
+    if (blocked) return blocked;
+    return HttpResponse.json(mockSuggestionsStatus);
   }),
 
   http.get('/api/v1/storage', () => {

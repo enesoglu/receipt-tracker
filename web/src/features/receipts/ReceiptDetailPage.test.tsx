@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createAppQueryClient } from '../../api/query-client';
 import { QueryProvider } from '../../api/QueryProvider';
 import type { components } from '../../api/schema.gen';
-import { mockReceipt, resetMockAuth } from '../../mocks/data';
+import { mockReceipt, resetMockAuth, resetMockState } from '../../mocks/data';
 import { server } from '../../mocks/server';
 import { ReceiptDetailPage } from './ReceiptDetailPage';
 
@@ -35,6 +35,7 @@ beforeAll(() => {
 afterEach(() => {
   server.resetHandlers();
   resetMockAuth();
+  resetMockState();
 });
 
 afterAll(() => {
@@ -693,6 +694,53 @@ describe('ReceiptDetailPage', () => {
       expect(
         screen.getByRole('heading', { level: 1, name: 'Receipts list target' }),
       ).toBeInTheDocument(),
+    );
+  });
+
+  it('offers pending suggestions on eligible lines with accept and ignore', async () => {
+    renderDetailPage(mockReceipt.id);
+
+    // The needs_review Ekmek line and the new_product Süt line have
+    // suggestions; the auto-linked Ayran line and the negative İndirim
+    // line are not eligible.
+    expect(
+      await screen.findByText('Model suggestion for "EKMEK"'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Model suggestion for "SUT 1LT TAM YAGLI"'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Model suggestion for "AYRAN 1LT"'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Model suggestion for "INDIRIM"'),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Accept model suggestion for EKMEK',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Model suggestion for "EKMEK"'),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText('Model suggestion for "SUT 1LT TAM YAGLI"'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Ignore model suggestion for SUT 1LT TAM YAGLI',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Model suggestion for "SUT 1LT TAM YAGLI"'),
+      ).not.toBeInTheDocument(),
     );
   });
 });

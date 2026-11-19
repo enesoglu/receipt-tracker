@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useLogout, useMe } from '../../api/auth';
 import { getErrorMessage } from '../../api/errors';
+import {
+  useSuggestionsStatus,
+  type SuggestionsStatus,
+} from '../../api/suggestions';
 import { useSettings, useUsage, type Usage } from '../../api/settings';
 import {
   useDisconnectStorage,
@@ -15,6 +19,7 @@ import { Dialog } from '../../components/ui/Dialog';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Spinner } from '../../components/ui/Spinner';
+import { LineSuggestionsSettingsForm } from './LineSuggestionsSettingsForm';
 import { SettingsDefaultsForm } from './SettingsDefaultsForm';
 
 function formatReasonCode(code: string): string {
@@ -56,6 +61,17 @@ function getProviderLabel(provider: Usage['provider']): string {
     : 'Fake extractor';
 }
 
+function getSuggestionsBadge(
+  enabled: boolean,
+  status: SuggestionsStatus | undefined,
+): { label: string; variant: BadgeVariant } | null {
+  if (!enabled) return { label: 'Off', variant: 'neutral' };
+  if (!status) return null;
+  if (!status.available) return { label: 'Off', variant: 'neutral' };
+  if (status.offline) return { label: 'LLM offline', variant: 'danger' };
+  return { label: 'Online', variant: 'success' };
+}
+
 /** Account preferences, OCR extraction quota, Google Drive storage status, and sign out. */
 export function SettingsPage() {
   const meQuery = useMe();
@@ -64,6 +80,14 @@ export function SettingsPage() {
   const storageQuery = useStorageStatus();
   const disconnectStorage = useDisconnectStorage();
   const logout = useLogout();
+  const suggestionsEnabled = settingsQuery.data?.llmSuggestionsEnabled ?? false;
+  const suggestionsStatusQuery = useSuggestionsStatus(suggestionsEnabled);
+  const suggestionsBadge = settingsQuery.data
+    ? getSuggestionsBadge(
+        settingsQuery.data.llmSuggestionsEnabled,
+        suggestionsStatusQuery.data,
+      )
+    : null;
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
@@ -213,6 +237,40 @@ export function SettingsPage() {
               </div>
             </dl>
           </div>
+        )}
+      </Card>
+
+      <Card
+        title="Line suggestions"
+        description="An optional language model proposes names and categories for unresolved lines."
+        actions={
+          suggestionsBadge ? (
+            <Badge variant={suggestionsBadge.variant}>
+              {suggestionsBadge.label}
+            </Badge>
+          ) : undefined
+        }
+      >
+        {settingsQuery.isPending ? (
+          <div className="flex items-center justify-center py-6">
+            <Spinner showLabel label="Loading line suggestions…" />
+          </div>
+        ) : settingsQuery.isError ? (
+          <ErrorState
+            title="Could not load line suggestions"
+            message={getErrorMessage(settingsQuery.error)}
+            onRetry={() => {
+              void settingsQuery.refetch();
+            }}
+          />
+        ) : (
+          <LineSuggestionsSettingsForm
+            settings={settingsQuery.data}
+            statusQuery={suggestionsStatusQuery}
+            onSaved={(message) => {
+              setStatusMessage(message);
+            }}
+          />
         )}
       </Card>
 

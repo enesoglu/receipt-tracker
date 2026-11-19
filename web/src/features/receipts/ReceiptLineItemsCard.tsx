@@ -8,6 +8,7 @@ import {
   type LineItemInput,
   type Receipt,
 } from '../../api/receipts';
+import { useReceiptSuggestions } from '../../api/suggestions';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -25,6 +26,7 @@ import {
 } from './flag-reasons';
 import { type LineItemFormValues } from './line-item-form-values';
 import { LineItemEditorFields } from './LineItemEditorFields';
+import { LineSuggestionBlock } from './LineSuggestionBlock';
 
 const EMPTY_FORM: LineItemFormValues = {
   name: '',
@@ -100,6 +102,7 @@ export function ReceiptLineItemsCard({ receipt }: ReceiptLineItemsCardProps) {
   const createLineItem = useCreateLineItem(receipt.id);
   const updateLineItem = useUpdateLineItem(receipt.id);
   const deleteLineItem = useDeleteLineItem(receipt.id);
+  const suggestionsQuery = useReceiptSuggestions(receipt.id);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<LineItemFormValues>(EMPTY_FORM);
@@ -233,6 +236,12 @@ export function ReceiptLineItemsCard({ receipt }: ReceiptLineItemsCardProps) {
               const isFlagged = itemFlags.length > 0;
               const isEditing = editingId === item.id;
               const isDeleting = deletingId === item.id;
+              const itemSuggestion =
+                suggestionsQuery.data?.items.find(
+                  (suggestion) =>
+                    suggestion.lineItemId === item.id &&
+                    suggestion.status === 'pending',
+                ) ?? null;
 
               return (
                 <li
@@ -368,6 +377,10 @@ export function ReceiptLineItemsCard({ receipt }: ReceiptLineItemsCardProps) {
                             return <li key={flag.id}>{summary.reason}</li>;
                           })}
                         </ul>
+                      ) : null}
+
+                      {itemSuggestion ? (
+                        <LineSuggestionBlock suggestion={itemSuggestion} />
                       ) : null}
                     </div>
                   )}

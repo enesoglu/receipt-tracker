@@ -8,6 +8,7 @@ import {
   type ReviewResolution,
 } from '../../api/review';
 import type { components } from '../../api/schema.gen';
+import { useReceiptSuggestions } from '../../api/suggestions';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -24,6 +25,7 @@ import {
   formatReceiptStatus,
   formatReviewFlagSummary,
 } from '../receipts/flag-reasons';
+import { LineSuggestionBlock } from '../receipts/LineSuggestionBlock';
 import { LineEditForm } from './LineEditForm';
 import { ProductCandidateChooser } from './ProductCandidateChooser';
 import { type LineEditValues } from './review-form-values';
@@ -128,6 +130,17 @@ export function FlagResolutionCard({
   const { flag, receipt, lineItem } = entry;
   const resolveMutation = useResolveReviewFlag();
   const receiptDetailQuery = useReceipt(receipt.id);
+  const suggestionsQuery = useReceiptSuggestions(receipt.id, {
+    enabled: lineItem != null,
+  });
+  const lineSuggestion =
+    lineItem != null
+      ? (suggestionsQuery.data?.items.find(
+          (suggestion) =>
+            suggestion.lineItemId === lineItem.id &&
+            suggestion.status === 'pending',
+        ) ?? null)
+      : null;
 
   const [errorText, setErrorText] = useState<string | null>(null);
   const [headerFieldError, setHeaderFieldError] = useState<string | null>(null);
@@ -648,6 +661,10 @@ export function FlagResolutionCard({
                   ) : null}
                 </div>
               </div>
+            ) : null}
+
+            {lineSuggestion ? (
+              <LineSuggestionBlock suggestion={lineSuggestion} />
             ) : null}
 
             {identityFacts.length > 0 ? (
