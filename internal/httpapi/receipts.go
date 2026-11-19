@@ -71,7 +71,7 @@ func (h receiptsHandlers) ListReceipts(ctx context.Context, request ListReceipts
 	}
 	if p.Month != nil {
 		if *p.Month == "" {
-			return nil, apperr.New(apperr.Invalid, "invalid month")
+			return nil, apperr.New(apperr.Invalid, "invalid month").WithField("month", "must be written as YYYY-MM")
 		}
 		f.Month = *p.Month
 	}

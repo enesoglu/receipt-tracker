@@ -48,31 +48,67 @@ func validAmount(value decimal.NullDecimal, places int32) bool {
 }
 
 func validateReceipt(input ReceiptInput) error {
-	if !validText(input.Title, 200) || !validCurrency(input.Currency) || !validAmount(input.Subtotal, 2) || !validAmount(input.TaxTotal, 2) || !validAmount(input.Total, 2) {
-		return apperr.New(apperr.Invalid, "invalid receipt fields")
+	// Every rejected field is named, so the form can show the message at
+	// the input it belongs to instead of one line under the save button.
+	err := apperr.New(apperr.Invalid, "invalid receipt fields")
+	if !validText(input.Title, 200) {
+		err = err.WithField("title", "must be 1 to 200 characters")
+	}
+	if !validCurrency(input.Currency) {
+		err = err.WithField("currency", "must be a three-letter currency code, such as TRY")
+	}
+	if !validAmount(input.Subtotal, 2) {
+		err = err.WithField("subtotal", "must be a decimal with at most two places")
+	}
+	if !validAmount(input.TaxTotal, 2) {
+		err = err.WithField("taxTotal", "must be a decimal with at most two places")
+	}
+	if !validAmount(input.Total, 2) {
+		err = err.WithField("total", "must be a decimal with at most two places")
 	}
 	if input.StoreName != nil && (!validText(*input.StoreName, 200) || matching.Normalize(*input.StoreName).Key == "") {
-		return apperr.New(apperr.Invalid, "invalid store name")
+		err = err.WithField("storeName", "must be 1 to 200 characters and not only punctuation")
 	}
 	if input.PurchasedTime != nil {
-		if _, err := time.Parse("15:04", *input.PurchasedTime); err != nil || len(*input.PurchasedTime) != 5 {
-			return apperr.New(apperr.Invalid, "invalid purchase time")
+		if _, parseErr := time.Parse("15:04", *input.PurchasedTime); parseErr != nil || len(*input.PurchasedTime) != 5 {
+			err = err.WithField("purchasedTime", "must be a time of day as HH:MM, such as 18:42")
 		}
 	}
-	return nil
+	if len(err.Fields) == 0 {
+		return nil
+	}
+	return err
 }
 
 func validateLine(input LineInput) error {
-	if !validText(input.Name, 200) || !validAmount(input.Quantity, 3) || !validAmount(input.UnitPrice, 2) || !validAmount(decimal.NewNullDecimal(input.LineTotal), 2) {
-		return apperr.New(apperr.Invalid, "invalid line item fields")
+	err := apperr.New(apperr.Invalid, "invalid line item fields")
+	if !validText(input.Name, 200) {
+		err = err.WithField("name", "must be 1 to 200 characters")
+	}
+	if !validAmount(input.Quantity, 3) {
+		err = err.WithField("quantity", "must be a decimal with at most three places")
+	} else if input.Quantity.Valid && !input.Quantity.Decimal.IsPositive() {
+		// A quantity that is not positive makes line math and the price
+		// history meaningless. Package sizes already required positivity,
+		// so the two surfaces agree.
+		err = err.WithField("quantity", "must be positive with at most three decimal places")
+	}
+	if !validAmount(input.UnitPrice, 2) {
+		err = err.WithField("unitPrice", "must be a decimal with at most two places")
+	}
+	if !validAmount(decimal.NewNullDecimal(input.LineTotal), 2) {
+		err = err.WithField("lineTotal", "must be a decimal with at most two places")
 	}
 	if input.QuantityUnit != nil && !validText(*input.QuantityUnit, 20) {
-		return apperr.New(apperr.Invalid, "invalid quantity unit")
+		err = err.WithField("quantityUnit", "must be 1 to 20 characters")
 	}
 	if input.ProductCode != nil && !validText(*input.ProductCode, 64) {
-		return apperr.New(apperr.Invalid, "invalid product code")
+		err = err.WithField("productCode", "must be 1 to 64 characters")
 	}
-	return nil
+	if len(err.Fields) == 0 {
+		return nil
+	}
+	return err
 }
 
 func (s *Service) storeForName(ctx context.Context, q *unit, userID uuid.UUID, name *string) (uuid.NullUUID, error) {
