@@ -22,10 +22,18 @@ export type MonthlySpendingParams =
   operations['getMonthlySpending']['parameters']['query'];
 export type MonthBreakdownParams =
   operations['getMonthBreakdown']['parameters']['query'];
+export type PipelineParams = NonNullable<
+  operations['getPipeline']['parameters']['query']
+>;
 
 /** Centralized TanStack Query keys for every API resource and filter combination. */
 export const queryKeys = {
   me: ['auth', 'me'] as const,
+  pipeline: {
+    all: ['pipeline'] as const,
+    list: (params: PipelineParams = {}) =>
+      ['pipeline', 'list', params] as const,
+  },
   receipts: {
     all: ['receipts'] as const,
     list: (params: ReceiptListParams = {}) =>

@@ -358,6 +358,39 @@ func (e OriginalImageContentType) Valid() bool {
 	}
 }
 
+// Defines values for PipelineStage.
+const (
+	PipelineStageExtracting   PipelineStage = "extracting"
+	PipelineStageFailed       PipelineStage = "failed"
+	PipelineStageMatching     PipelineStage = "matching"
+	PipelineStageNeedsReview  PipelineStage = "needs_review"
+	PipelineStageQueued       PipelineStage = "queued"
+	PipelineStageReady        PipelineStage = "ready"
+	PipelineStageWaitingQuota PipelineStage = "waiting_quota"
+)
+
+// Valid indicates whether the value is a known member of the PipelineStage enum.
+func (e PipelineStage) Valid() bool {
+	switch e {
+	case PipelineStageExtracting:
+		return true
+	case PipelineStageFailed:
+		return true
+	case PipelineStageMatching:
+		return true
+	case PipelineStageNeedsReview:
+		return true
+	case PipelineStageQueued:
+		return true
+	case PipelineStageReady:
+		return true
+	case PipelineStageWaitingQuota:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PossibleDuplicateFlagKind.
 const (
 	PossibleDuplicateFlagKindPossibleDuplicate PossibleDuplicateFlagKind = "possible_duplicate"
@@ -1204,6 +1237,47 @@ type OriginalImage struct {
 // OriginalImageContentType defines model for OriginalImage.ContentType.
 type OriginalImageContentType string
 
+// PipelineItem One receipt's place in the upload pipeline.
+type PipelineItem struct {
+	// FailureReason Why extraction failed, in words for the user; `null` unless the stage is `failed`.
+	FailureReason *string `json:"failureReason"`
+
+	// QueuePosition Which of this user's queued receipts is next, counting this one;
+	// `null` unless the stage is `queued`. The position counts only
+	// this user's receipts: a global one would leak other users'
+	// activity.
+	QueuePosition *int               `json:"queuePosition"`
+	ReceiptId     openapi_types.UUID `json:"receiptId"`
+
+	// Stage - `queued`: uploaded, waiting for the worker; `queuePosition` says
+	//   which of this user's queued receipts is next.
+	// - `extracting`: the image is being read by the extractor.
+	// - `matching`: the raw result is being mapped to the receipt.
+	// - `waiting_quota`: the monthly extraction allowance is used up; continues next month.
+	// - `needs_review`: extraction done, with at least one open review flag.
+	// - `ready`: extraction done, with no open review flag.
+	// - `failed`: extraction failed for good, see `failureReason`.
+	Stage PipelineStage `json:"stage"`
+}
+
+// PipelinePage The stage of each receipt, in upload order.
+type PipelinePage struct {
+	// Items One item per receipt, oldest upload first.
+	Items []PipelineItem `json:"items"`
+}
+
+// PipelineStage - `queued`: uploaded, waiting for the worker; `queuePosition` says
+//
+//	which of this user's queued receipts is next.
+//
+// - `extracting`: the image is being read by the extractor.
+// - `matching`: the raw result is being mapped to the receipt.
+// - `waiting_quota`: the monthly extraction allowance is used up; continues next month.
+// - `needs_review`: extraction done, with at least one open review flag.
+// - `ready`: extraction done, with no open review flag.
+// - `failed`: extraction failed for good, see `failureReason`.
+type PipelineStage string
+
 // PossibleDuplicateDetail defines model for PossibleDuplicateDetail.
 type PossibleDuplicateDetail struct {
 	// OtherReceiptId The receipt with the same store, date and total.
@@ -2015,6 +2089,12 @@ type ListCategoriesParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// GetPipelineParams defines parameters for GetPipeline.
+type GetPipelineParams struct {
+	// Ids Only these receipts, comma-separated. Unknown ids are ignored.
+	Ids *[]openapi_types.UUID `form:"ids,omitempty" json:"ids,omitempty"`
+}
+
 // ListProductsParams defines parameters for ListProducts.
 type ListProductsParams struct {
 	// Q Text search over product names and the names they were seen under.
@@ -2679,6 +2759,9 @@ type ServerInterface interface {
 	// GetMe Get the signed-in user
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// GetPipeline Get the upload pipeline stages
+	// (GET /pipeline)
+	GetPipeline(w http.ResponseWriter, r *http.Request, params GetPipelineParams)
 	// ListProducts List products
 	// (GET /products)
 	ListProducts(w http.ResponseWriter, r *http.Request, params ListProductsParams)
@@ -2805,6 +2888,12 @@ func (_ Unimplemented) UpdateCategory(w http.ResponseWriter, r *http.Request, ca
 // GetMe Get the signed-in user
 // (GET /me)
 func (_ Unimplemented) GetMe(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetPipeline Get the upload pipeline stages
+// (GET /pipeline)
+func (_ Unimplemented) GetPipeline(w http.ResponseWriter, r *http.Request, params GetPipelineParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3122,6 +3211,39 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPipeline operation middleware
+func (siw *ServerInterfaceWrapper) GetPipeline(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPipelineParams
+
+	// ------------- Optional query parameter "ids" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", false, false, "ids", r.URL.Query(), &params.Ids, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "ids"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ids", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPipeline(w, r, params)
 	}))
 
 	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
@@ -4250,6 +4372,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/auth/logout", wrapper.Logout)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/pipeline", wrapper.GetPipeline)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/receipts", wrapper.ListReceipts)
 	})
 	r.Group(func(r chi.Router) {
@@ -4800,6 +4925,77 @@ type GetMedefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetMedefaultApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPipelineRequestObject struct {
+	Params GetPipelineParams
+}
+
+type GetPipelineResponseObject interface {
+	VisitGetPipelineResponse(w http.ResponseWriter) error
+}
+
+type GetPipeline200JSONResponse PipelinePage
+
+func (response GetPipeline200JSONResponse) VisitGetPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPipeline400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response GetPipeline400ApplicationProblemPlusJSONResponse) VisitGetPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPipeline401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetPipeline401ApplicationProblemPlusJSONResponse) VisitGetPipelineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPipelinedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetPipelinedefaultApplicationProblemPlusJSONResponse) VisitGetPipelineResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -7219,6 +7415,9 @@ type StrictServerInterface interface {
 	// GetMe Get the signed-in user
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// GetPipeline Get the upload pipeline stages
+	// (GET /pipeline)
+	GetPipeline(ctx context.Context, request GetPipelineRequestObject) (GetPipelineResponseObject, error)
 	// ListProducts List products
 	// (GET /products)
 	ListProducts(ctx context.Context, request ListProductsRequestObject) (ListProductsResponseObject, error)
@@ -7504,6 +7703,32 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPipeline operation middleware
+func (sh *strictHandler) GetPipeline(w http.ResponseWriter, r *http.Request, params GetPipelineParams) {
+	var request GetPipelineRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPipeline(ctx, request.(GetPipelineRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPipeline")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPipelineResponseObject); ok {
+		if err := validResponse.VisitGetPipelineResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

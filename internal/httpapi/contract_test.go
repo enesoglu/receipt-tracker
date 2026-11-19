@@ -76,8 +76,9 @@ func TestContract_IsValidOpenAPI(t *testing.T) {
 // contract change and must be made here on purpose.
 func plannedOperations() map[string][]string {
 	return map[string][]string{
-		"auth":    {"getMe", "logout"},
-		"uploads": {"uploadReceipts"},
+		"auth":     {"getMe", "logout"},
+		"uploads":  {"uploadReceipts"},
+		"pipeline": {"getPipeline"},
 		"receipts": {
 			"createLineItem", "deleteLineItem", "deleteReceipt", "getReceipt", "getReceiptImage",
 			"listReceipts", "reprocessReceipt", "updateLineItem", "updateReceipt",

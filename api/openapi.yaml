@@ -62,6 +62,8 @@ tags:
         `DEV_LOGIN_EMAIL`.
   - name: uploads
     description: Submitting receipt photos.
+  - name: pipeline
+    description: The upload-to-extraction pipeline behind receipts, for progress display.
   - name: receipts
     description: Receipts, their images and their line items.
   - name: review
@@ -119,6 +121,55 @@ paths:
       responses:
         "204":
           description: The session is gone.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+  /pipeline:
+    get:
+      operationId: getPipeline
+      tags: [pipeline]
+      summary: Get the upload pipeline stages
+      description: |
+        The stage of each receipt in the upload-to-extraction pipeline.
+
+        With `ids`, the stage of exactly those receipts of this user;
+        unknown ids are ignored. Without `ids`, every receipt of this user
+        still working through the pipeline, in upload order, at most 100 —
+        what the global processing indicator polls.
+
+        The upload screen and the indicator poll this operation every 2
+        seconds while any stage is `queued`, `extracting` or `matching`.
+        Every stage is derived from stored columns: `processing` with a
+        saved raw result is `matching`, without one it is `extracting`.
+        `queuePosition` counts only this user's queued receipts, so it
+        never reports other users' activity.
+      parameters:
+        - name: ids
+          in: query
+          description: Only these receipts, comma-separated. Unknown ids are ignored.
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 100
+            items:
+              type: string
+              format: uuid
+          example: ["0193a1b2-0000-7000-8000-000000000100"]
+      responses:
+        "200":
+          description: The receipts and their stages, in upload order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelinePage"
+              examples:
+                page:
+                  $ref: "#/components/examples/PipelinePage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         default:
@@ -184,8 +235,8 @@ paths:
         same day are ordered by upload time, newest first. All filters combine
         with AND.
 
-        The upload screen polls this operation with `ids` every 2 seconds while
-        any of its receipts is `queued` or `processing`.
+        The upload screen tracks its receipts through `getPipeline` instead;
+        the `ids` filter of this operation remains for direct lookups.
       parameters:
         - name: ids
           in: query
@@ -1635,6 +1686,51 @@ components:
         - `ready`: extracted, with no open review flag.
         - `failed`: extraction failed for good, see `failureReason`.
       enum: [queued, processing, waiting_quota, needs_review, ready, failed]
+    PipelinePage:
+      type: object
+      description: The stage of each receipt, in upload order.
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: One item per receipt, oldest upload first.
+          items:
+            $ref: "#/components/schemas/PipelineItem"
+    PipelineItem:
+      type: object
+      description: One receipt's place in the upload pipeline.
+      required: [receiptId, stage, queuePosition, failureReason]
+      properties:
+        receiptId:
+          type: string
+          format: uuid
+        stage:
+          $ref: "#/components/schemas/PipelineStage"
+        queuePosition:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: |
+            Which of this user's queued receipts is next, counting this one;
+            `null` unless the stage is `queued`. The position counts only
+            this user's receipts: a global one would leak other users'
+            activity.
+        failureReason:
+          type: string
+          nullable: true
+          description: Why extraction failed, in words for the user; `null` unless the stage is `failed`.
+    PipelineStage:
+      type: string
+      description: |
+        - `queued`: uploaded, waiting for the worker; `queuePosition` says
+          which of this user's queued receipts is next.
+        - `extracting`: the image is being read by the extractor.
+        - `matching`: the raw result is being mapped to the receipt.
+        - `waiting_quota`: the monthly extraction allowance is used up; continues next month.
+        - `needs_review`: extraction done, with at least one open review flag.
+        - `ready`: extraction done, with no open review flag.
+        - `failed`: extraction failed for good, see `failureReason`.
+      enum: [queued, extracting, matching, waiting_quota, needs_review, ready, failed]
     ReceiptSource:
       type: string
       description: The channel the receipt came in through.
@@ -2989,6 +3085,18 @@ components:
             error:
               code: unsupported_type
               message: Only JPEG, PNG and HEIC photos can be uploaded.
+    PipelinePage:
+      summary: A queued receipt and one that failed
+      value:
+        items:
+          - receiptId: 0193a1b2-0000-7000-8000-000000000100
+            stage: queued
+            queuePosition: 2
+            failureReason: null
+          - receiptId: 0193a1b2-0000-7000-8000-000000000101
+            stage: failed
+            queuePosition: null
+            failureReason: Reading the receipt kept failing. Reprocess it later.
     ReceiptPage:
       summary: A reviewed receipt and one still in the queue
       value:

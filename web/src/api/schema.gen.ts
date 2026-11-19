@@ -41,6 +41,38 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/pipeline': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get the upload pipeline stages
+     * @description The stage of each receipt in the upload-to-extraction pipeline.
+     *
+     *     With `ids`, the stage of exactly those receipts of this user;
+     *     unknown ids are ignored. Without `ids`, every receipt of this user
+     *     still working through the pipeline, in upload order, at most 100 —
+     *     what the global processing indicator polls.
+     *
+     *     The upload screen and the indicator poll this operation every 2
+     *     seconds while any stage is `queued`, `extracting` or `matching`.
+     *     Every stage is derived from stored columns: `processing` with a
+     *     saved raw result is `matching`, without one it is `extracting`.
+     *     `queuePosition` counts only this user's queued receipts, so it
+     *     never reports other users' activity.
+     */
+    get: operations['getPipeline'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/receipts': {
     parameters: {
       query?: never;
@@ -55,8 +87,8 @@ export interface paths {
      *     same day are ordered by upload time, newest first. All filters combine
      *     with AND.
      *
-     *     The upload screen polls this operation with `ids` every 2 seconds while
-     *     any of its receipts is `queued` or `processing`.
+     *     The upload screen tracks its receipts through `getPipeline` instead;
+     *     the `ids` filter of this operation remains for direct lookups.
      */
     get: operations['listReceipts'];
     put?: never;
@@ -901,6 +933,45 @@ export interface components {
     ReceiptStatus:
       | 'queued'
       | 'processing'
+      | 'waiting_quota'
+      | 'needs_review'
+      | 'ready'
+      | 'failed';
+    /** @description The stage of each receipt, in upload order. */
+    PipelinePage: {
+      /** @description One item per receipt, oldest upload first. */
+      items: components['schemas']['PipelineItem'][];
+    };
+    /** @description One receipt's place in the upload pipeline. */
+    PipelineItem: {
+      /** Format: uuid */
+      receiptId: string;
+      stage: components['schemas']['PipelineStage'];
+      /**
+       * @description Which of this user's queued receipts is next, counting this one;
+       *     `null` unless the stage is `queued`. The position counts only
+       *     this user's receipts: a global one would leak other users'
+       *     activity.
+       */
+      queuePosition: number | null;
+      /** @description Why extraction failed, in words for the user; `null` unless the stage is `failed`. */
+      failureReason: string | null;
+    };
+    /**
+     * @description - `queued`: uploaded, waiting for the worker; `queuePosition` says
+     *       which of this user's queued receipts is next.
+     *     - `extracting`: the image is being read by the extractor.
+     *     - `matching`: the raw result is being mapped to the receipt.
+     *     - `waiting_quota`: the monthly extraction allowance is used up; continues next month.
+     *     - `needs_review`: extraction done, with at least one open review flag.
+     *     - `ready`: extraction done, with no open review flag.
+     *     - `failed`: extraction failed for good, see `failureReason`.
+     * @enum {string}
+     */
+    PipelineStage:
+      | 'queued'
+      | 'extracting'
+      | 'matching'
       | 'waiting_quota'
       | 'needs_review'
       | 'ready'
@@ -1872,6 +1943,37 @@ export interface operations {
         };
         content?: never;
       };
+      401: components['responses']['Unauthorized'];
+      default: components['responses']['Error'];
+    };
+  };
+  getPipeline: {
+    parameters: {
+      query?: {
+        /**
+         * @description Only these receipts, comma-separated. Unknown ids are ignored.
+         * @example [
+         *       "0193a1b2-0000-7000-8000-000000000100"
+         *     ]
+         */
+        ids?: string[];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The receipts and their stages, in upload order. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PipelinePage'];
+        };
+      };
+      400: components['responses']['BadRequest'];
       401: components['responses']['Unauthorized'];
       default: components['responses']['Error'];
     };

@@ -22,6 +22,7 @@ transport test; the E2E test validates its unconfigured and foreign-user errors.
 | getMe                  | TestAuth_TestSupportKeepsSessionUsersIsolated                  | Session identity only                       |
 | logout                 | TestLogout_PreservesAnotherUsersSession                        | Current session only; B's session unchanged |
 | uploadReceipts         | TestUploadReceipts_UserBGetsOwnReceiptForUserAsPhoto           | Same bytes create B's own receipt           |
+| getPipeline            | TestGetPipeline_IgnoresAnotherUsersReceipts                   | Foreign ids ignored; only own unsettled    |
 | listReceipts           | TestReceipts_IsolatesEveryOperation                            | Empty foreign-id filter                     |
 | getReceipt             | TestReceipts_IsolatesEveryOperation                            | 404                                         |
 | updateReceipt          | TestReceipts_IsolatesEveryOperation                            | 404                                         |

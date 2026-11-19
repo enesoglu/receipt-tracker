@@ -146,6 +146,18 @@ func TestE2E_RealServerWorkflowAndContract(t *testing.T) {
 	}
 	var receipt httpapi.Receipt
 	s.json(alice, "GET", "/receipts/"+ids[0], nil, 200, &receipt)
+	var pipeline struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	s.json(alice, "GET", "/pipeline?ids="+ids[0], nil, 200, &pipeline)
+	if len(pipeline.Items) != 1 {
+		t.Fatalf("pipeline items for own receipt = %d, want 1", len(pipeline.Items))
+	}
+	// Another user's ids are unknown to bob: ignored, never revealed.
+	s.json(bob, "GET", "/pipeline?ids="+ids[0], nil, 200, &pipeline)
+	if len(pipeline.Items) != 0 {
+		t.Fatalf("pipeline items for another user's receipt = %d, want 0", len(pipeline.Items))
+	}
 	if len(receipt.Images) != 1 || len(receipt.LineItems) == 0 {
 		t.Fatalf("processed receipt missing images or lines: %+v", receipt)
 	}

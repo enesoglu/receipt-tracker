@@ -18,6 +18,7 @@ import (
 type handlers struct {
 	authHandlers
 	uploadsHandlers
+	pipelineHandlers
 	receiptsHandlers
 	reviewHandlers
 	productsHandlers
@@ -41,6 +42,7 @@ func serviceUnavailable() error {
 func mountAPI(router chi.Router, problems problemWriter, authentication authHandlers, storage storageHandlers, ingestion Ingestion, reportService *reports.Service, productService *products.Service, receiptService *receipts.Service) {
 	all := handlers{
 		authHandlers: authentication, storageHandlers: storage,
+		pipelineHandlers:   pipelineHandlers{receipts: receiptService},
 		receiptsHandlers:   receiptsHandlers{receipts: receiptService},
 		reviewHandlers:     reviewHandlers{receipts: receiptService},
 		storesHandlers:     storesHandlers{receipts: receiptService},
