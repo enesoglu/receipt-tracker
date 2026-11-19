@@ -38,10 +38,10 @@ function makeSummary(
   };
 }
 
-function renderListPage() {
+function renderListPage(initialEntry = '/receipts') {
   const client = createAppQueryClient({ staleTime: 0 });
   return render(
-    <MemoryRouter initialEntries={['/receipts']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <QueryProvider client={client}>
         <ReceiptsListPage />
       </QueryProvider>
@@ -148,6 +148,35 @@ describe('ReceiptsListPage', () => {
       name: 'Upload receipts',
     })[1];
     expect(emptyUploadLink).toHaveAttribute('href', '/upload');
+  });
+
+  it('applies drill-down filters from the URL to the receipts query', async () => {
+    const recordedQueries: URLSearchParams[] = [];
+    server.use(
+      http.get('/api/v1/receipts', ({ request }) => {
+        recordedQueries.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ items: [], nextCursor: null });
+      }),
+    );
+
+    renderListPage(
+      '/receipts?month=2026-11&categoryId=0193a1b2-0000-7000-8000-000000000020&group=discounts',
+    );
+
+    await waitFor(() => expect(recordedQueries.length).toBeGreaterThan(0));
+    expect(recordedQueries[0].get('month')).toBe('2026-11');
+    expect(recordedQueries[0].get('categoryId')).toBe(
+      '0193a1b2-0000-7000-8000-000000000020',
+    );
+    expect(recordedQueries[0].get('group')).toBe('discounts');
+    expect(screen.getByText('Breakdown group: Discounts')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove filter' }));
+    await waitFor(() => {
+      const last = recordedQueries[recordedQueries.length - 1];
+      expect(last.has('categoryId')).toBe(false);
+      expect(last.has('group')).toBe(false);
+    });
   });
 
   it('filters by month, status, store, search text and loads next cursor page', async () => {

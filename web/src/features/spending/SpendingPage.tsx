@@ -251,7 +251,7 @@ export function SpendingPage() {
               align: 'right',
               cell: (row) => (
                 <Link
-                  to={buildBreakdownReceiptsHref(activeMonth, row)}
+                  to={buildBreakdownReceiptsHref(activeMonth, row, mode)}
                   className="font-medium text-accent hover:underline"
                 >
                   View receipts

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { getErrorMessage } from '../../api/errors';
 import type { ReceiptListParams } from '../../api/query-keys';
 import { useReceipts, type ReceiptSummary } from '../../api/receipts';
@@ -29,6 +29,30 @@ const STATUS_OPTIONS: readonly { value: ReceiptStatus; label: string }[] = [
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+type ReceiptGroup = NonNullable<ReceiptListParams['group']>;
+const GROUP_OPTIONS: readonly ReceiptGroup[] = [
+  'unallocated',
+  'discounts',
+  'uncategorised',
+  'no-store',
+];
+const GROUP_LABELS: Record<ReceiptGroup, string> = {
+  unallocated: 'Unallocated',
+  discounts: 'Discounts',
+  uncategorised: 'Uncategorised',
+  'no-store': 'No store',
+};
+
+function initialStatus(value: string | null): ReceiptStatus | '' {
+  return STATUS_OPTIONS.some((option) => option.value === value)
+    ? (value as ReceiptStatus)
+    : '';
+}
+
+function initialGroup(value: string | null): ReceiptGroup | '' {
+  return GROUP_OPTIONS.find((option) => option === value) ?? '';
+}
+
 interface PagingState {
   filterKey: string;
   cursor: string | undefined;
@@ -37,10 +61,21 @@ interface PagingState {
 
 /** Filterable, cursor-paginated list of the user's receipts. */
 export function ReceiptsListPage() {
-  const [month, setMonth] = useState('');
-  const [status, setStatus] = useState<ReceiptStatus | ''>('');
-  const [storeId, setStoreId] = useState('');
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const [month, setMonth] = useState(() => searchParams.get('month') ?? '');
+  const [status, setStatus] = useState<ReceiptStatus | ''>(() =>
+    initialStatus(searchParams.get('status')),
+  );
+  const [storeId, setStoreId] = useState(
+    () => searchParams.get('storeId') ?? '',
+  );
+  const [categoryId, setCategoryId] = useState(
+    () => searchParams.get('categoryId') ?? '',
+  );
+  const [group, setGroup] = useState<ReceiptGroup | ''>(() =>
+    initialGroup(searchParams.get('group')),
+  );
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
 
   const trimmedMonth = month.trim();
   const validMonth = MONTH_PATTERN.test(trimmedMonth)
@@ -56,10 +91,12 @@ export function ReceiptsListPage() {
     if (validMonth) query.month = validMonth;
     if (status) query.status = status;
     if (storeId) query.storeId = storeId;
+    if (categoryId) query.categoryId = categoryId;
+    if (group) query.group = group;
     const trimmedSearch = search.trim();
     if (trimmedSearch) query.q = trimmedSearch;
     return query;
-  }, [validMonth, status, storeId, search]);
+  }, [validMonth, status, storeId, categoryId, group, search]);
 
   const filterKey = JSON.stringify(baseParams);
   const [paging, setPaging] = useState<PagingState>({
@@ -104,13 +141,15 @@ export function ReceiptsListPage() {
   );
 
   const hasActiveFilters = Boolean(
-    trimmedMonth || status || storeId || search.trim(),
+    trimmedMonth || status || storeId || categoryId || group || search.trim(),
   );
 
   function clearFilters() {
     setMonth('');
     setStatus('');
     setStoreId('');
+    setCategoryId('');
+    setGroup('');
     setSearch('');
   }
 
@@ -333,6 +372,25 @@ export function ReceiptsListPage() {
             onChange={(event) => setStoreId(event.target.value)}
           />
         </div>
+        {categoryId || group ? (
+          <div className="flex flex-wrap items-center gap-3 pt-4 text-small text-muted">
+            <span>
+              {group
+                ? `Breakdown group: ${GROUP_LABELS[group]}`
+                : 'Category filter from spending breakdown'}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setCategoryId('');
+                setGroup('');
+              }}
+            >
+              Remove filter
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       {renderContent()}

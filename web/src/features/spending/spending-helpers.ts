@@ -139,10 +139,17 @@ export function toBreakdownChartRows(
 export function buildBreakdownReceiptsHref(
   month: string,
   group: BreakdownGroup,
+  groupBy: components['schemas']['BreakdownGrouping'],
 ): string {
   const params = new URLSearchParams({ month });
   if (group.kind === 'store' && group.id) {
     params.set('storeId', group.id);
+  } else if (group.kind === 'category' && group.id) {
+    params.set('categoryId', group.id);
+  } else if (group.kind === 'uncategorised') {
+    params.set('group', groupBy === 'store' ? 'no-store' : 'uncategorised');
+  } else if (group.kind === 'discounts' || group.kind === 'unallocated') {
+    params.set('group', group.kind);
   }
   return `/receipts?${params.toString()}`;
 }
