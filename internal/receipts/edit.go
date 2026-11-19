@@ -221,9 +221,33 @@ func (s *Service) edit(ctx context.Context, userID, receiptID uuid.UUID, entity 
 	return after, err
 }
 
+// pendingExtraction reports whether the extractor has not written its result
+// yet. Edits in that window would be overwritten and would raise premature
+// flags against values the receipt does not have.
+func pendingExtraction(status string) bool {
+	switch status {
+	case "queued", "processing", "waiting_quota":
+		return true
+	default:
+		return false
+	}
+}
+
+// rejectPendingEdit blocks edits that extraction would overwrite and that
+// would flag values the receipt does not have yet.
+func rejectPendingEdit(before Detail) error {
+	if pendingExtraction(before.Receipt.Status) {
+		return apperr.New(apperr.Conflict, "receipt is still awaiting extraction")
+	}
+	return nil
+}
+
 // Update replaces receipt fields and re-evaluates the affected review rules.
 func (s *Service) Update(ctx context.Context, userID, receiptID uuid.UUID, input ReceiptInput) (Detail, error) {
-	return s.edit(ctx, userID, receiptID, "receipt", receiptID, "updated", func(q *unit, _ Detail) error {
+	return s.edit(ctx, userID, receiptID, "receipt", receiptID, "updated", func(q *unit, before Detail) error {
+		if err := rejectPendingEdit(before); err != nil {
+			return err
+		}
 		if err := s.writeReceipt(ctx, q, userID, receiptID, input); err != nil {
 			return err
 		}
@@ -256,6 +280,9 @@ func (s *Service) Reprocess(ctx context.Context, userID, receiptID uuid.UUID) (D
 // CreateLine appends and matches a user-entered line, then re-evaluates review rules.
 func (s *Service) CreateLine(ctx context.Context, userID, receiptID uuid.UUID, input LineInput) (Detail, error) {
 	return s.edit(ctx, userID, receiptID, "receipt", receiptID, "line_created", func(q *unit, before Detail) error {
+		if err := rejectPendingEdit(before); err != nil {
+			return err
+		}
 		if err := validateLine(input); err != nil {
 			return err
 		}
@@ -294,6 +321,9 @@ func (s *Service) writeLine(ctx context.Context, q *unit, userID, receiptID, lin
 // UpdateLine replaces a line and re-runs matching when its identity or discount status changes.
 func (s *Service) UpdateLine(ctx context.Context, userID, receiptID, lineID uuid.UUID, input LineInput) (Detail, error) {
 	return s.edit(ctx, userID, receiptID, "line_item", lineID, "updated", func(q *unit, before Detail) error {
+		if err := rejectPendingEdit(before); err != nil {
+			return err
+		}
 		flags, changed, err := s.changeLine(ctx, q, userID, before, lineID, input)
 		if err != nil {
 			return err
@@ -312,6 +342,9 @@ func sameText(a, b *string) bool {
 // DeleteLine removes a line and supersedes flags whose causes disappeared.
 func (s *Service) DeleteLine(ctx context.Context, userID, receiptID, lineID uuid.UUID) (Detail, error) {
 	return s.edit(ctx, userID, receiptID, "line_item", lineID, "deleted", func(q *unit, before Detail) error {
+		if err := rejectPendingEdit(before); err != nil {
+			return err
+		}
 		if _, err := findLine(before, lineID); err != nil {
 			return err
 		}

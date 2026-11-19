@@ -140,6 +140,9 @@ export interface paths {
      * Update a receipt
      * @description Replaces the editable fields of the receipt. The review rules run again
      *     afterwards, so flags may open or close and the status may change.
+     *     Answers `409` while extraction is pending (`queued`, `processing` or
+     *     `waiting_quota`): an edit would be overwritten and would raise flags
+     *     for values the receipt does not have yet.
      */
     put: operations['updateReceipt'];
     post?: never;
@@ -2185,6 +2188,7 @@ export interface operations {
       400: components['responses']['BadRequest'];
       401: components['responses']['Unauthorized'];
       404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
       default: components['responses']['Error'];
     };
   };

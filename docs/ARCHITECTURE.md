@@ -133,7 +133,9 @@ The [isolation audit](ISOLATION-AUDIT.md) records these boundaries and their tes
 
 Receipt status: `queued → processing → needs_review | ready`, or `failed`,
 or `waiting_quota` while the monthly Azure allowance is exhausted. A receipt is
-`ready` when it has no open review flags.
+`ready` when it has no open review flags. Edits to the receipt or its lines are
+rejected (`409`) while it is `queued`, `processing` or `waiting_quota`: the
+extractor would overwrite them and they would raise flags before OCR has run.
 
 One uploaded file creates one receipt. `receipt_images` allows several images
 per receipt later without a schema change.
@@ -312,10 +314,12 @@ Flags are created only for suspicious data:
 
 The review screen lists open flags; each resolution (edit, confirm, pick a
 product, accept as is) closes the flag. Editing a line name re-runs matching
-for that line. Unchanged flags keep their identity during reprocessing.
+for that line. Edits are rejected while the receipt is queued, processing or
+waiting for quota, because extraction would overwrite them. Unchanged flags
+keep their identity during reprocessing.
 An edit that removes a flag's cause closes it as `superseded`; a cause that
-returns raises a new flag. User edits and resolutions record before/after
-values in `audit_events` in the same database transaction.
+returns raises a new flag. User edits and resolutions record
+before/after values in `audit_events` in the same database transaction.
 
 ### 5.4 Sign-in and isolation
 

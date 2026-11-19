@@ -336,6 +336,9 @@ paths:
       description: |
         Replaces the editable fields of the receipt. The review rules run again
         afterwards, so flags may open or close and the status may change.
+        Answers `409` while extraction is pending (`queued`, `processing` or
+        `waiting_quota`): an edit would be overwritten and would raise flags
+        for values the receipt does not have yet.
       requestBody:
         required: true
         content:
@@ -361,6 +364,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         default:
           $ref: "#/components/responses/Error"
     delete:

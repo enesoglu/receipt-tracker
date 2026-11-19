@@ -6036,6 +6036,22 @@ func (response UpdateReceipt404ApplicationProblemPlusJSONResponse) VisitUpdateRe
 	return err
 }
 
+type UpdateReceipt409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateReceipt409ApplicationProblemPlusJSONResponse) VisitUpdateReceiptResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UpdateReceiptdefaultApplicationProblemPlusJSONResponse struct {
 	Body       Problem
 	StatusCode int
