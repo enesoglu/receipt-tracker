@@ -1,10 +1,12 @@
 package receipts
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 
@@ -293,6 +295,94 @@ func TestDeleteLine_RejectsEditWhileExtractionPending(t *testing.T) {
 				_, err := s.DeleteLine(t.Context(), userID, receiptID, lineID)
 				return err
 			})
+		})
+	}
+}
+
+// openConfidenceFields lists the fields of open low_confidence flags.
+func openConfidenceFields(flags []sqlc.ReviewFlag) []string {
+	var fields []string
+	for _, f := range flags {
+		if f.Kind != "low_confidence" || f.ResolvedAt != nil {
+			continue
+		}
+		var detail map[string]interface{}
+		if err := json.Unmarshal(f.Detail, &detail); err != nil {
+			continue
+		}
+		if field, ok := detail["field"].(string); ok {
+			fields = append(fields, field)
+		}
+	}
+	return fields
+}
+
+// TestUpdate_DropsConfidenceOnlyForChangedFields pins that a no-op save leaves
+// an open low-confidence flag alone, while editing the flagged field drops it.
+func TestUpdate_DropsConfidenceOnlyForChangedFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		change     func(*ReceiptInput)
+		wantFields []string
+	}{
+		{"no-op save keeps the flag", func(*ReceiptInput) {}, []string{"total"}},
+		{
+			"editing the flagged amount drops the flag",
+			func(in *ReceiptInput) {
+				in.Total = decimal.NewNullDecimal(decimal.RequireFromString("9.99"))
+			},
+			nil,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pool := dbtest.New(t)
+			q := sqlc.New(pool)
+			now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+			userID, id := newReviewTestReceipt(t, q, now)
+			storeID, err := q.UpsertExtractedStore(t.Context(), sqlc.UpsertExtractedStoreParams{
+				UserID: userID, Name: "Synthetic Market", NormalizedName: "synthetic market", Now: now,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			day := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+			total := decimal.RequireFromString("120.83")
+			if err := q.UpdateReviewReceipt(t.Context(), sqlc.UpdateReviewReceiptParams{
+				UserID: userID, ReceiptID: id, Title: "Synthetic receipt",
+				StoreID: uuid.NullUUID{UUID: storeID, Valid: true}, PurchasedOn: &day,
+				Currency: "TRY", Total: decimal.NewNullDecimal(total), Now: now,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := q.SetExtractionStatus(t.Context(), sqlc.SetExtractionStatusParams{UserID: userID, ReceiptID: id, Status: "ready", Now: now}); err != nil {
+				t.Fatal(err)
+			}
+			detail, err := json.Marshal(map[string]interface{}{"field": "total", "confidence": 0.62})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := q.InsertReviewFlag(t.Context(), sqlc.InsertReviewFlagParams{UserID: userID, ReceiptID: id, Kind: "low_confidence", Detail: detail, Now: now}); err != nil {
+				t.Fatal(err)
+			}
+
+			input := ReceiptInput{
+				Title: "Synthetic receipt", StoreName: ptr("Synthetic Market"),
+				PurchasedOn: &day, Currency: "TRY", Total: decimal.NewNullDecimal(total),
+			}
+			test.change(&input)
+			service := New(pool, func() time.Time { return now })
+			if _, err := service.Update(t.Context(), userID, id, input); err != nil {
+				t.Fatal(err)
+			}
+
+			flags, err := q.GetReceiptFlags(t.Context(), sqlc.GetReceiptFlagsParams{UserID: userID, ReceiptID: id})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(test.wantFields, openConfidenceFields(flags)); diff != "" {
+				t.Fatalf("open low_confidence fields (-want +got):\n%s", diff)
+			}
 		})
 	}
 }
