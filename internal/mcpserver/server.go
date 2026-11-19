@@ -210,7 +210,7 @@ func bounded(value any) (*mcp.CallToolResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(encoded) >= maxResultBytes {
+	if len(encoded) > maxResultBytes {
 		return nil, fmt.Errorf("tool output exceeds %d bytes", maxResultBytes)
 	}
 	return result, nil
