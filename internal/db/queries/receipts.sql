@@ -143,7 +143,7 @@ SELECT * FROM user_settings WHERE user_id = @user_id;
 SELECT * FROM user_settings WHERE user_id = @user_id FOR UPDATE;
 
 -- name: UpdateOwnedSettings :one
-UPDATE user_settings SET default_currency = @default_currency,default_receipt_title = @default_receipt_title,updated_at = @now
+UPDATE user_settings SET default_currency = @default_currency,default_receipt_title = @default_receipt_title,llm_suggestions_enabled = @llm_suggestions_enabled,updated_at = @now
 WHERE user_id = @user_id RETURNING *;
 
 -- name: ListPipelineStages :many
@@ -168,3 +168,33 @@ WHERE r.user_id = @user_id
 	AND (cardinality(@ids::uuid[]) > 0 OR r.status IN ('queued', 'processing', 'waiting_quota'))
 ORDER BY r.created_at, r.id
 LIMIT 100;
+
+-- The suggestions of one receipt in line order, without paging: review
+-- shows them beside their lines.
+-- name: ListReceiptSuggestions :many
+SELECT s.* FROM line_suggestions s
+JOIN line_items l ON l.user_id = s.user_id AND l.id = s.line_item_id
+WHERE s.user_id = @user_id AND s.receipt_id = @receipt_id
+ORDER BY l.position;
+
+-- name: GetOwnedSuggestion :one
+SELECT * FROM line_suggestions WHERE user_id = @user_id AND receipt_id = @receipt_id AND id = @suggestion_id;
+
+-- The line a suggestion is for, to check its match state before deciding.
+-- name: GetSuggestionLine :one
+SELECT * FROM line_items WHERE user_id = @user_id AND id = @line_item_id;
+
+-- The open match question of a needs_review line, which accepting a
+-- suggestion resolves exactly like a different_product answer.
+-- name: GetOpenLineFlag :one
+SELECT * FROM review_flags
+WHERE user_id = @user_id AND line_item_id = @line_item_id AND resolved_at IS NULL
+  AND kind IN ('uncertain_match', 'code_conflict')
+ORDER BY created_at, id LIMIT 1;
+
+-- Decides a pending suggestion; the guard keeps a second decision from
+-- overwriting the first, and no row means the decision came too late.
+-- name: SetSuggestionDecision :one
+UPDATE line_suggestions SET status = @status, decided_at = @now
+WHERE user_id = @user_id AND id = @suggestion_id AND status = 'pending'
+RETURNING *;

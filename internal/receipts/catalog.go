@@ -197,7 +197,7 @@ func (s *Service) UpdateSettings(ctx context.Context, userID uuid.UUID, currency
 		if !validCurrency(currency) || !validText(title, 200) {
 			return apperr.New(apperr.Invalid, "invalid receipt defaults")
 		}
-		after, err = q.UpdateOwnedSettings(ctx, sqlc.UpdateOwnedSettingsParams{UserID: userID, DefaultCurrency: currency, DefaultReceiptTitle: strings.TrimSpace(title), Now: s.now().UTC()})
+		after, err = q.UpdateOwnedSettings(ctx, sqlc.UpdateOwnedSettingsParams{UserID: userID, DefaultCurrency: currency, DefaultReceiptTitle: strings.TrimSpace(title), LlmSuggestionsEnabled: before.LlmSuggestionsEnabled, Now: s.now().UTC()})
 		if err != nil {
 			return err
 		}

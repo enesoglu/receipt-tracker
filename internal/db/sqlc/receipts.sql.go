@@ -169,6 +169,37 @@ func (q *Queries) FindDuplicateReceipts(ctx context.Context, arg FindDuplicateRe
 	return items, nil
 }
 
+const getOpenLineFlag = `-- name: GetOpenLineFlag :one
+SELECT id, user_id, receipt_id, line_item_id, kind, detail, resolved_at, resolution, created_at FROM review_flags
+WHERE user_id = $1 AND line_item_id = $2 AND resolved_at IS NULL
+  AND kind IN ('uncertain_match', 'code_conflict')
+ORDER BY created_at, id LIMIT 1
+`
+
+type GetOpenLineFlagParams struct {
+	UserID     uuid.UUID
+	LineItemID uuid.NullUUID
+}
+
+// The open match question of a needs_review line, which accepting a
+// suggestion resolves exactly like a different_product answer.
+func (q *Queries) GetOpenLineFlag(ctx context.Context, arg GetOpenLineFlagParams) (ReviewFlag, error) {
+	row := q.db.QueryRow(ctx, getOpenLineFlag, arg.UserID, arg.LineItemID)
+	var i ReviewFlag
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.LineItemID,
+		&i.Kind,
+		&i.Detail,
+		&i.ResolvedAt,
+		&i.Resolution,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getOwnedReceiptImage = `-- name: GetOwnedReceiptImage :one
 SELECT id, user_id, receipt_id, position, sha256, content_type, size_bytes, storage_backend, storage_ref, original_ref, original_content_type, original_size_bytes, created_at FROM receipt_images WHERE user_id = $1 AND receipt_id = $2 AND id = $3
 `
@@ -201,7 +232,7 @@ func (q *Queries) GetOwnedReceiptImage(ctx context.Context, arg GetOwnedReceiptI
 }
 
 const getOwnedSettings = `-- name: GetOwnedSettings :one
-SELECT user_id, default_currency, default_receipt_title, updated_at FROM user_settings WHERE user_id = $1
+SELECT user_id, default_currency, default_receipt_title, updated_at, llm_suggestions_enabled FROM user_settings WHERE user_id = $1
 `
 
 func (q *Queries) GetOwnedSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error) {
@@ -212,6 +243,37 @@ func (q *Queries) GetOwnedSettings(ctx context.Context, userID uuid.UUID) (UserS
 		&i.DefaultCurrency,
 		&i.DefaultReceiptTitle,
 		&i.UpdatedAt,
+		&i.LlmSuggestionsEnabled,
+	)
+	return i, err
+}
+
+const getOwnedSuggestion = `-- name: GetOwnedSuggestion :one
+SELECT id, user_id, receipt_id, line_item_id, raw_name, status, suggested_name, suggested_category_id, model, prompt_version, created_at, decided_at FROM line_suggestions WHERE user_id = $1 AND receipt_id = $2 AND id = $3
+`
+
+type GetOwnedSuggestionParams struct {
+	UserID       uuid.UUID
+	ReceiptID    uuid.UUID
+	SuggestionID uuid.UUID
+}
+
+func (q *Queries) GetOwnedSuggestion(ctx context.Context, arg GetOwnedSuggestionParams) (LineSuggestion, error) {
+	row := q.db.QueryRow(ctx, getOwnedSuggestion, arg.UserID, arg.ReceiptID, arg.SuggestionID)
+	var i LineSuggestion
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.LineItemID,
+		&i.RawName,
+		&i.Status,
+		&i.SuggestedName,
+		&i.SuggestedCategoryID,
+		&i.Model,
+		&i.PromptVersion,
+		&i.CreatedAt,
+		&i.DecidedAt,
 	)
 	return i, err
 }
@@ -296,6 +358,42 @@ func (q *Queries) GetReviewReceipt(ctx context.Context, arg GetReviewReceiptPara
 		&i.InvoiceNumber,
 		&i.Ettn,
 		&i.SellerTaxNumber,
+	)
+	return i, err
+}
+
+const getSuggestionLine = `-- name: GetSuggestionLine :one
+SELECT id, user_id, receipt_id, position, raw_name, name, quantity, quantity_unit, unit_price, line_total, product_code, confidence, product_id, match_status, match_score, match_method, created_at, updated_at FROM line_items WHERE user_id = $1 AND id = $2
+`
+
+type GetSuggestionLineParams struct {
+	UserID     uuid.UUID
+	LineItemID uuid.UUID
+}
+
+// The line a suggestion is for, to check its match state before deciding.
+func (q *Queries) GetSuggestionLine(ctx context.Context, arg GetSuggestionLineParams) (LineItem, error) {
+	row := q.db.QueryRow(ctx, getSuggestionLine, arg.UserID, arg.LineItemID)
+	var i LineItem
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.Position,
+		&i.RawName,
+		&i.Name,
+		&i.Quantity,
+		&i.QuantityUnit,
+		&i.UnitPrice,
+		&i.LineTotal,
+		&i.ProductCode,
+		&i.Confidence,
+		&i.ProductID,
+		&i.MatchStatus,
+		&i.MatchScore,
+		&i.MatchMethod,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -518,8 +616,55 @@ func (q *Queries) ListReceiptLines(ctx context.Context, arg ListReceiptLinesPara
 	return items, nil
 }
 
+const listReceiptSuggestions = `-- name: ListReceiptSuggestions :many
+SELECT s.id, s.user_id, s.receipt_id, s.line_item_id, s.raw_name, s.status, s.suggested_name, s.suggested_category_id, s.model, s.prompt_version, s.created_at, s.decided_at FROM line_suggestions s
+JOIN line_items l ON l.user_id = s.user_id AND l.id = s.line_item_id
+WHERE s.user_id = $1 AND s.receipt_id = $2
+ORDER BY l.position
+`
+
+type ListReceiptSuggestionsParams struct {
+	UserID    uuid.UUID
+	ReceiptID uuid.UUID
+}
+
+// The suggestions of one receipt in line order, without paging: review
+// shows them beside their lines.
+func (q *Queries) ListReceiptSuggestions(ctx context.Context, arg ListReceiptSuggestionsParams) ([]LineSuggestion, error) {
+	rows, err := q.db.Query(ctx, listReceiptSuggestions, arg.UserID, arg.ReceiptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []LineSuggestion{}
+	for rows.Next() {
+		var i LineSuggestion
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ReceiptID,
+			&i.LineItemID,
+			&i.RawName,
+			&i.Status,
+			&i.SuggestedName,
+			&i.SuggestedCategoryID,
+			&i.Model,
+			&i.PromptVersion,
+			&i.CreatedAt,
+			&i.DecidedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockOwnedSettings = `-- name: LockOwnedSettings :one
-SELECT user_id, default_currency, default_receipt_title, updated_at FROM user_settings WHERE user_id = $1 FOR UPDATE
+SELECT user_id, default_currency, default_receipt_title, updated_at, llm_suggestions_enabled FROM user_settings WHERE user_id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockOwnedSettings(ctx context.Context, userID uuid.UUID) (UserSetting, error) {
@@ -530,6 +675,7 @@ func (q *Queries) LockOwnedSettings(ctx context.Context, userID uuid.UUID) (User
 		&i.DefaultCurrency,
 		&i.DefaultReceiptTitle,
 		&i.UpdatedAt,
+		&i.LlmSuggestionsEnabled,
 	)
 	return i, err
 }
@@ -763,22 +909,64 @@ func (q *Queries) SetLineMatch(ctx context.Context, arg SetLineMatchParams) erro
 	return err
 }
 
+const setSuggestionDecision = `-- name: SetSuggestionDecision :one
+UPDATE line_suggestions SET status = $1, decided_at = $2
+WHERE user_id = $3 AND id = $4 AND status = 'pending'
+RETURNING id, user_id, receipt_id, line_item_id, raw_name, status, suggested_name, suggested_category_id, model, prompt_version, created_at, decided_at
+`
+
+type SetSuggestionDecisionParams struct {
+	Status       string
+	Now          *time.Time
+	UserID       uuid.UUID
+	SuggestionID uuid.UUID
+}
+
+// Decides a pending suggestion; the guard keeps a second decision from
+// overwriting the first, and no row means the decision came too late.
+func (q *Queries) SetSuggestionDecision(ctx context.Context, arg SetSuggestionDecisionParams) (LineSuggestion, error) {
+	row := q.db.QueryRow(ctx, setSuggestionDecision,
+		arg.Status,
+		arg.Now,
+		arg.UserID,
+		arg.SuggestionID,
+	)
+	var i LineSuggestion
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ReceiptID,
+		&i.LineItemID,
+		&i.RawName,
+		&i.Status,
+		&i.SuggestedName,
+		&i.SuggestedCategoryID,
+		&i.Model,
+		&i.PromptVersion,
+		&i.CreatedAt,
+		&i.DecidedAt,
+	)
+	return i, err
+}
+
 const updateOwnedSettings = `-- name: UpdateOwnedSettings :one
-UPDATE user_settings SET default_currency = $1,default_receipt_title = $2,updated_at = $3
-WHERE user_id = $4 RETURNING user_id, default_currency, default_receipt_title, updated_at
+UPDATE user_settings SET default_currency = $1,default_receipt_title = $2,llm_suggestions_enabled = $3,updated_at = $4
+WHERE user_id = $5 RETURNING user_id, default_currency, default_receipt_title, updated_at, llm_suggestions_enabled
 `
 
 type UpdateOwnedSettingsParams struct {
-	DefaultCurrency     string
-	DefaultReceiptTitle string
-	Now                 time.Time
-	UserID              uuid.UUID
+	DefaultCurrency       string
+	DefaultReceiptTitle   string
+	LlmSuggestionsEnabled bool
+	Now                   time.Time
+	UserID                uuid.UUID
 }
 
 func (q *Queries) UpdateOwnedSettings(ctx context.Context, arg UpdateOwnedSettingsParams) (UserSetting, error) {
 	row := q.db.QueryRow(ctx, updateOwnedSettings,
 		arg.DefaultCurrency,
 		arg.DefaultReceiptTitle,
+		arg.LlmSuggestionsEnabled,
 		arg.Now,
 		arg.UserID,
 	)
@@ -788,6 +976,7 @@ func (q *Queries) UpdateOwnedSettings(ctx context.Context, arg UpdateOwnedSettin
 		&i.DefaultCurrency,
 		&i.DefaultReceiptTitle,
 		&i.UpdatedAt,
+		&i.LlmSuggestionsEnabled,
 	)
 	return i, err
 }

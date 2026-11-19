@@ -32,7 +32,7 @@ const (
 func applicationTables() []string {
 	return []string{
 		"audit_events", "categories", "extractions", "jobs", "line_items",
-		"match_rejections", "oauth_clients", "oauth_codes", "oauth_tokens",
+		"line_suggestions", "match_rejections", "oauth_clients", "oauth_codes", "oauth_tokens",
 		"product_aliases", "product_codes", "products", "provider_usage",
 		"receipt_images", "receipts", "review_flags", "sessions",
 		"storage_connections", "stores", "user_settings", "users",
@@ -43,7 +43,7 @@ func applicationTables() []string {
 func userOwnedTables() []string {
 	return []string{
 		"audit_events", "categories", "extractions", "line_items",
-		"match_rejections", "product_aliases", "product_codes", "products",
+		"line_suggestions", "match_rejections", "product_aliases", "product_codes", "products",
 		"receipt_images", "receipts", "review_flags", "stores", "user_settings",
 	}
 }
@@ -496,6 +496,10 @@ func newFixture(t *testing.T, pool *pgxpool.Pool, label string) fixture {
 		f.user, f.receipt, f.product)
 	insert(&f.flag, `INSERT INTO review_flags (user_id, receipt_id, line_item_id, kind, detail)
 		VALUES ($1, $2, $3, 'low_confidence', '{"field": "line_item"}') RETURNING id`, f.user, f.receipt, f.lineItem)
+	insert(new(uuid.UUID), `INSERT INTO line_suggestions
+		(user_id, receipt_id, line_item_id, raw_name, status, suggested_name, suggested_category_id, model, prompt_version)
+		VALUES ($1, $2, $3, 'AYRAN 1LT', 'pending', 'Ayran 1 l', $4, 'synthetic', 1) RETURNING id`,
+		f.user, f.receipt, f.lineItem, f.category)
 	insert(new(uuid.UUID), `INSERT INTO audit_events (user_id, entity, entity_id, action, detail)
 		VALUES ($1, 'receipt', $2, 'update', '{"before": {}, "after": {}}') RETURNING id`, f.user, f.receipt)
 
