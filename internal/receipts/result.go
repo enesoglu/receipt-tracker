@@ -12,8 +12,14 @@ import (
 
 	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
 	"github.com/enesoglu/receipt-tracker/internal/extract"
+	"github.com/enesoglu/receipt-tracker/internal/jobs"
 	"github.com/enesoglu/receipt-tracker/internal/matching"
 )
+
+// unreadableItem is the placeholder name of a line whose text could not
+// be read. The suggestion job's query excludes it, and so does the
+// eligibility rule applied when a receipt is enrolled.
+const unreadableItem = "Unreadable item"
 
 func amount(f extract.Field[decimal.Decimal], places int32) decimal.NullDecimal {
 	if !f.Found || f.Value.Round(places).Abs().GreaterThanOrEqual(decimal.New(1, 12-places)) {
@@ -86,29 +92,44 @@ func (s *Service) applyResult(ctx context.Context, q *unit, userID, receiptID uu
 		return err
 	}
 	var matchFlags []Flag
+	hasEligible := false
 	for i, line := range result.Lines {
 		raw := line.Name.Value
 		name := extract.DisplayName(raw)
 		if !line.Name.Found || name == "" {
-			name = "Unreadable item"
+			name = unreadableItem
 		}
 		confidence := min(max(line.Confidence, 0), 1)
 		l, err := q.InsertReviewLine(ctx, sqlc.InsertReviewLineParams{ExistingID: lineIDs[int32(i)], UserID: userID, ReceiptID: receiptID, Position: int32(i), RawName: raw, Name: name, Quantity: amount(line.Quantity, 3), QuantityUnit: text(line.Unit), UnitPrice: amount(line.UnitPrice, 2), LineTotal: amount(line.Total, 2), ProductCode: text(line.ProductCode), Confidence: &confidence, Now: now})
 		if err != nil {
 			return fmt.Errorf("save line: %w", err)
 		}
-		flags, err := s.matchLine(ctx, q, userID, p.StoreID, l)
+		status, flags, err := s.matchLine(ctx, q, userID, p.StoreID, l)
 		if err != nil {
 			return err
 		}
 		matchFlags = append(matchFlags, flags...)
+		hasEligible = hasEligible || suggestible(l, status)
 	}
 	fields := []Confidence{{"store", result.StoreName.Confidence, result.StoreName.Found}, {"purchased_on", result.Date.Confidence, result.Date.Found}, {"total", result.Total.Confidence, result.Total.Found}}
 	flags, err := s.evaluate(ctx, q, userID, receiptID, fields, matchFlags)
 	if err != nil {
 		return err
 	}
-	return s.syncFlags(ctx, q, userID, receiptID, flags, previousFlags, true)
+	if err := s.syncFlags(ctx, q, userID, receiptID, flags, previousFlags, true); err != nil {
+		return err
+	}
+	// The suggestion job is enqueued through the same transaction, so it
+	// exists exactly when the lines it asks about do, and only when
+	// matching left lines the model could help with and the user has the
+	// feature switched on. A missing enroller means no endpoint is
+	// configured and the feature is off for everyone.
+	if hasEligible && s.enroller != nil && s.enroller.LLMSuggestionsEnabled(ctx, userID) {
+		if _, err := jobs.Enqueue(ctx, q.tx, jobs.KindSuggestLines, jobs.SuggestLines{UserID: userID, ReceiptID: receiptID}, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validCurrency(v string) bool {
@@ -123,9 +144,14 @@ func validCurrency(v string) bool {
 	return true
 }
 
-func (s *Service) matchLine(ctx context.Context, q *unit, userID uuid.UUID, storeID uuid.NullUUID, l sqlc.LineItem) ([]Flag, error) {
+// matchLine links one saved line to a product and returns the match
+// status the line ended with, so the caller can tell whether the line is
+// one the suggestion model may be asked about.
+func (s *Service) matchLine(ctx context.Context, q *unit, userID uuid.UUID, storeID uuid.NullUUID, l sqlc.LineItem) (string, []Flag, error) {
 	if l.LineTotal.Valid && l.LineTotal.Decimal.IsNegative() {
-		return nil, nil
+		// A discount never reaches the matcher; its line keeps the
+		// column default.
+		return "unmatched", nil, nil
 	}
 	code := ""
 	if l.ProductCode != nil {
@@ -134,24 +160,24 @@ func (s *Service) matchLine(ctx context.Context, q *unit, userID uuid.UUID, stor
 	// Matching reads through the same transaction, so newly learned products are visible.
 	decision, err := matching.New(q.source).MatchLine(ctx, userID, matching.Line{Name: l.Name, Code: code, StoreID: storeID})
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	p := sqlc.SetLineMatchParams{UserID: userID, LineID: l.ID, Now: s.now().UTC()}
 	switch decision.Outcome {
 	case matching.Ask:
 		p.MatchStatus = "needs_review"
 		if err := q.SetLineMatch(ctx, p); err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		flag, err := matchQuestion(ctx, q, userID, l, decision)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
-		return []Flag{flag}, nil
+		return "needs_review", []Flag{flag}, nil
 	case matching.CreateNew:
 		product, err := s.createProduct(ctx, q, userID, l.Name)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		p.ProductID = uuid.NullUUID{UUID: product.ID, Valid: true}
 		p.MatchStatus = "new_product"
@@ -175,9 +201,25 @@ func (s *Service) matchLine(ctx context.Context, q *unit, userID uuid.UUID, stor
 		}
 	}
 	if err := s.remember(ctx, q, userID, storeID, p.ProductID.UUID, l); err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return nil, q.SetLineMatch(ctx, p)
+	return p.MatchStatus, nil, q.SetLineMatch(ctx, p)
+}
+
+// suggestible reports whether a saved line is one the suggestion job may
+// ask the model about. It mirrors the rule of ListSuggestibleLines: one
+// of the three match states matching could not confidently resolve, and
+// no discount, no empty text and no unreadable placeholder.
+func suggestible(l sqlc.LineItem, status string) bool {
+	switch status {
+	case "needs_review", "new_product", "unmatched":
+	default:
+		return false
+	}
+	if l.LineTotal.Valid && l.LineTotal.Decimal.IsNegative() {
+		return false
+	}
+	return strings.TrimSpace(l.RawName) != "" && l.Name != unreadableItem
 }
 
 func (s *Service) createProduct(ctx context.Context, q *unit, userID uuid.UUID, name string) (sqlc.Product, error) {

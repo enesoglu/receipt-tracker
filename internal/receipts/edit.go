@@ -324,7 +324,7 @@ func (s *Service) CreateLine(ctx context.Context, userID, receiptID uuid.UUID, i
 		if err != nil {
 			return err
 		}
-		flags, err := s.matchLine(ctx, q, userID, before.Receipt.StoreID, l)
+		_, flags, err := s.matchLine(ctx, q, userID, before.Receipt.StoreID, l)
 		if err != nil {
 			return err
 		}
@@ -403,7 +403,7 @@ func (s *Service) changeLine(ctx context.Context, q *unit, userID uuid.UUID, bef
 		}
 		l.ProductID = uuid.NullUUID{}
 		l.MatchStatus = "unmatched"
-		flags, err = s.matchLine(ctx, q, userID, before.Receipt.StoreID, l)
+		_, flags, err = s.matchLine(ctx, q, userID, before.Receipt.StoreID, l)
 		if err != nil {
 			return nil, nil, err
 		}

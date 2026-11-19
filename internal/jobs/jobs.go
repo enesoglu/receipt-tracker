@@ -38,12 +38,24 @@ import (
 // is [ExtractReceipt]. The kinds mirror the jobs_kind_check constraint.
 const KindExtractReceipt = "extract_receipt"
 
+// KindSuggestLines asks the suggestion model about the lines of one
+// receipt that matching could not confidently resolve. Its payload is
+// [SuggestLines]. The kinds mirror the jobs_kind_check constraint.
+const KindSuggestLines = "suggest_lines"
+
 // MaxAttempts is how often a job is claimed before it is given up.
 const MaxAttempts = 5
 
 // ExtractReceipt is the payload of a [KindExtractReceipt] job. The user id is
 // part of it because every query on a receipt filters by its owner.
 type ExtractReceipt struct {
+	UserID    uuid.UUID `json:"user_id"`
+	ReceiptID uuid.UUID `json:"receipt_id"`
+}
+
+// SuggestLines is the payload of a [KindSuggestLines] job. The user id is
+// part of it because every query the job runs filters by the owner.
+type SuggestLines struct {
 	UserID    uuid.UUID `json:"user_id"`
 	ReceiptID uuid.UUID `json:"receipt_id"`
 }
