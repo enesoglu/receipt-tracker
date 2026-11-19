@@ -26,10 +26,14 @@ info:
       (`application/problem+json`), see `Problem`.
     - **Ids** are UUIDs. **Timestamps** are RFC 3339 in UTC. **Dates** are
       `YYYY-MM-DD` and **months** are `YYYY-MM`, both without a time zone.
-    - **Money** is a decimal string with exactly two places (`"84.50"`), never
-      a number. Each amount is in the currency of its receipt; amounts in
-      different currencies are never added together. **Quantities** are decimal
-      strings with up to three places.
+    - **Money** is a decimal string, never a number. Input accepts up to two
+      decimal places with `.` or `,` as the separator (`351,9`, `351.9` and
+      `.5` all mean 351.90); the server normalises, stores exactly two
+      places and every response prints them (`"84.50"`). Each amount is in
+      the currency of its receipt; amounts in different currencies are never
+      added together. **Quantities** are positive decimal strings: input
+      accepts up to three places with either separator, and responses print
+      exactly three (`"1.250"`).
     - **Absent values** are `null`, never an empty string.
     - **Lists** take `limit` and an opaque `cursor`, and answer with `items`
       and `nextCursor`, which is `null` on the last page.
@@ -1550,18 +1554,25 @@ components:
         message:
           type: string
           description: What is wrong with it.
-          example: must be a decimal amount with two places
+          example: enter a number with up to two decimal places, using . or , — such as 351.90
     Money:
       type: string
       description: |
-        An amount of money as a decimal string with exactly two places, in the
-        currency of its receipt. Negative amounts are discounts or refunds.
-      pattern: '^-?\d{1,10}\.\d{2}$'
+        An amount of money as a decimal string, in the currency of its
+        receipt. Input accepts up to two decimal places with `.` or `,` as
+        the separator; `351,9`, `351.9`, `.5` and `351` are all the same
+        amount. Storage and responses use exactly two places with a dot.
+        Negative amounts are discounts or refunds.
+      pattern: '^-?(\d{1,10}([.,]\d{0,2})?|[.,]\d{1,2})$'
       example: "84.50"
     Quantity:
       type: string
-      description: A quantity or size as a decimal string with up to three places.
-      pattern: '^-?\d{1,9}(\.\d{1,3})?$'
+      description: |
+        A quantity or package size as a positive decimal string. Input
+        accepts up to three decimal places with `.` or `,` as the separator;
+        `1,25`, `1.25` and `.5` are all the same value. Storage and
+        responses use exactly three places with a dot.
+      pattern: '^(\d{1,9}([.,]\d{0,3})?|[.,]\d{1,3})$'
       example: "1.250"
     Ratio:
       type: string
@@ -3670,11 +3681,11 @@ components:
         type: about:blank
         title: Bad Request
         status: 400
-        detail: the line item is not valid
+        detail: invalid amount
         requestId: 0193a1b2-7c4d-7e2a-9f10-5b6c7d8e9f00
         errors:
           - field: lineTotal
-            message: must be a decimal amount with two places
+            message: enter a number with up to two decimal places, using . or , — such as 351.90
     ProblemUnauthorized:
       summary: No session
       value:
