@@ -92,11 +92,17 @@ describe('SettingsPage', () => {
 
     renderSettingsPage();
     expect(screen.getByText('Loading settings…')).toBeInTheDocument();
+    expect(screen.getByText('Loading line suggestions…')).toBeInTheDocument();
     expect(screen.getByText('Loading usage…')).toBeInTheDocument();
     expect(screen.getByText('Loading storage status…')).toBeInTheDocument();
 
     expect(
       await screen.findByRole('heading', { name: 'Could not load settings' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {
+        name: 'Could not load line suggestions',
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: 'Could not load usage' }),
@@ -114,6 +120,143 @@ describe('SettingsPage', () => {
     expect(await screen.findByLabelText('Default currency')).toHaveValue('TRY');
     expect(screen.getByText('137 / 500 pages used')).toBeInTheDocument();
     expect(screen.getAllByText('Connected').length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByText('Online')).toBeInTheDocument();
+  });
+
+  it('shows the Online badge and turns suggestions off without another status call', async () => {
+    let statusCalls = 0;
+    const putBodies: components['schemas']['Settings'][] = [];
+
+    server.use(
+      http.get('/api/v1/suggestions/status', () => {
+        statusCalls += 1;
+        return HttpResponse.json({ available: true, offline: false });
+      }),
+      http.put('/api/v1/settings', async ({ request }) => {
+        const body =
+          (await request.json()) as components['schemas']['Settings'];
+        putBodies.push(body);
+        return HttpResponse.json(body);
+      }),
+    );
+
+    renderSettingsPage();
+
+    const toggle = await screen.findByLabelText(
+      'Suggest line names and categories',
+    );
+    expect(toggle).toBeChecked();
+    expect(await screen.findByText('Online')).toBeInTheDocument();
+
+    await waitFor(() => expect(statusCalls).toBe(1));
+
+    fireEvent.click(toggle);
+
+    expect(
+      await screen.findByText('Line suggestions turned off.'),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Off')).toBeInTheDocument();
+    expect(
+      screen.getByText('The model is not asked about your receipts.'),
+    ).toBeInTheDocument();
+
+    expect(putBodies).toEqual([
+      {
+        defaultCurrency: 'TRY',
+        defaultReceiptTitle: 'Home shopping',
+        llmSuggestionsEnabled: false,
+      },
+    ]);
+
+    // The status endpoint is never called again while the switch is off.
+    await waitFor(() => expect(statusCalls).toBe(1));
+  });
+
+  it('maps an unconfigured endpoint and an unreachable model to honest badges and notes', async () => {
+    server.use(
+      http.get('/api/v1/suggestions/status', () =>
+        HttpResponse.json({ available: false, offline: false }),
+      ),
+    );
+
+    const { unmount } = renderSettingsPage();
+
+    expect(await screen.findByText('Off')).toBeInTheDocument();
+    expect(
+      screen.getByText(/this instance has no suggestion endpoint configured/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('Suggest line names and categories'),
+    ).toBeChecked();
+
+    unmount();
+    server.resetHandlers();
+    server.use(
+      http.get('/api/v1/suggestions/status', () =>
+        HttpResponse.json({ available: true, offline: true }),
+      ),
+    );
+
+    renderSettingsPage();
+
+    expect(await screen.findByText('LLM offline')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /The most recent suggestion job could not reach the model\./i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('never calls the status endpoint while suggestions are off and surfaces toggle failures', async () => {
+    let statusCalls = 0;
+
+    server.use(
+      http.get('/api/v1/settings', () =>
+        HttpResponse.json({
+          defaultCurrency: 'TRY',
+          defaultReceiptTitle: 'Home shopping',
+          llmSuggestionsEnabled: false,
+        }),
+      ),
+      http.get('/api/v1/suggestions/status', () => {
+        statusCalls += 1;
+        return HttpResponse.json({ available: true, offline: false });
+      }),
+      http.put('/api/v1/settings', () =>
+        HttpResponse.json(
+          {
+            type: 'about:blank',
+            title: 'Internal Server Error',
+            status: 500,
+            detail: 'settings unavailable',
+            requestId: '0193a1b2-0000-7000-8000-000000000094',
+          },
+          { status: 500 },
+        ),
+      ),
+    );
+
+    renderSettingsPage();
+
+    const toggle = await screen.findByLabelText(
+      'Suggest line names and categories',
+    );
+    expect(toggle).not.toBeChecked();
+    expect(await screen.findByText('Off')).toBeInTheDocument();
+    expect(
+      screen.getByText('The model is not asked about your receipts.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Could not save settings' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('Suggest line names and categories'),
+    ).not.toBeChecked();
+
+    await waitFor(() => expect(statusCalls).toBe(0));
   });
 
   it('validates and saves default currency and default receipt title', async () => {

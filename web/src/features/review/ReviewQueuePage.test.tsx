@@ -714,4 +714,83 @@ describe('ReviewQueuePage', () => {
       },
     });
   });
+
+  it('offers the model suggestion in the flagged line context and applies accept and ignore', async () => {
+    renderReviewPage();
+
+    expect(
+      await screen.findByText('Model suggestion for "EKMEK"'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Beyaz ekmek 500 g')).toBeInTheDocument();
+    expect(screen.getByText('Suggested category: Bakery')).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Accept model suggestion for EKMEK',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Model suggestion for "EKMEK"'),
+      ).not.toBeInTheDocument(),
+    );
+
+    // Resolve the flag itself to move to the next flagged line.
+    fireEvent.click(screen.getByRole('button', { name: 'Apply choice' }));
+
+    expect(
+      await screen.findByText('Model suggestion for "SUT 1LT TAM YAGLI"'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Tam yağlı süt 1 l')).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Ignore model suggestion for SUT 1LT TAM YAGLI',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Model suggestion for "SUT 1LT TAM YAGLI"'),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it('shows the conflict problem when deciding a suggestion fails', async () => {
+    server.use(
+      http.post(
+        '/api/v1/receipts/:receiptId/suggestions/:suggestionId/accept',
+        () =>
+          HttpResponse.json(
+            {
+              type: 'about:blank',
+              title: 'Conflict',
+              status: 409,
+              detail: 'suggestion is no longer pending',
+              requestId: '0193a1b2-0000-7000-8000-000000000095',
+            },
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/problem+json' },
+            },
+          ),
+      ),
+    );
+
+    renderReviewPage();
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Accept model suggestion for EKMEK',
+      }),
+    );
+
+    expect(
+      await screen.findByText('suggestion is no longer pending'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Model suggestion for "EKMEK"'),
+    ).toBeInTheDocument();
+  });
 });

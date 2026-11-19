@@ -74,6 +74,12 @@ export const queryKeys = {
     user: ['settings', 'user'] as const,
     usage: ['settings', 'usage'] as const,
   },
+  suggestions: {
+    all: ['suggestions'] as const,
+    status: ['suggestions', 'status'] as const,
+    forReceipt: (receiptId: string) =>
+      ['suggestions', 'receipt', receiptId] as const,
+  },
   storage: {
     all: ['storage'] as const,
     status: ['storage', 'status'] as const,
