@@ -75,8 +75,8 @@ func matchingRedirect(registered, requested string) bool {
 	if !aOK || !bOK {
 		return false
 	}
-	// Claude Code also declares localhost redirects without an ephemeral port.
-	if (a.Hostname() == "localhost" || a.Hostname() == "127.0.0.1") && a.Hostname() == b.Hostname() {
+	// Claude Code also declares loopback redirects without an ephemeral port.
+	if loopback(a.Hostname()) && a.Hostname() == b.Hostname() {
 		a.Host = a.Hostname()
 		b.Host = b.Hostname()
 		return a.String() == b.String()
