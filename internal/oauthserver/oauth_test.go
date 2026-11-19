@@ -352,8 +352,6 @@ func TestOAuth_RegistrationValidationExpiryAndRateLimits(t *testing.T) {
 		w := f.request(t, "POST", "/oauth/register", body, "application/json", nil)
 		status(t, w, 400)
 	}
-	// Advance the injected clock to reset the registration window.
-	f.now = f.now.Add(time.Hour)
 	client := f.register(t)
 	f.now = f.now.Add(24 * time.Hour)
 	w := f.request(t, "GET", "/oauth/authorize?"+parameters(client).Encode(), "", "", nil)
@@ -377,6 +375,15 @@ func TestOAuth_RegistrationValidationExpiryAndRateLimits(t *testing.T) {
 	}
 	w = f.request(t, "POST", "/oauth/register", `{"redirect_uris":["https://example.test/cb"]}`, "application/json", nil)
 	status(t, w, 429)
+}
+
+func TestOAuth_InvalidRegistrationsDoNotConsumeRateLimit(t *testing.T) {
+	f := setup(t)
+	for i := 0; i < 10; i++ {
+		w := f.request(t, "POST", "/oauth/register", `{}`, "application/json", nil)
+		status(t, w, 400)
+	}
+	f.register(t)
 }
 
 func TestOAuth_LoopbackMatchingKeepsPathHostAndExchangePortBound(t *testing.T) {
