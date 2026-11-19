@@ -491,9 +491,20 @@ Environment variables only; `.env.example` lists them. `APP_ENV` (`dev`,
 `AZURE_DI_ENDPOINT`, `AZURE_DI_KEY`, `AZURE_DI_MONTHLY_PAGES` (default 500),
 `BACKUP_DESTINATION` (`drive`, `local`, `none`), `BACKUP_LOCAL_DIR`,
 `BACKUP_SCHEDULE`, `BACKUP_HEARTBEAT_URL` (optional), `DEV_LOGIN_EMAIL` (accepted only
-when `APP_ENV=dev`; the server refuses to start otherwise).
+when `APP_ENV=dev`; the server refuses to start otherwise), `MCP_BROWSER_ORIGINS`
+(comma-separated browser origins allowed to call `/mcp`; default
+`https://claude.ai,https://gemini.google.com`).
 
-Only `APP_LISTEN_ADDR`, `DRIVE_ROOT_FOLDER` and `AZURE_DI_MONTHLY_PAGES` have
+`MCP_BROWSER_ORIGINS` is the strict allowlist checked against a browser's
+`Origin` header on `/mcp`: a request from any other browser origin is rejected
+with 403. The application's own `APP_BASE_URL` is always allowed as well.
+Each entry must be an absolute http or https origin without credentials, a
+path, a query or a fragment; a malformed entry is reported at startup. Setting
+the variable replaces the defaults, so a new browser-based MCP client must be
+added to the list explicitly.
+
+Only `APP_LISTEN_ADDR`, `DRIVE_ROOT_FOLDER`, `AZURE_DI_MONTHLY_PAGES` and
+`MCP_BROWSER_ORIGINS` have
 defaults; every other variable not marked optional is required in `dev` and
 `prod`, backend-specific variables only when that backend is selected, and the
 Google client may be omitted only in `dev` with `DEV_LOGIN_EMAIL` and no Drive
