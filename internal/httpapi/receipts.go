@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -303,7 +305,12 @@ func flagResponse(f sqlc.ReviewFlag) (ReviewFlag, error) {
 func receiptResponse(d receipts.Detail) (Receipt, error) {
 	summary := summaryResponse(d.Summary)
 	r := d.Receipt
-	response := Receipt{Id: r.ID, Title: r.Title, Store: summary.Store, PurchasedOn: summary.PurchasedOn, Currency: r.Currency, Total: summary.Total, Subtotal: moneyResponse(r.Subtotal), TaxTotal: moneyResponse(r.TaxTotal), Status: summary.Status, Source: summary.Source, FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), LineItems: make([]LineItem, 0, len(d.Lines)), Flags: make([]ReviewFlag, 0, len(d.Flags)), Images: make([]ReceiptImage, 0, len(d.Images))}
+	response := Receipt{Id: r.ID, Title: r.Title, Store: summary.Store, PurchasedOn: summary.PurchasedOn, Currency: r.Currency, Total: summary.Total, Subtotal: moneyResponse(r.Subtotal), TaxTotal: moneyResponse(r.TaxTotal), InvoiceNumber: r.InvoiceNumber, SellerTaxNumber: r.SellerTaxNumber, Status: summary.Status, Source: summary.Source, FailureReason: r.FailureReason, OpenFlagCount: d.OpenFlags, CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), LineItems: make([]LineItem, 0, len(d.Lines)), Flags: make([]ReviewFlag, 0, len(d.Flags)), Images: make([]ReceiptImage, 0, len(d.Images))}
+	if r.Ettn.Valid {
+		// The column is a UUID, so the canonical spelling comes for free.
+		ettn := r.Ettn.UUID.String()
+		response.Ettn = &ettn
+	}
 	if r.PurchasedTime.Valid {
 		value := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(r.PurchasedTime.Microseconds) * time.Microsecond).Format("15:04")
 		response.PurchasedTime = &value
@@ -343,7 +350,79 @@ func receiptRequest(body ReceiptUpdate) (receipts.ReceiptInput, error) {
 		return input, err
 	}
 	input.Total, err = parseAmount(body.Total, 2, "total", false)
+	if err != nil {
+		return input, err
+	}
+	if input.InvoiceNumber, err = invoiceNumberRequest(body.InvoiceNumber); err != nil {
+		return input, err
+	}
+	if input.Ettn, err = ettnRequest(body.Ettn); err != nil {
+		return input, err
+	}
+	input.SellerTaxNumber, err = taxNumberRequest(body.SellerTaxNumber)
 	return input, err
+}
+
+// invoiceNumberRequest reads the printed invoice number. Chains print
+// upper-case, so the input is upper-cased before its shape is checked:
+// at most 32 letters and digits, and an empty value clears the column.
+func invoiceNumberRequest(value *string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.ToUpper(strings.TrimSpace(*value))
+	if trimmed == "" {
+		return nil, nil
+	}
+	// The pattern matches the schema: up to 32 upper-case letters or
+	// digits, which is every shape a Turkish e-archive number prints.
+	invoiceNumberPattern := regexp.MustCompile(`^[0-9A-Z]{1,32}$`)
+	if !invoiceNumberPattern.MatchString(trimmed) {
+		return nil, apperr.New(apperr.Invalid, "The invoice number must be up to 32 letters or digits.").WithField("invoiceNumber", "must be up to 32 letters or digits")
+	}
+	return &trimmed, nil
+}
+
+// ettnRequest reads the e-archive invoice UUID as printed: hyphenated, or
+// compact without dashes. Either way it is stored canonically; an empty
+// value clears the column.
+func ettnRequest(value *string) (uuid.NullUUID, error) {
+	if value == nil {
+		return uuid.NullUUID{}, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return uuid.NullUUID{}, nil
+	}
+	if len(trimmed) == 32 {
+		trimmed = trimmed[:8] + "-" + trimmed[8:12] + "-" + trimmed[12:16] + "-" + trimmed[16:20] + "-" + trimmed[20:]
+	}
+	parsed, err := uuid.Parse(strings.ToLower(trimmed))
+	if err != nil {
+		return uuid.NullUUID{}, apperr.New(apperr.Invalid, "The ETTN must be the printed invoice UUID.").WithField("ettn", "must be a UUID, hyphenated or compact")
+	}
+	return uuid.NullUUID{UUID: parsed, Valid: true}, nil
+}
+
+// taxNumberRequest reads the seller's tax number: exactly ten digits, so a
+// VKN that starts with a zero stays text. Only the format holds here — the
+// check digit is a reader's rule, and a user correcting what the paper
+// prints is not second-guessed. An empty value clears the column.
+func taxNumberRequest(value *string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	// The pattern matches the schema: exactly ten digits, so a VKN that
+	// starts with a zero stays text rather than becoming a number.
+	taxNumberPattern := regexp.MustCompile(`^[0-9]{10}$`)
+	if !taxNumberPattern.MatchString(trimmed) {
+		return nil, apperr.New(apperr.Invalid, "The seller tax number must be exactly ten digits.").WithField("sellerTaxNumber", "must be exactly ten digits")
+	}
+	return &trimmed, nil
 }
 
 func lineRequest(body LineItemInput) (receipts.LineInput, error) {
