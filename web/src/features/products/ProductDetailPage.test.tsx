@@ -254,6 +254,45 @@ describe('ProductDetailPage', () => {
     ]);
   });
 
+  it('keeps the price basis when saving other product details', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const genericProduct: components['schemas']['Product'] = {
+      ...mockProduct,
+      canonicalName: 'Ayran',
+      sizeValue: null,
+      sizeUnit: null,
+      priceBasis: 'kg',
+    };
+
+    server.use(
+      http.get('/api/v1/products/:productId', () =>
+        HttpResponse.json(genericProduct),
+      ),
+      http.put('/api/v1/products/:productId', async ({ request }) => {
+        updates.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json(genericProduct);
+      }),
+    );
+
+    renderProductDetail();
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Ayran' }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Canonical name'), {
+      target: { value: 'Ayran Klasik' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    expect(
+      await screen.findByText('Product details saved.'),
+    ).toBeInTheDocument();
+    expect(updates).toMatchObject([
+      { canonicalName: 'Ayran Klasik', priceBasis: 'kg' },
+    ]);
+  });
+
   it('supports merge picker with confirmation summary, server error recovery, and merge commit', async () => {
     let failMergeOnce = true;
     server.use(
