@@ -113,7 +113,7 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	h.json(w, r, status, map[string]string{"error": code})
 }
 
-func (h *Handler) registrationAllowed(r *http.Request) bool {
+func registrationHost(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
@@ -126,6 +126,13 @@ func (h *Handler) registrationAllowed(r *http.Request) bool {
 			host = last.String()
 		}
 	}
+	return host
+}
+
+// registrationAllowed reserves one rate-limit slot atomically. A caller whose
+// request is rejected must release it with refundRegistration.
+func (h *Handler) registrationAllowed(r *http.Request) bool {
+	host := registrationHost(r)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	now := h.service.now().UTC()
@@ -149,12 +156,36 @@ func (h *Handler) registrationAllowed(r *http.Request) bool {
 	return true
 }
 
+// refundRegistration releases a reserved slot when a request was rejected, so
+// malformed registrations cannot exhaust an IP's budget.
+func (h *Handler) refundRegistration(r *http.Request) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	host := registrationHost(r)
+	rate, found := h.rates[host]
+	if !found {
+		return
+	}
+	if rate.count <= 1 {
+		delete(h.rates, host)
+		return
+	}
+	rate.count--
+	h.rates[host] = rate
+}
+
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	if !h.registrationAllowed(r) {
 		w.Header().Set("Retry-After", "3600")
 		h.fail(w, r, failure("temporarily_unavailable"))
 		return
 	}
+	charged := true
+	defer func() {
+		if charged {
+			h.refundRegistration(r)
+		}
+	}()
 	media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if media != "application/json" {
 		h.fail(w, r, failure("invalid_client_metadata"))
@@ -177,6 +208,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	charged = false
 	h.json(w, r, 201, map[string]any{"client_id": client.ID, "client_id_issued_at": client.CreatedAt.Unix(), "client_name": client.Name, "redirect_uris": client.RedirectUris, "token_endpoint_auth_method": "none", "grant_types": []string{"authorization_code", "refresh_token"}, "response_types": []string{"code"}})
 }
 
