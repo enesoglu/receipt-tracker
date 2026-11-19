@@ -148,7 +148,17 @@ export function FlagResolutionCard({
 
   const summary = formatReviewFlagSummary(flag);
   const statusMeta = formatReceiptStatus(receipt.status);
-  const images = receiptDetailQuery.data?.images ?? [];
+  const receiptDetail = receiptDetailQuery.data;
+  const images = receiptDetail?.images ?? [];
+  // The queue entry carries only a summary, so the printed identity comes
+  // from the same detail fetch that supplies the image preview.
+  const identityFacts = [
+    { label: 'Invoice number', value: receiptDetail?.invoiceNumber },
+    { label: 'ETTN', value: receiptDetail?.ettn },
+    { label: 'Seller tax number', value: receiptDetail?.sellerTaxNumber },
+  ].filter((fact): fact is { label: string; value: string } =>
+    Boolean(fact.value),
+  );
 
   async function submitResolution(resolution: ReviewResolution) {
     setErrorText(null);
@@ -637,6 +647,17 @@ export function FlagResolutionCard({
                     <span>OCR: {lineItem.rawName}</span>
                   ) : null}
                 </div>
+              </div>
+            ) : null}
+
+            {identityFacts.length > 0 ? (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-small text-muted">
+                {identityFacts.map((fact) => (
+                  <span key={fact.label}>
+                    {fact.label}:{' '}
+                    <span className="font-medium text-ink">{fact.value}</span>
+                  </span>
+                ))}
               </div>
             ) : null}
 
