@@ -25,6 +25,8 @@ export type PriceChartRow = {
 
 export interface CurrencyPriceHistoryGroup {
   currency: string;
+  /** Price basis shared by the group's points; `kg` or `l` compare per unit of that basis. */
+  basis: components['schemas']['PriceBasis'];
   series: PriceSeriesDefinition[];
   chartRows: PriceChartRow[];
   stores: components['schemas']['StorePriceSummary'][];
@@ -75,6 +77,7 @@ export function groupPriceHistoryByCurrency(
     const currencyStores = history.stores.filter(
       (store) => store.currency === currency,
     );
+    const basis = currencyPoints[0]?.basis ?? 'item';
 
     const chronologicalPoints = [...currencyPoints].sort((a, b) =>
       a.purchasedOn.localeCompare(b.purchasedOn),
@@ -115,7 +118,13 @@ export function groupPriceHistoryByCurrency(
         rowByPurchase.set(rowKey, row);
       }
 
-      const numericPrice = Number(point.unitPrice);
+      // A kg or l product is compared per kilogram or litre, so the chart
+      // plots the basis price; a purchase without one cannot be compared
+      // and is not plotted.
+      const plottedPrice =
+        basis === 'item' ? point.unitPrice : point.basisPrice;
+      const numericPrice =
+        plottedPrice === null ? Number.NaN : Number(plottedPrice);
       if (Number.isFinite(numericPrice)) {
         row[series.dataKey] = numericPrice;
       }
@@ -123,6 +132,7 @@ export function groupPriceHistoryByCurrency(
 
     return {
       currency,
+      basis,
       series: Array.from(seriesByBucket.values()),
       chartRows: Array.from(rowByPurchase.values()),
       stores: currencyStores,

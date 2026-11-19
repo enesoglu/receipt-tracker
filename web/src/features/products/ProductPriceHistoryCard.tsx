@@ -85,7 +85,7 @@ const storeSummaryColumns: readonly TableColumn<StoreSummaryRow>[] = [
   },
 ];
 
-const pointColumns: readonly TableColumn<PricePointRow>[] = [
+const basePointColumns: readonly TableColumn<PricePointRow>[] = [
   {
     key: 'date',
     header: 'Purchase date',
@@ -130,7 +130,31 @@ const pointColumns: readonly TableColumn<PricePointRow>[] = [
   },
 ];
 
-/** Cross-store unit price history card with filters, per-currency line charts, and receipt links. */
+/** Point columns; a kg or l product also shows its comparable per-unit price. */
+function pointColumns(
+  basis: components['schemas']['PriceBasis'],
+): readonly TableColumn<PricePointRow>[] {
+  if (basis === 'item') {
+    return basePointColumns;
+  }
+  return [
+    ...basePointColumns,
+    {
+      key: 'basisPrice',
+      header: basis === 'kg' ? 'Per kg' : 'Per litre',
+      align: 'right',
+      cell: (row) => (
+        <Money
+          value={row.basisPrice}
+          currency={row.currency}
+          className="font-medium text-ink"
+        />
+      ),
+    },
+  ];
+}
+
+/** Cross-store price history card with filters, per-currency line charts, and receipt links. */
 export function ProductPriceHistoryCard({
   productId,
 }: ProductPriceHistoryCardProps) {
@@ -169,7 +193,7 @@ export function ProductPriceHistoryCard({
   return (
     <Card
       title="Price history"
-      description="Unit price trends by store, grouped per currency. Select any purchase date to inspect the receipt."
+      description="Unit and basis price trends by store, grouped per currency. Select any purchase date to inspect the receipt."
     >
       <div className="flex flex-col gap-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -271,6 +295,14 @@ export function ProductPriceHistoryCard({
                   />
                 ) : null}
 
+                {group.basis !== 'item' ? (
+                  <p className="text-caption text-muted">
+                    The chart compares basis prices per{' '}
+                    {group.basis === 'kg' ? 'kilogram' : 'litre'}; purchases
+                    without a usable size are not plotted.
+                  </p>
+                ) : null}
+
                 {group.chartRows.length > 0 ? (
                   <div className="h-72 w-full rounded-card border border-border bg-surface-subtle p-4">
                     <ResponsiveContainer
@@ -333,7 +365,7 @@ export function ProductPriceHistoryCard({
 
                 <Table
                   caption={`${group.currency} purchase points`}
-                  columns={pointColumns}
+                  columns={pointColumns(group.basis)}
                   rows={group.points}
                   rowKey={(row) => row.lineItemId}
                 />

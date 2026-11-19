@@ -65,4 +65,36 @@ describe('groupPriceHistoryByCurrency', () => {
       'Nov 3, 2026',
     ]);
   });
+
+  it('plots the basis price of a kg product and skips purchases without one', () => {
+    const history = historyWith([
+      point({
+        basis: 'kg',
+        unitPrice: '100.00',
+        basisPrice: '100.00',
+        lineItemId: '...0201',
+      }),
+      point({
+        basis: 'kg',
+        unitPrice: '50.00',
+        basisPrice: '100.00',
+        lineItemId: '...0202',
+      }),
+      point({
+        basis: 'kg',
+        unitPrice: '70.00',
+        basisPrice: null,
+        lineItemId: '...0203',
+      }),
+    ]);
+
+    const [group] = groupPriceHistoryByCurrency(history);
+
+    expect(group.basis).toBe('kg');
+    expect(group.chartRows.map((row) => row.store_0)).toEqual([
+      100,
+      100,
+      undefined,
+    ]);
+  });
 });
