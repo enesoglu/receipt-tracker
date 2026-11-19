@@ -593,6 +593,58 @@ describe('ReceiptDetailPage', () => {
     );
   });
 
+  it('resets the edit form when a refresh brings fresh extraction values', async () => {
+    const base: Receipt = {
+      ...mockReceipt,
+      id: '0193a1b2-0000-7000-8000-000000000170',
+      status: 'queued',
+      updatedAt: '2026-11-19T09:00:00Z',
+    };
+    let current = base;
+    let savedPayload: Record<string, unknown> | null = null;
+
+    server.use(
+      http.get('/api/v1/receipts/:receiptId', () => HttpResponse.json(current)),
+      http.put('/api/v1/receipts/:receiptId', async ({ request }) => {
+        savedPayload = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(current);
+      }),
+    );
+
+    renderDetailPage(base.id);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/^Total/i)).toHaveValue('129.40'),
+    );
+
+    current = {
+      ...base,
+      store: {
+        id: '0193a1b2-0000-7000-8000-000000000019',
+        name: 'Fresh Market',
+      },
+      purchasedOn: '2026-11-15',
+      total: '8.33',
+      status: 'needs_review',
+      updatedAt: '2026-11-19T09:05:00Z',
+    };
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(/^Total/i)).toHaveValue('8.33'),
+    );
+    expect(screen.getByLabelText('Store')).toHaveValue('Fresh Market');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() => expect(savedPayload).not.toBeNull());
+    expect(savedPayload).toMatchObject({
+      storeName: 'Fresh Market',
+      purchasedOn: '2026-11-15',
+      total: '8.33',
+    });
+  });
+
   it('confirms reprocess and delete inside dialogs and navigates to /receipts on delete', async () => {
     let reprocessed = false;
     let deleted = false;

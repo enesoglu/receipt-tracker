@@ -59,7 +59,9 @@ export function ReceiptDetailPage() {
 
   return (
     <ReceiptDetailContent
-      key={receiptQuery.data.id}
+      // Remount when extraction or an edit changes the receipt, so the form
+      // cannot save values from before that change over the newer ones.
+      key={`${receiptQuery.data.id}:${receiptQuery.data.updatedAt}`}
       receipt={receiptQuery.data}
       isRefreshing={receiptQuery.isFetching}
       onRefresh={() => {
