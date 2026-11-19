@@ -297,7 +297,7 @@ func namedPage(page receipts.NamedPage) any {
 func storesPage(page stores.Page) any {
 	items := make([]any, 0, len(page.Items))
 	for _, row := range page.Items {
-		items = append(items, map[string]any{"id": row.ID, "name": row.Name, "count": row.Count})
+		items = append(items, map[string]any{"id": row.ID, "name": row.Name, "count": row.Count, "vkn": row.VKN, "aliasCount": row.AliasCount})
 	}
 	return map[string]any{"items": items, "next_cursor": page.NextCursor}
 }

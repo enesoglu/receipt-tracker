@@ -2094,11 +2094,64 @@ type StorageStatus struct {
 
 // Store defines model for Store.
 type Store struct {
-	Id   openapi_types.UUID `json:"id"`
-	Name string             `json:"name"`
+	// AliasCount Number of raw names the store has been seen under.
+	AliasCount int                `json:"aliasCount"`
+	Id         openapi_types.UUID `json:"id"`
+	Name       string             `json:"name"`
 
 	// ReceiptCount Number of receipts from this store.
 	ReceiptCount int `json:"receiptCount"`
+
+	// Vkn The seller tax number the store resolved from, or `null`.
+	Vkn *string `json:"vkn"`
+}
+
+// StoreAlias defines model for StoreAlias.
+type StoreAlias struct {
+	LastSeenAt time.Time `json:"lastSeenAt"`
+
+	// RawName The store's name as the receipt printed it.
+	RawName string `json:"rawName"`
+
+	// SeenCount Times a receipt showed this name.
+	SeenCount int `json:"seenCount"`
+}
+
+// StoreBranch defines model for StoreBranch.
+type StoreBranch struct {
+	// Name A branch name printed on a receipt of this store.
+	Name string `json:"name"`
+
+	// ReceiptCount Number of the store's receipts printing it.
+	ReceiptCount int `json:"receiptCount"`
+}
+
+// StoreCreate defines model for StoreCreate.
+type StoreCreate struct {
+	Name string `json:"name"`
+}
+
+// StoreDetail The store with every raw name it was seen under and the branch
+// names its receipts printed, both ordered by name.
+type StoreDetail struct {
+	// AliasCount Number of raw names the store has been seen under.
+	AliasCount int                `json:"aliasCount"`
+	Aliases    []StoreAlias       `json:"aliases"`
+	Branches   []StoreBranch      `json:"branches"`
+	Id         openapi_types.UUID `json:"id"`
+	Name       string             `json:"name"`
+
+	// ReceiptCount Number of receipts from this store.
+	ReceiptCount int `json:"receiptCount"`
+
+	// Vkn The seller tax number the store resolved from, or `null`.
+	Vkn *string `json:"vkn"`
+}
+
+// StoreMerge defines model for StoreMerge.
+type StoreMerge struct {
+	// SourceId The store that is merged into the one in the path and then deleted.
+	SourceId openapi_types.UUID `json:"sourceId"`
 }
 
 // StorePage defines model for StorePage.
@@ -2584,8 +2637,14 @@ type ResolveReviewFlagJSONRequestBody = ReviewResolution
 // UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
 type UpdateSettingsJSONRequestBody = Settings
 
+// CreateStoreJSONRequestBody defines body for CreateStore for application/json ContentType.
+type CreateStoreJSONRequestBody = StoreCreate
+
 // UpdateStoreJSONRequestBody defines body for UpdateStore for application/json ContentType.
 type UpdateStoreJSONRequestBody = StoreUpdate
+
+// MergeStoresJSONRequestBody defines body for MergeStores for application/json ContentType.
+type MergeStoresJSONRequestBody = StoreMerge
 
 // AsLowConfidenceFlag returns the union data inside the ReviewFlag as a LowConfidenceFlag
 func (t ReviewFlag) AsLowConfidenceFlag() (LowConfidenceFlag, error) {
@@ -3226,9 +3285,21 @@ type ServerInterface interface {
 	// ListStores List stores
 	// (GET /stores)
 	ListStores(w http.ResponseWriter, r *http.Request, params ListStoresParams)
+	// CreateStore Create a store
+	// (POST /stores)
+	CreateStore(w http.ResponseWriter, r *http.Request)
+	// DeleteStore Delete a store
+	// (DELETE /stores/{storeId})
+	DeleteStore(w http.ResponseWriter, r *http.Request, storeId StoreId)
+	// GetStore Get a store
+	// (GET /stores/{storeId})
+	GetStore(w http.ResponseWriter, r *http.Request, storeId StoreId)
 	// UpdateStore Rename a store
 	// (PUT /stores/{storeId})
 	UpdateStore(w http.ResponseWriter, r *http.Request, storeId StoreId)
+	// MergeStores Merge another store into this one
+	// (POST /stores/{storeId}/merge)
+	MergeStores(w http.ResponseWriter, r *http.Request, storeId StoreId)
 	// GetSuggestionsStatus Get the state of the suggestion feature
 	// (GET /suggestions/status)
 	GetSuggestionsStatus(w http.ResponseWriter, r *http.Request)
@@ -3463,9 +3534,33 @@ func (_ Unimplemented) ListStores(w http.ResponseWriter, r *http.Request, params
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// CreateStore Create a store
+// (POST /stores)
+func (_ Unimplemented) CreateStore(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteStore Delete a store
+// (DELETE /stores/{storeId})
+func (_ Unimplemented) DeleteStore(w http.ResponseWriter, r *http.Request, storeId StoreId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetStore Get a store
+// (GET /stores/{storeId})
+func (_ Unimplemented) GetStore(w http.ResponseWriter, r *http.Request, storeId StoreId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // UpdateStore Rename a store
 // (PUT /stores/{storeId})
 func (_ Unimplemented) UpdateStore(w http.ResponseWriter, r *http.Request, storeId StoreId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// MergeStores Merge another store into this one
+// (POST /stores/{storeId}/merge)
+func (_ Unimplemented) MergeStores(w http.ResponseWriter, r *http.Request, storeId StoreId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4744,6 +4839,72 @@ func (siw *ServerInterfaceWrapper) ListStores(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// CreateStore operation middleware
+func (siw *ServerInterfaceWrapper) CreateStore(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateStore(w, r)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteStore operation middleware
+func (siw *ServerInterfaceWrapper) DeleteStore(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "storeId" -------------
+	var storeId StoreId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "storeId", chi.URLParam(r, "storeId"), &storeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "storeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteStore(w, r, storeId)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetStore operation middleware
+func (siw *ServerInterfaceWrapper) GetStore(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "storeId" -------------
+	var storeId StoreId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "storeId", chi.URLParam(r, "storeId"), &storeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "storeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetStore(w, r, storeId)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // UpdateStore operation middleware
 func (siw *ServerInterfaceWrapper) UpdateStore(w http.ResponseWriter, r *http.Request) {
 
@@ -4761,6 +4922,32 @@ func (siw *ServerInterfaceWrapper) UpdateStore(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateStore(w, r, storeId)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MergeStores operation middleware
+func (siw *ServerInterfaceWrapper) MergeStores(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "storeId" -------------
+	var storeId StoreId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "storeId", chi.URLParam(r, "storeId"), &storeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "storeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MergeStores(w, r, storeId)
 	}))
 
 	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
@@ -4987,7 +5174,19 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/stores", wrapper.ListStores)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/stores", wrapper.CreateStore)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/stores/{storeId}", wrapper.DeleteStore)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/stores/{storeId}", wrapper.GetStore)
+	})
+	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/stores/{storeId}", wrapper.UpdateStore)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/stores/{storeId}/merge", wrapper.MergeStores)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/categories", wrapper.ListCategories)
@@ -8106,6 +8305,277 @@ func (response ListStoresdefaultApplicationProblemPlusJSONResponse) VisitListSto
 	return err
 }
 
+type CreateStoreRequestObject struct {
+	Body *CreateStoreJSONRequestBody
+}
+
+type CreateStoreResponseObject interface {
+	VisitCreateStoreResponse(w http.ResponseWriter) error
+}
+
+type CreateStore201JSONResponse Store
+
+func (response CreateStore201JSONResponse) VisitCreateStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStore400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateStore400ApplicationProblemPlusJSONResponse) VisitCreateStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStore401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateStore401ApplicationProblemPlusJSONResponse) VisitCreateStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStore409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreateStore409ApplicationProblemPlusJSONResponse) VisitCreateStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStoredefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateStoredefaultApplicationProblemPlusJSONResponse) VisitCreateStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteStoreRequestObject struct {
+	StoreId StoreId `json:"storeId"`
+}
+
+type DeleteStoreResponseObject interface {
+	VisitDeleteStoreResponse(w http.ResponseWriter) error
+}
+
+type DeleteStore204Response struct {
+}
+
+func (response DeleteStore204Response) VisitDeleteStoreResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteStore400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteStore400ApplicationProblemPlusJSONResponse) VisitDeleteStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteStore401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteStore401ApplicationProblemPlusJSONResponse) VisitDeleteStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteStore404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteStore404ApplicationProblemPlusJSONResponse) VisitDeleteStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteStore409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteStore409ApplicationProblemPlusJSONResponse) VisitDeleteStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteStoredefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteStoredefaultApplicationProblemPlusJSONResponse) VisitDeleteStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStoreRequestObject struct {
+	StoreId StoreId `json:"storeId"`
+}
+
+type GetStoreResponseObject interface {
+	VisitGetStoreResponse(w http.ResponseWriter) error
+}
+
+type GetStore200JSONResponse StoreDetail
+
+func (response GetStore200JSONResponse) VisitGetStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStore400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response GetStore400ApplicationProblemPlusJSONResponse) VisitGetStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStore401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetStore401ApplicationProblemPlusJSONResponse) VisitGetStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStore404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetStore404ApplicationProblemPlusJSONResponse) VisitGetStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStoredefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetStoredefaultApplicationProblemPlusJSONResponse) VisitGetStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type UpdateStoreRequestObject struct {
 	StoreId StoreId `json:"storeId"`
 	Body    *UpdateStoreJSONRequestBody
@@ -8199,6 +8669,110 @@ type UpdateStoredefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response UpdateStoredefaultApplicationProblemPlusJSONResponse) VisitUpdateStoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MergeStoresRequestObject struct {
+	StoreId StoreId `json:"storeId"`
+	Body    *MergeStoresJSONRequestBody
+}
+
+type MergeStoresResponseObject interface {
+	VisitMergeStoresResponse(w http.ResponseWriter) error
+}
+
+type MergeStores200JSONResponse StoreDetail
+
+func (response MergeStores200JSONResponse) VisitMergeStoresResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MergeStores400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response MergeStores400ApplicationProblemPlusJSONResponse) VisitMergeStoresResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MergeStores401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response MergeStores401ApplicationProblemPlusJSONResponse) VisitMergeStoresResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MergeStores404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response MergeStores404ApplicationProblemPlusJSONResponse) VisitMergeStoresResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MergeStores409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response MergeStores409ApplicationProblemPlusJSONResponse) VisitMergeStoresResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MergeStoresdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response MergeStoresdefaultApplicationProblemPlusJSONResponse) VisitMergeStoresResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -8431,9 +9005,21 @@ type StrictServerInterface interface {
 	// ListStores List stores
 	// (GET /stores)
 	ListStores(ctx context.Context, request ListStoresRequestObject) (ListStoresResponseObject, error)
+	// CreateStore Create a store
+	// (POST /stores)
+	CreateStore(ctx context.Context, request CreateStoreRequestObject) (CreateStoreResponseObject, error)
+	// DeleteStore Delete a store
+	// (DELETE /stores/{storeId})
+	DeleteStore(ctx context.Context, request DeleteStoreRequestObject) (DeleteStoreResponseObject, error)
+	// GetStore Get a store
+	// (GET /stores/{storeId})
+	GetStore(ctx context.Context, request GetStoreRequestObject) (GetStoreResponseObject, error)
 	// UpdateStore Rename a store
 	// (PUT /stores/{storeId})
 	UpdateStore(ctx context.Context, request UpdateStoreRequestObject) (UpdateStoreResponseObject, error)
+	// MergeStores Merge another store into this one
+	// (POST /stores/{storeId}/merge)
+	MergeStores(ctx context.Context, request MergeStoresRequestObject) (MergeStoresResponseObject, error)
 	// GetSuggestionsStatus Get the state of the suggestion feature
 	// (GET /suggestions/status)
 	GetSuggestionsStatus(ctx context.Context, request GetSuggestionsStatusRequestObject) (GetSuggestionsStatusResponseObject, error)
@@ -9509,6 +10095,89 @@ func (sh *strictHandler) ListStores(w http.ResponseWriter, r *http.Request, para
 	}
 }
 
+// CreateStore operation middleware
+func (sh *strictHandler) CreateStore(w http.ResponseWriter, r *http.Request) {
+	var request CreateStoreRequestObject
+
+	var body CreateStoreJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateStore(ctx, request.(CreateStoreRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateStore")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateStoreResponseObject); ok {
+		if err := validResponse.VisitCreateStoreResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteStore operation middleware
+func (sh *strictHandler) DeleteStore(w http.ResponseWriter, r *http.Request, storeId StoreId) {
+	var request DeleteStoreRequestObject
+
+	request.StoreId = storeId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteStore(ctx, request.(DeleteStoreRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteStore")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteStoreResponseObject); ok {
+		if err := validResponse.VisitDeleteStoreResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetStore operation middleware
+func (sh *strictHandler) GetStore(w http.ResponseWriter, r *http.Request, storeId StoreId) {
+	var request GetStoreRequestObject
+
+	request.StoreId = storeId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetStore(ctx, request.(GetStoreRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetStore")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetStoreResponseObject); ok {
+		if err := validResponse.VisitGetStoreResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // UpdateStore operation middleware
 func (sh *strictHandler) UpdateStore(w http.ResponseWriter, r *http.Request, storeId StoreId) {
 	var request UpdateStoreRequestObject
@@ -9535,6 +10204,39 @@ func (sh *strictHandler) UpdateStore(w http.ResponseWriter, r *http.Request, sto
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateStoreResponseObject); ok {
 		if err := validResponse.VisitUpdateStoreResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MergeStores operation middleware
+func (sh *strictHandler) MergeStores(w http.ResponseWriter, r *http.Request, storeId StoreId) {
+	var request MergeStoresRequestObject
+
+	request.StoreId = storeId
+
+	var body MergeStoresJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MergeStores(ctx, request.(MergeStoresRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MergeStores")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MergeStoresResponseObject); ok {
+		if err := validResponse.VisitMergeStoresResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

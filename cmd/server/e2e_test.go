@@ -215,7 +215,21 @@ func TestE2E_RealServerWorkflowAndContract(t *testing.T) {
 	}
 	var stores httpapi.StorePage
 	s.json(alice, "GET", "/stores", nil, 200, &stores)
-	s.json(alice, "PUT", "/stores/"+stores.Items[0].Id.String(), map[string]string{"name": "E2E renamed market"}, 200, nil)
+	market := stores.Items[0].Id.String()
+	s.json(alice, "PUT", "/stores/"+market, map[string]string{"name": "E2E renamed market"}, 200, nil)
+	// Cover the rest of the store surface: a store made by hand, the
+	// detail with its raw names and branches, a merge folding one store
+	// into another, and a delete of a store holding no receipts.
+	var spare, kept httpapi.Store
+	s.json(alice, "POST", "/stores", map[string]string{"name": "E2E spare market"}, 201, &spare)
+	s.json(alice, "POST", "/stores", map[string]string{"name": "E2E corner shop"}, 201, &kept)
+	var storeDetail httpapi.StoreDetail
+	s.json(alice, "GET", "/stores/"+market, nil, 200, &storeDetail)
+	if storeDetail.Id.String() != market || storeDetail.ReceiptCount == 0 {
+		t.Fatalf("store detail = %+v", storeDetail)
+	}
+	s.json(alice, "POST", "/stores/"+market+"/merge", map[string]string{"sourceId": spare.Id.String()}, 200, nil)
+	s.json(alice, "DELETE", "/stores/"+kept.Id.String(), nil, 204, nil)
 
 	// Repeat all data reads with B's real session. Lists may contain B's own
 	// seeded categories/settings, but no A resource id or private name.

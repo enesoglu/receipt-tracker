@@ -22,8 +22,9 @@ func TestService_ListOrdersPagesAndCounts(t *testing.T) {
 	ctx := t.Context()
 	user, other := f.user("a"), f.user("b")
 	f.store(user, "Beta Market", "beta market", nil)
-	alpha := f.store(user, "Alpha Market", "alpha market", nil)
+	alpha := f.store(user, "Alpha Market", "alpha market", ptr("1234567890"))
 	f.store(other, "Private Market", "private market", nil)
+	f.alias(user, alpha, "ALPHA MARKET", "alpha market")
 	f.receipt(user, alpha)
 	f.receipt(user, alpha)
 	service := New(f.pool, func() time.Time { return time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC) })
@@ -32,7 +33,8 @@ func TestService_ListOrdersPagesAndCounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Items) != 1 || page.Items[0] != (Store{ID: alpha, Name: "Alpha Market", Count: 2}) || page.NextCursor == nil {
+	first := page.Items[0]
+	if len(page.Items) != 1 || first.ID != alpha || first.Name != "Alpha Market" || first.Count != 2 || first.VKN == nil || *first.VKN != "1234567890" || first.AliasCount != 1 || page.NextCursor == nil {
 		t.Fatalf("first page = %+v, cursor %v", page.Items, page.NextCursor)
 	}
 	next, err := service.List(ctx, user, 1, *page.NextCursor)
@@ -63,6 +65,7 @@ func TestService_RenameEditsAuditsAndIsolates(t *testing.T) {
 	market := f.store(user, "Synthetic Market", "synthetic market", nil)
 	f.store(user, "Kept Market", "kept market", nil)
 	foreign := f.store(other, "Synthetic Market", "synthetic market", nil)
+	f.alias(user, market, "SYNTHETIC MARKET", "synthetic market")
 	f.receipt(user, market)
 	now := time.Date(2026, 11, 19, 9, 0, 0, 0, time.UTC)
 	service := New(f.pool, func() time.Time { return now })
@@ -71,7 +74,7 @@ func TestService_RenameEditsAuditsAndIsolates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if renamed != (Store{ID: market, Name: "Beta Market", Count: 1}) {
+	if renamed != (Store{ID: market, Name: "Beta Market", Count: 1, AliasCount: 1}) {
 		t.Fatalf("rename = %+v", renamed)
 	}
 	var name, key string

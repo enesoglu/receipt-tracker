@@ -1018,7 +1018,7 @@ paths:
       operationId: listStores
       tags: [stores]
       summary: List stores
-      description: Stores ordered by name. Stores are created when a receipt names them.
+      description: Stores ordered by name. A store is created when a receipt names it, or by hand.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
@@ -1038,9 +1038,71 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         default:
           $ref: "#/components/responses/Error"
+    post:
+      operationId: createStore
+      tags: [stores]
+      summary: Create a store
+      description: |
+        Creates a store by hand, with no receipts and no names; the raw
+        names arrive as receipts name the store. `vkn` stays `null` until a
+        receipt resolves one. The name is trimmed; `409` when the user
+        already has a store with that name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreCreate"
+            examples:
+              create:
+                $ref: "#/components/examples/StoreCreate"
+      responses:
+        "201":
+          description: The store, with no receipts and no aliases.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Store"
+              examples:
+                store:
+                  $ref: "#/components/examples/Store"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
   /stores/{storeId}:
     parameters:
       - $ref: "#/components/parameters/StoreId"
+    get:
+      operationId: getStore
+      tags: [stores]
+      summary: Get a store
+      description: |
+        The store with every raw name it has been seen under and the branch
+        names printed on its receipts, both read-only. A store has few of
+        either, so nothing is paginated.
+      responses:
+        "200":
+          description: The store with its aliases and branches.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreDetail"
+              examples:
+                store:
+                  $ref: "#/components/examples/StoreDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
     put:
       operationId: updateStore
       tags: [stores]
@@ -1065,6 +1127,72 @@ paths:
               examples:
                 store:
                   $ref: "#/components/examples/Store"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteStore
+      tags: [stores]
+      summary: Delete a store
+      description: |
+        Deletes a store without receipts, together with the product names,
+        store codes and rejections bound to it. A store with receipts
+        answers `409` with their count; merge it instead.
+      responses:
+        "204":
+          description: The store is gone.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+  /stores/{storeId}/merge:
+    parameters:
+      - $ref: "#/components/parameters/StoreId"
+    post:
+      operationId: mergeStores
+      tags: [stores]
+      summary: Merge another store into this one
+      description: |
+        Moves the receipts, raw names, store codes and rejections of the
+        source store to the store in the path and deletes the source. Raw
+        names both stores were seen under are combined. The store in the
+        path keeps its tax number and adopts the source's when it has
+        none; two different tax numbers answer `409`, because two legal
+        entities should not silently become one. A merge cannot be undone;
+        it is recorded in the audit log. Merging a store into itself is a
+        `400`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StoreMerge"
+            examples:
+              merge:
+                $ref: "#/components/examples/StoreMerge"
+      responses:
+        "200":
+          description: The store in the path after the merge.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StoreDetail"
+              examples:
+                store:
+                  $ref: "#/components/examples/StoreDetail"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -3196,7 +3324,7 @@ components:
           minimum: 1
     Store:
       type: object
-      required: [id, name, receiptCount]
+      required: [id, name, receiptCount, vkn, aliasCount]
       properties:
         id:
           type: string
@@ -3207,6 +3335,24 @@ components:
           type: integer
           description: Number of receipts from this store.
           minimum: 0
+        vkn:
+          type: string
+          nullable: true
+          description: The seller tax number the store resolved from, or `null`.
+          pattern: '^[0-9]{10}$'
+        aliasCount:
+          type: integer
+          description: Number of raw names the store has been seen under.
+          minimum: 0
+    StoreCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '^[^\x00]*$'
     StoreUpdate:
       type: object
       required: [name]
@@ -3216,6 +3362,56 @@ components:
           minLength: 1
           maxLength: 200
           pattern: '^[^\x00]*$'
+    StoreAlias:
+      type: object
+      required: [rawName, seenCount, lastSeenAt]
+      properties:
+        rawName:
+          type: string
+          description: The store's name as the receipt printed it.
+        seenCount:
+          type: integer
+          description: Times a receipt showed this name.
+          minimum: 1
+        lastSeenAt:
+          type: string
+          format: date-time
+    StoreBranch:
+      type: object
+      required: [name, receiptCount]
+      properties:
+        name:
+          type: string
+          description: A branch name printed on a receipt of this store.
+        receiptCount:
+          type: integer
+          description: Number of the store's receipts printing it.
+          minimum: 1
+    StoreDetail:
+      description: |
+        The store with every raw name it was seen under and the branch
+        names its receipts printed, both ordered by name.
+      allOf:
+        - $ref: "#/components/schemas/Store"
+        - type: object
+          required: [aliases, branches]
+          properties:
+            aliases:
+              type: array
+              items:
+                $ref: "#/components/schemas/StoreAlias"
+            branches:
+              type: array
+              items:
+                $ref: "#/components/schemas/StoreBranch"
+    StoreMerge:
+      type: object
+      required: [sourceId]
+      properties:
+        sourceId:
+          type: string
+          format: uuid
+          description: The store that is merged into the one in the path and then deleted.
     StorePage:
       type: object
       required: [items, nextCursor]
@@ -4027,9 +4223,13 @@ components:
           - id: 0193a1b2-0000-7000-8000-000000000011
             name: Corner Shop
             receiptCount: 3
+            vkn: null
+            aliasCount: 0
           - id: 0193a1b2-0000-7000-8000-000000000010
             name: Example Market
             receiptCount: 14
+            vkn: "1234567890"
+            aliasCount: 2
         nextCursor: null
     Store:
       summary: A store
@@ -4037,6 +4237,34 @@ components:
         id: 0193a1b2-0000-7000-8000-000000000010
         name: Example Market
         receiptCount: 14
+        vkn: "1234567890"
+        aliasCount: 2
+    StoreCreate:
+      summary: The store's name
+      value:
+        name: Corner Shop
+    StoreDetail:
+      summary: A store with its raw names and branches
+      value:
+        id: 0193a1b2-0000-7000-8000-000000000010
+        name: Example Market
+        receiptCount: 14
+        vkn: "1234567890"
+        aliasCount: 2
+        aliases:
+          - rawName: EXAMPLE MARKET
+            seenCount: 9
+            lastSeenAt: "2026-11-01T12:30:00Z"
+          - rawName: Example Market AŞ.
+            seenCount: 5
+            lastSeenAt: "2026-11-10T09:15:00Z"
+        branches:
+          - name: ANKARA ÇANKAYA
+            receiptCount: 2
+    StoreMerge:
+      summary: The store that disappears
+      value:
+        sourceId: 0193a1b2-0000-7000-8000-000000000011
     StoreUpdate:
       summary: The new name
       value:

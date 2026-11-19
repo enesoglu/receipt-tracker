@@ -160,8 +160,8 @@ func TestAPI_MissingServicesReturnUnavailable(t *testing.T) {
 	if diff := cmp.Diff(planned, visited); diff != "" {
 		t.Errorf("operations exercised mismatch (-want +got):\n%s", diff)
 	}
-	if len(visited) != 40 {
-		t.Errorf("exercised %d operations, want all 40", len(visited))
+	if len(visited) != 44 {
+		t.Errorf("exercised %d operations, want all 44", len(visited))
 	}
 }
 
