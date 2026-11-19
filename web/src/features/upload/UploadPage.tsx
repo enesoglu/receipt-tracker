@@ -260,7 +260,10 @@ export function UploadPage() {
         (page?.items ?? []).map((entry) => [entry.receiptId, entry]),
       );
       return trackedIds.some((id) => {
-        const stage = byId.get(id)?.stage ?? 'queued';
+        const stage = byId.get(id)?.stage;
+        // A receipt the response does not report cannot be assumed queued:
+        // treating it as such keeps the poller running forever.
+        if (stage === undefined) return false;
         return (
           stage === 'queued' || stage === 'extracting' || stage === 'matching'
         );

@@ -455,6 +455,37 @@ describe('UploadPage', () => {
     expect(pollCount).toBe(3);
   });
 
+  it('stops polling when a created receipt is missing from the pipeline response', async () => {
+    vi.useFakeTimers();
+    fake.queue.seed([
+      makeItem({
+        id: 'q-1',
+        fileName: 'vanished.jpg',
+        state: 'done',
+        receiptId: 'rec-gone',
+        outcome: 'created',
+      }),
+    ]);
+
+    let pollCount = 0;
+    server.use(
+      http.get('/api/v1/pipeline', ({ request }) => {
+        expect(new URL(request.url).searchParams.get('ids')).toBe('rec-gone');
+        pollCount += 1;
+        return HttpResponse.json({ items: [] });
+      }),
+    );
+
+    renderUploadPage();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(pollCount).toBe(1);
+    expect(screen.getByText('vanished.jpg')).toBeInTheDocument();
+
+    // A receipt that cannot be found must not hold the poller open forever.
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(pollCount).toBe(1);
+  });
+
   it('explains when uploads wait for a fresh sign-in', async () => {
     fake.queue.seed([
       makeItem({
