@@ -13,12 +13,33 @@ const sampleUser = {
   isAdmin: true,
 };
 
-function renderShell(initialPath = '/receipts', totalOpen = 2) {
+function unsettledPipelineItem(index: number) {
+  return {
+    receiptId: `rec-${index}`,
+    stage: index === 0 ? 'queued' : 'extracting',
+    queuePosition: index === 0 ? 1 : null,
+    failureReason: null,
+  };
+}
+
+function renderShell(
+  initialPath = '/receipts',
+  totalOpen = 2,
+  pipelineItems: ReturnType<typeof unsettledPipelineItem>[] = [],
+) {
   const client = createAppQueryClient({ staleTime: 0 });
-  vi.spyOn(api, 'GET').mockResolvedValue({
-    data: { items: [], nextCursor: null, totalOpen },
-    response: new Response(null, { status: 200 }),
-  } as never);
+  vi.spyOn(api, 'GET').mockImplementation((path) => {
+    if (path === '/pipeline') {
+      return Promise.resolve({
+        data: { items: pipelineItems },
+        response: new Response(null, { status: 200 }),
+      }) as never;
+    }
+    return Promise.resolve({
+      data: { items: [], nextCursor: null, totalOpen },
+      response: new Response(null, { status: 200 }),
+    }) as never;
+  });
   vi.spyOn(api, 'POST').mockResolvedValue({
     data: undefined,
     response: new Response(null, { status: 204 }),
@@ -81,5 +102,39 @@ describe('AppShell', () => {
     fireEvent.click(signOutButtons[0]);
 
     await waitFor(() => expect(api.POST).toHaveBeenCalledWith('/auth/logout'));
+  });
+
+  it('shows the processing count on the sidebar and the mobile header', async () => {
+    renderShell('/receipts', 2, [
+      unsettledPipelineItem(0),
+      unsettledPipelineItem(1),
+    ]);
+
+    // One indicator per frame: desktop sidebar and mobile header.
+    const indicators = await screen.findAllByRole('link', {
+      name: 'Processing 2 receipts',
+    });
+    expect(indicators).toHaveLength(2);
+    for (const indicator of indicators) {
+      expect(indicator).toHaveAttribute('href', '/upload');
+      // Static by design: dot and count only, no animated parts; the
+      // style policy blocks motion utilities in the component source.
+      expect(indicator.querySelector('svg')).toBeNull();
+      expect(indicator.querySelectorAll('span')).toHaveLength(2);
+    }
+  });
+
+  it('hides the processing indicator when nothing is unsettled', async () => {
+    renderShell('/receipts', 0);
+
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: 'Receipts' })).toHaveAttribute(
+        'aria-current',
+        'page',
+      ),
+    );
+    expect(
+      screen.queryByRole('link', { name: /Processing/ }),
+    ).not.toBeInTheDocument();
   });
 });
