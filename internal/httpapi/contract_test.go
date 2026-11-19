@@ -84,6 +84,9 @@ func plannedOperations() map[string][]string {
 			"listReceipts", "reprocessReceipt", "updateLineItem", "updateReceipt",
 		},
 		"review": {"listReviewFlags", "resolveReviewFlag"},
+		"suggestions": {
+			"acceptReceiptSuggestion", "getReceiptSuggestions", "getSuggestionsStatus", "ignoreReceiptSuggestion",
+		},
 		"products": {
 			"getProduct", "getProductPriceHistory", "listProducts", "mergeProducts", "splitProduct", "updateProduct",
 		},

@@ -170,15 +170,21 @@ ORDER BY r.created_at, r.id
 LIMIT 100;
 
 -- The suggestions of one receipt in line order, without paging: review
--- shows them beside their lines.
+-- shows them beside their lines. The category name travels with the row
+-- because the API shows it, not the id.
 -- name: ListReceiptSuggestions :many
-SELECT s.* FROM line_suggestions s
+SELECT sqlc.embed(s), c.name AS category_name
+FROM line_suggestions s
 JOIN line_items l ON l.user_id = s.user_id AND l.id = s.line_item_id
+LEFT JOIN categories c ON c.user_id = @user_id AND c.id = s.suggested_category_id
 WHERE s.user_id = @user_id AND s.receipt_id = @receipt_id
 ORDER BY l.position;
 
 -- name: GetOwnedSuggestion :one
-SELECT * FROM line_suggestions WHERE user_id = @user_id AND receipt_id = @receipt_id AND id = @suggestion_id;
+SELECT sqlc.embed(s), c.name AS category_name
+FROM line_suggestions s
+LEFT JOIN categories c ON c.user_id = @user_id AND c.id = s.suggested_category_id
+WHERE s.user_id = @user_id AND s.receipt_id = @receipt_id AND s.id = @suggestion_id;
 
 -- The line a suggestion is for, to check its match state before deciding.
 -- name: GetSuggestionLine :one

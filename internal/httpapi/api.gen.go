@@ -241,6 +241,27 @@ func (e LineMathFlagKind) Valid() bool {
 	}
 }
 
+// Defines values for LineSuggestionStatus.
+const (
+	LineSuggestionStatusAccepted LineSuggestionStatus = "accepted"
+	LineSuggestionStatusIgnored  LineSuggestionStatus = "ignored"
+	LineSuggestionStatusPending  LineSuggestionStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the LineSuggestionStatus enum.
+func (e LineSuggestionStatus) Valid() bool {
+	switch e {
+	case LineSuggestionStatusAccepted:
+		return true
+	case LineSuggestionStatusIgnored:
+		return true
+	case LineSuggestionStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LowConfidenceFlagKind.
 const (
 	LowConfidenceFlagKindLowConfidence LowConfidenceFlagKind = "low_confidence"
@@ -1110,6 +1131,38 @@ type LineMathFlag struct {
 // LineMathFlagKind defines model for LineMathFlag.Kind.
 type LineMathFlagKind string
 
+// LineSuggestion The model's answer for one line the matcher could not confidently
+// resolve. Nothing enters the catalogue until the user accepts it.
+type LineSuggestion struct {
+	// Category The suggested category, or `null` when the model had none.
+	Category  *CategoryRef `json:"category"`
+	CreatedAt time.Time    `json:"createdAt"`
+
+	// DecidedAt When the suggestion was accepted or ignored; `null` while it is pending.
+	DecidedAt  *time.Time         `json:"decidedAt"`
+	Id         openapi_types.UUID `json:"id"`
+	LineItemId openapi_types.UUID `json:"lineItemId"`
+
+	// Model The model that produced the suggestion.
+	Model string `json:"model"`
+
+	// PromptVersion The prompt the suggestion was produced with.
+	PromptVersion int `json:"promptVersion"`
+
+	// RawName The printed text of the line when the model saw it.
+	RawName   string             `json:"rawName"`
+	ReceiptId openapi_types.UUID `json:"receiptId"`
+
+	// Status The decision on the suggestion; `pending` until the user decides.
+	Status LineSuggestionStatus `json:"status"`
+
+	// SuggestedName The clean name the model suggested for the line.
+	SuggestedName string `json:"suggestedName"`
+}
+
+// LineSuggestionStatus The decision on the suggestion; `pending` until the user decides.
+type LineSuggestionStatus string
+
 // LowConfidenceDetail defines model for LowConfidenceDetail.
 type LowConfidenceDetail struct {
 	// Confidence The extractor's confidence, below the 0.80 threshold.
@@ -1765,6 +1818,12 @@ type ReceiptSource string
 // - `failed`: extraction failed for good, see `failureReason`.
 type ReceiptStatus string
 
+// ReceiptSuggestions defines model for ReceiptSuggestions.
+type ReceiptSuggestions struct {
+	// Items The suggestions of the receipt, in line order.
+	Items []LineSuggestion `json:"items"`
+}
+
 // ReceiptSummary A receipt as shown in lists.
 type ReceiptSummary struct {
 	// CreatedAt When the receipt was uploaded.
@@ -1911,6 +1970,10 @@ type Settings struct {
 
 	// DefaultReceiptTitle Title given to an uploaded receipt.
 	DefaultReceiptTitle string `json:"defaultReceiptTitle"`
+
+	// LlmSuggestionsEnabled The per-user switch for model suggestions. Suggestions are off
+	// for everyone while the instance has no endpoint configured.
+	LlmSuggestionsEnabled bool `json:"llmSuggestionsEnabled"`
 }
 
 // Share A group's amount divided by the total, as a decimal string with four
@@ -2025,6 +2088,15 @@ type StoreRef struct {
 // StoreUpdate defines model for StoreUpdate.
 type StoreUpdate struct {
 	Name string `json:"name"`
+}
+
+// SuggestionsStatus What the settings page shows about the suggestion model.
+type SuggestionsStatus struct {
+	// Available False when this instance has no suggestion endpoint configured.
+	Available bool `json:"available"`
+
+	// Offline True when the newest suggestion job found the endpoint unreachable.
+	Offline bool `json:"offline"`
 }
 
 // SumMismatchDetail defines model for SumMismatchDetail.
@@ -2216,6 +2288,9 @@ type ReceiptId = openapi_types.UUID
 
 // StoreId defines model for StoreId.
 type StoreId = openapi_types.UUID
+
+// SuggestionId defines model for SuggestionId.
+type SuggestionId = openapi_types.UUID
 
 // BadRequest An RFC 9457 problem document. `title` and `detail` are written for the
 // person using the application. Clients branch on `status` and, where
@@ -2997,6 +3072,15 @@ type ServerInterface interface {
 	// ReprocessReceipt Reprocess a receipt
 	// (POST /receipts/{receiptId}/reprocess)
 	ReprocessReceipt(w http.ResponseWriter, r *http.Request, receiptId ReceiptId)
+	// GetReceiptSuggestions Get the suggestions of a receipt
+	// (GET /receipts/{receiptId}/suggestions)
+	GetReceiptSuggestions(w http.ResponseWriter, r *http.Request, receiptId ReceiptId)
+	// AcceptReceiptSuggestion Accept a suggestion
+	// (POST /receipts/{receiptId}/suggestions/{suggestionId}/accept)
+	AcceptReceiptSuggestion(w http.ResponseWriter, r *http.Request, receiptId ReceiptId, suggestionId SuggestionId)
+	// IgnoreReceiptSuggestion Ignore a suggestion
+	// (POST /receipts/{receiptId}/suggestions/{suggestionId}/ignore)
+	IgnoreReceiptSuggestion(w http.ResponseWriter, r *http.Request, receiptId ReceiptId, suggestionId SuggestionId)
 	// GetMonthBreakdown Get the breakdown of one month
 	// (GET /reports/month-breakdown)
 	GetMonthBreakdown(w http.ResponseWriter, r *http.Request, params GetMonthBreakdownParams)
@@ -3033,6 +3117,9 @@ type ServerInterface interface {
 	// UpdateStore Rename a store
 	// (PUT /stores/{storeId})
 	UpdateStore(w http.ResponseWriter, r *http.Request, storeId StoreId)
+	// GetSuggestionsStatus Get the state of the suggestion feature
+	// (GET /suggestions/status)
+	GetSuggestionsStatus(w http.ResponseWriter, r *http.Request)
 	// GetUsage Get the extraction allowance
 	// (GET /usage)
 	GetUsage(w http.ResponseWriter, r *http.Request)
@@ -3180,6 +3267,24 @@ func (_ Unimplemented) ReprocessReceipt(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// GetReceiptSuggestions Get the suggestions of a receipt
+// (GET /receipts/{receiptId}/suggestions)
+func (_ Unimplemented) GetReceiptSuggestions(w http.ResponseWriter, r *http.Request, receiptId ReceiptId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AcceptReceiptSuggestion Accept a suggestion
+// (POST /receipts/{receiptId}/suggestions/{suggestionId}/accept)
+func (_ Unimplemented) AcceptReceiptSuggestion(w http.ResponseWriter, r *http.Request, receiptId ReceiptId, suggestionId SuggestionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// IgnoreReceiptSuggestion Ignore a suggestion
+// (POST /receipts/{receiptId}/suggestions/{suggestionId}/ignore)
+func (_ Unimplemented) IgnoreReceiptSuggestion(w http.ResponseWriter, r *http.Request, receiptId ReceiptId, suggestionId SuggestionId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetMonthBreakdown Get the breakdown of one month
 // (GET /reports/month-breakdown)
 func (_ Unimplemented) GetMonthBreakdown(w http.ResponseWriter, r *http.Request, params GetMonthBreakdownParams) {
@@ -3249,6 +3354,12 @@ func (_ Unimplemented) ListStores(w http.ResponseWriter, r *http.Request, params
 // UpdateStore Rename a store
 // (PUT /stores/{storeId})
 func (_ Unimplemented) UpdateStore(w http.ResponseWriter, r *http.Request, storeId StoreId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetSuggestionsStatus Get the state of the suggestion feature
+// (GET /suggestions/status)
+func (_ Unimplemented) GetSuggestionsStatus(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -4086,6 +4197,102 @@ func (siw *ServerInterfaceWrapper) ReprocessReceipt(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// GetReceiptSuggestions operation middleware
+func (siw *ServerInterfaceWrapper) GetReceiptSuggestions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "receiptId" -------------
+	var receiptId ReceiptId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "receiptId", chi.URLParam(r, "receiptId"), &receiptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "receiptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetReceiptSuggestions(w, r, receiptId)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AcceptReceiptSuggestion operation middleware
+func (siw *ServerInterfaceWrapper) AcceptReceiptSuggestion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "receiptId" -------------
+	var receiptId ReceiptId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "receiptId", chi.URLParam(r, "receiptId"), &receiptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "receiptId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "suggestionId" -------------
+	var suggestionId SuggestionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "suggestionId", chi.URLParam(r, "suggestionId"), &suggestionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "suggestionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AcceptReceiptSuggestion(w, r, receiptId, suggestionId)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// IgnoreReceiptSuggestion operation middleware
+func (siw *ServerInterfaceWrapper) IgnoreReceiptSuggestion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "receiptId" -------------
+	var receiptId ReceiptId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "receiptId", chi.URLParam(r, "receiptId"), &receiptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "receiptId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "suggestionId" -------------
+	var suggestionId SuggestionId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "suggestionId", chi.URLParam(r, "suggestionId"), &suggestionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "suggestionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IgnoreReceiptSuggestion(w, r, receiptId, suggestionId)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMonthBreakdown operation middleware
 func (siw *ServerInterfaceWrapper) GetMonthBreakdown(w http.ResponseWriter, r *http.Request) {
 
@@ -4451,6 +4658,20 @@ func (siw *ServerInterfaceWrapper) UpdateStore(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// GetSuggestionsStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetSuggestionsStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSuggestionsStatus(w, r)
+	}))
+
+	for i := len(siw.HandlerMiddlewares) - 1; i >= 0; i-- {
+		handler = siw.HandlerMiddlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUsage operation middleware
 func (siw *ServerInterfaceWrapper) GetUsage(w http.ResponseWriter, r *http.Request) {
 
@@ -4618,6 +4839,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/receipts/{receiptId}/line-items/{lineItemId}", wrapper.UpdateLineItem)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/receipts/{receiptId}/suggestions", wrapper.GetReceiptSuggestions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/receipts/{receiptId}/suggestions/{suggestionId}/accept", wrapper.AcceptReceiptSuggestion)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/receipts/{receiptId}/suggestions/{suggestionId}/ignore", wrapper.IgnoreReceiptSuggestion)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/review-flags", wrapper.ListReviewFlags)
 	})
 	r.Group(func(r chi.Router) {
@@ -4673,6 +4903,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/usage", wrapper.GetUsage)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/suggestions/status", wrapper.GetSuggestionsStatus)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/storage", wrapper.GetStorageStatus)
@@ -6678,6 +6911,301 @@ func (response ReprocessReceiptdefaultApplicationProblemPlusJSONResponse) VisitR
 	return err
 }
 
+type GetReceiptSuggestionsRequestObject struct {
+	ReceiptId ReceiptId `json:"receiptId"`
+}
+
+type GetReceiptSuggestionsResponseObject interface {
+	VisitGetReceiptSuggestionsResponse(w http.ResponseWriter) error
+}
+
+type GetReceiptSuggestions200JSONResponse ReceiptSuggestions
+
+func (response GetReceiptSuggestions200JSONResponse) VisitGetReceiptSuggestionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReceiptSuggestions400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response GetReceiptSuggestions400ApplicationProblemPlusJSONResponse) VisitGetReceiptSuggestionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReceiptSuggestions401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetReceiptSuggestions401ApplicationProblemPlusJSONResponse) VisitGetReceiptSuggestionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReceiptSuggestions404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response GetReceiptSuggestions404ApplicationProblemPlusJSONResponse) VisitGetReceiptSuggestionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReceiptSuggestionsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetReceiptSuggestionsdefaultApplicationProblemPlusJSONResponse) VisitGetReceiptSuggestionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReceiptSuggestionRequestObject struct {
+	ReceiptId    ReceiptId    `json:"receiptId"`
+	SuggestionId SuggestionId `json:"suggestionId"`
+}
+
+type AcceptReceiptSuggestionResponseObject interface {
+	VisitAcceptReceiptSuggestionResponse(w http.ResponseWriter) error
+}
+
+type AcceptReceiptSuggestion200JSONResponse Receipt
+
+func (response AcceptReceiptSuggestion200JSONResponse) VisitAcceptReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReceiptSuggestion400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response AcceptReceiptSuggestion400ApplicationProblemPlusJSONResponse) VisitAcceptReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReceiptSuggestion401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response AcceptReceiptSuggestion401ApplicationProblemPlusJSONResponse) VisitAcceptReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReceiptSuggestion404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response AcceptReceiptSuggestion404ApplicationProblemPlusJSONResponse) VisitAcceptReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReceiptSuggestion409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response AcceptReceiptSuggestion409ApplicationProblemPlusJSONResponse) VisitAcceptReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptReceiptSuggestiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AcceptReceiptSuggestiondefaultApplicationProblemPlusJSONResponse) VisitAcceptReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IgnoreReceiptSuggestionRequestObject struct {
+	ReceiptId    ReceiptId    `json:"receiptId"`
+	SuggestionId SuggestionId `json:"suggestionId"`
+}
+
+type IgnoreReceiptSuggestionResponseObject interface {
+	VisitIgnoreReceiptSuggestionResponse(w http.ResponseWriter) error
+}
+
+type IgnoreReceiptSuggestion200JSONResponse LineSuggestion
+
+func (response IgnoreReceiptSuggestion200JSONResponse) VisitIgnoreReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IgnoreReceiptSuggestion400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response IgnoreReceiptSuggestion400ApplicationProblemPlusJSONResponse) VisitIgnoreReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IgnoreReceiptSuggestion401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response IgnoreReceiptSuggestion401ApplicationProblemPlusJSONResponse) VisitIgnoreReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IgnoreReceiptSuggestion404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response IgnoreReceiptSuggestion404ApplicationProblemPlusJSONResponse) VisitIgnoreReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IgnoreReceiptSuggestion409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response IgnoreReceiptSuggestion409ApplicationProblemPlusJSONResponse) VisitIgnoreReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IgnoreReceiptSuggestiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response IgnoreReceiptSuggestiondefaultApplicationProblemPlusJSONResponse) VisitIgnoreReceiptSuggestionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetMonthBreakdownRequestObject struct {
 	Params GetMonthBreakdownParams
 }
@@ -7570,6 +8098,60 @@ func (response UpdateStoredefaultApplicationProblemPlusJSONResponse) VisitUpdate
 	return err
 }
 
+type GetSuggestionsStatusRequestObject struct {
+}
+
+type GetSuggestionsStatusResponseObject interface {
+	VisitGetSuggestionsStatusResponse(w http.ResponseWriter) error
+}
+
+type GetSuggestionsStatus200JSONResponse SuggestionsStatus
+
+func (response GetSuggestionsStatus200JSONResponse) VisitGetSuggestionsStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSuggestionsStatus401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetSuggestionsStatus401ApplicationProblemPlusJSONResponse) VisitGetSuggestionsStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSuggestionsStatusdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetSuggestionsStatusdefaultApplicationProblemPlusJSONResponse) VisitGetSuggestionsStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetUsageRequestObject struct {
 }
 
@@ -7695,6 +8277,15 @@ type StrictServerInterface interface {
 	// ReprocessReceipt Reprocess a receipt
 	// (POST /receipts/{receiptId}/reprocess)
 	ReprocessReceipt(ctx context.Context, request ReprocessReceiptRequestObject) (ReprocessReceiptResponseObject, error)
+	// GetReceiptSuggestions Get the suggestions of a receipt
+	// (GET /receipts/{receiptId}/suggestions)
+	GetReceiptSuggestions(ctx context.Context, request GetReceiptSuggestionsRequestObject) (GetReceiptSuggestionsResponseObject, error)
+	// AcceptReceiptSuggestion Accept a suggestion
+	// (POST /receipts/{receiptId}/suggestions/{suggestionId}/accept)
+	AcceptReceiptSuggestion(ctx context.Context, request AcceptReceiptSuggestionRequestObject) (AcceptReceiptSuggestionResponseObject, error)
+	// IgnoreReceiptSuggestion Ignore a suggestion
+	// (POST /receipts/{receiptId}/suggestions/{suggestionId}/ignore)
+	IgnoreReceiptSuggestion(ctx context.Context, request IgnoreReceiptSuggestionRequestObject) (IgnoreReceiptSuggestionResponseObject, error)
 	// GetMonthBreakdown Get the breakdown of one month
 	// (GET /reports/month-breakdown)
 	GetMonthBreakdown(ctx context.Context, request GetMonthBreakdownRequestObject) (GetMonthBreakdownResponseObject, error)
@@ -7731,6 +8322,9 @@ type StrictServerInterface interface {
 	// UpdateStore Rename a store
 	// (PUT /stores/{storeId})
 	UpdateStore(ctx context.Context, request UpdateStoreRequestObject) (UpdateStoreResponseObject, error)
+	// GetSuggestionsStatus Get the state of the suggestion feature
+	// (GET /suggestions/status)
+	GetSuggestionsStatus(ctx context.Context, request GetSuggestionsStatusRequestObject) (GetSuggestionsStatusResponseObject, error)
 	// GetUsage Get the extraction allowance
 	// (GET /usage)
 	GetUsage(ctx context.Context, request GetUsageRequestObject) (GetUsageResponseObject, error)
@@ -8433,6 +9027,86 @@ func (sh *strictHandler) ReprocessReceipt(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// GetReceiptSuggestions operation middleware
+func (sh *strictHandler) GetReceiptSuggestions(w http.ResponseWriter, r *http.Request, receiptId ReceiptId) {
+	var request GetReceiptSuggestionsRequestObject
+
+	request.ReceiptId = receiptId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetReceiptSuggestions(ctx, request.(GetReceiptSuggestionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetReceiptSuggestions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetReceiptSuggestionsResponseObject); ok {
+		if err := validResponse.VisitGetReceiptSuggestionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AcceptReceiptSuggestion operation middleware
+func (sh *strictHandler) AcceptReceiptSuggestion(w http.ResponseWriter, r *http.Request, receiptId ReceiptId, suggestionId SuggestionId) {
+	var request AcceptReceiptSuggestionRequestObject
+
+	request.ReceiptId = receiptId
+	request.SuggestionId = suggestionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AcceptReceiptSuggestion(ctx, request.(AcceptReceiptSuggestionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AcceptReceiptSuggestion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AcceptReceiptSuggestionResponseObject); ok {
+		if err := validResponse.VisitAcceptReceiptSuggestionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// IgnoreReceiptSuggestion operation middleware
+func (sh *strictHandler) IgnoreReceiptSuggestion(w http.ResponseWriter, r *http.Request, receiptId ReceiptId, suggestionId SuggestionId) {
+	var request IgnoreReceiptSuggestionRequestObject
+
+	request.ReceiptId = receiptId
+	request.SuggestionId = suggestionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.IgnoreReceiptSuggestion(ctx, request.(IgnoreReceiptSuggestionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "IgnoreReceiptSuggestion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(IgnoreReceiptSuggestionResponseObject); ok {
+		if err := validResponse.VisitIgnoreReceiptSuggestionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMonthBreakdown operation middleware
 func (sh *strictHandler) GetMonthBreakdown(w http.ResponseWriter, r *http.Request, params GetMonthBreakdownParams) {
 	var request GetMonthBreakdownRequestObject
@@ -8749,6 +9423,30 @@ func (sh *strictHandler) UpdateStore(w http.ResponseWriter, r *http.Request, sto
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateStoreResponseObject); ok {
 		if err := validResponse.VisitUpdateStoreResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSuggestionsStatus operation middleware
+func (sh *strictHandler) GetSuggestionsStatus(w http.ResponseWriter, r *http.Request) {
+	var request GetSuggestionsStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSuggestionsStatus(ctx, request.(GetSuggestionsStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSuggestionsStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSuggestionsStatusResponseObject); ok {
+		if err := validResponse.VisitGetSuggestionsStatusResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

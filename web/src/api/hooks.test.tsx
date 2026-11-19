@@ -339,6 +339,7 @@ describe('API query and mutation hooks', () => {
       await hooks.settingsUpdate.result.current.mutateAsync({
         defaultCurrency: 'TRY',
         defaultReceiptTitle: 'Home shopping',
+        llmSuggestionsEnabled: true,
       });
       await hooks.storageDisconnect.result.current.mutateAsync();
     });

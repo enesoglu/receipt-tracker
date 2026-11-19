@@ -184,7 +184,7 @@ func TestSettings_DefaultsAreIsolatedAndDoNotAlterExistingReceipts(t *testing.T)
 	if r.Code != 200 {
 		t.Fatalf("get settings=%d", r.Code)
 	}
-	r = s.call(s.bob, "PUT", "/settings", `{"defaultCurrency":"EUR","defaultReceiptTitle":"Bob defaults"}`)
+	r = s.call(s.bob, "PUT", "/settings", `{"defaultCurrency":"EUR","defaultReceiptTitle":"Bob defaults","llmSuggestionsEnabled":false}`)
 	if r.Code != 200 {
 		t.Fatalf("bob update=%d %s", r.Code, r.Body.String())
 	}
@@ -196,13 +196,19 @@ func TestSettings_DefaultsAreIsolatedAndDoNotAlterExistingReceipts(t *testing.T)
 	if diff := cmp.Diff(original, unchanged); diff != "" {
 		t.Fatal(diff)
 	}
-	r = s.call(s.alice, "PUT", "/settings", `{"defaultCurrency":"USD","defaultReceiptTitle":"New default"}`)
+	r = s.call(s.alice, "PUT", "/settings", `{"defaultCurrency":"USD","defaultReceiptTitle":"New default","llmSuggestionsEnabled":false}`)
 	var updated httpapi.Settings
 	if err := json.Unmarshal(r.Body.Bytes(), &updated); err != nil {
 		t.Fatal(err)
 	}
 	if r.Code != 200 || updated.DefaultCurrency != "USD" || updated.DefaultReceiptTitle != "New default" {
 		t.Fatalf("settings=%d %s", r.Code, r.Body.String())
+	}
+	if updated.LlmSuggestionsEnabled {
+		t.Fatal("the save did not switch suggestions off")
+	}
+	if original.LlmSuggestionsEnabled != true {
+		t.Fatal("a new user does not have suggestions switched on")
 	}
 	defaults, err := s.q.GetUploadDefaults(t.Context(), s.alice)
 	if err != nil {
@@ -238,7 +244,7 @@ func TestCatalog_RejectsInvalidInputAndMissingResources(t *testing.T) {
 		method, path, body string
 		status             int
 	}{
-		{"GET", "/stores?limit=0", "", 400}, {"GET", "/stores?cursor=bad", "", 400}, {"GET", "/categories?limit=101", "", 400}, {"GET", "/categories?cursor=bad", "", 400}, {"POST", "/categories", `{"name":""}`, 400}, {"POST", "/categories", `{"name":"` + strings.Repeat("a", 101) + `"}`, 400}, {"PUT", "/stores/" + d.Store.ID.String(), `{"name":"!!!"}`, 400}, {"PUT", "/stores/" + uuid.NewString(), `{"name":"Missing"}`, 404}, {"PUT", "/categories/" + uuid.NewString(), `{"name":"Missing"}`, 404}, {"DELETE", "/categories/" + uuid.NewString(), "", 404}, {"PUT", "/settings", `{"defaultCurrency":"usd","defaultReceiptTitle":"A"}`, 400}, {"PUT", "/settings", `{"defaultCurrency":"TRY","defaultReceiptTitle":""}`, 400},
+		{"GET", "/stores?limit=0", "", 400}, {"GET", "/stores?cursor=bad", "", 400}, {"GET", "/categories?limit=101", "", 400}, {"GET", "/categories?cursor=bad", "", 400}, {"POST", "/categories", `{"name":""}`, 400}, {"POST", "/categories", `{"name":"` + strings.Repeat("a", 101) + `"}`, 400}, {"PUT", "/stores/" + d.Store.ID.String(), `{"name":"!!!"}`, 400}, {"PUT", "/stores/" + uuid.NewString(), `{"name":"Missing"}`, 404}, {"PUT", "/categories/" + uuid.NewString(), `{"name":"Missing"}`, 404}, {"DELETE", "/categories/" + uuid.NewString(), "", 404}, {"PUT", "/settings", `{"defaultCurrency":"usd","defaultReceiptTitle":"A","llmSuggestionsEnabled":true}`, 400}, {"PUT", "/settings", `{"defaultCurrency":"TRY","defaultReceiptTitle":"","llmSuggestionsEnabled":true}`, 400},
 	} {
 		t.Run(tc.method+tc.path+tc.body, func(t *testing.T) {
 			r := s.call(s.alice, tc.method, tc.path, tc.body)

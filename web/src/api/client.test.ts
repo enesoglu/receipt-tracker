@@ -50,12 +50,20 @@ describe('createApiClient', () => {
 
   it('fills path parameters and sends JSON bodies', async () => {
     const { client, requests } = clientAnswering(() =>
-      json(200, { defaultCurrency: 'EUR', defaultReceiptTitle: 'Groceries' }),
+      json(200, {
+        defaultCurrency: 'EUR',
+        defaultReceiptTitle: 'Groceries',
+        llmSuggestionsEnabled: true,
+      }),
     );
 
     const settings = await unwrap(
       client.PUT('/settings', {
-        body: { defaultCurrency: 'EUR', defaultReceiptTitle: 'Groceries' },
+        body: {
+          defaultCurrency: 'EUR',
+          defaultReceiptTitle: 'Groceries',
+          llmSuggestionsEnabled: true,
+        },
       }),
     );
     await unwrap(
@@ -67,6 +75,7 @@ describe('createApiClient', () => {
     expect(await requests[0].json()).toEqual({
       defaultCurrency: 'EUR',
       defaultReceiptTitle: 'Groceries',
+      llmSuggestionsEnabled: true,
     });
     expect(requests[1].url).toBe(
       `http://localhost/api/v1/receipts/${receiptId}`,

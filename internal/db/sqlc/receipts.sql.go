@@ -249,7 +249,10 @@ func (q *Queries) GetOwnedSettings(ctx context.Context, userID uuid.UUID) (UserS
 }
 
 const getOwnedSuggestion = `-- name: GetOwnedSuggestion :one
-SELECT id, user_id, receipt_id, line_item_id, raw_name, status, suggested_name, suggested_category_id, model, prompt_version, created_at, decided_at FROM line_suggestions WHERE user_id = $1 AND receipt_id = $2 AND id = $3
+SELECT s.id, s.user_id, s.receipt_id, s.line_item_id, s.raw_name, s.status, s.suggested_name, s.suggested_category_id, s.model, s.prompt_version, s.created_at, s.decided_at, c.name AS category_name
+FROM line_suggestions s
+LEFT JOIN categories c ON c.user_id = $1 AND c.id = s.suggested_category_id
+WHERE s.user_id = $1 AND s.receipt_id = $2 AND s.id = $3
 `
 
 type GetOwnedSuggestionParams struct {
@@ -258,22 +261,28 @@ type GetOwnedSuggestionParams struct {
 	SuggestionID uuid.UUID
 }
 
-func (q *Queries) GetOwnedSuggestion(ctx context.Context, arg GetOwnedSuggestionParams) (LineSuggestion, error) {
+type GetOwnedSuggestionRow struct {
+	LineSuggestion LineSuggestion
+	CategoryName   *string
+}
+
+func (q *Queries) GetOwnedSuggestion(ctx context.Context, arg GetOwnedSuggestionParams) (GetOwnedSuggestionRow, error) {
 	row := q.db.QueryRow(ctx, getOwnedSuggestion, arg.UserID, arg.ReceiptID, arg.SuggestionID)
-	var i LineSuggestion
+	var i GetOwnedSuggestionRow
 	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.ReceiptID,
-		&i.LineItemID,
-		&i.RawName,
-		&i.Status,
-		&i.SuggestedName,
-		&i.SuggestedCategoryID,
-		&i.Model,
-		&i.PromptVersion,
-		&i.CreatedAt,
-		&i.DecidedAt,
+		&i.LineSuggestion.ID,
+		&i.LineSuggestion.UserID,
+		&i.LineSuggestion.ReceiptID,
+		&i.LineSuggestion.LineItemID,
+		&i.LineSuggestion.RawName,
+		&i.LineSuggestion.Status,
+		&i.LineSuggestion.SuggestedName,
+		&i.LineSuggestion.SuggestedCategoryID,
+		&i.LineSuggestion.Model,
+		&i.LineSuggestion.PromptVersion,
+		&i.LineSuggestion.CreatedAt,
+		&i.LineSuggestion.DecidedAt,
+		&i.CategoryName,
 	)
 	return i, err
 }
@@ -617,8 +626,10 @@ func (q *Queries) ListReceiptLines(ctx context.Context, arg ListReceiptLinesPara
 }
 
 const listReceiptSuggestions = `-- name: ListReceiptSuggestions :many
-SELECT s.id, s.user_id, s.receipt_id, s.line_item_id, s.raw_name, s.status, s.suggested_name, s.suggested_category_id, s.model, s.prompt_version, s.created_at, s.decided_at FROM line_suggestions s
+SELECT s.id, s.user_id, s.receipt_id, s.line_item_id, s.raw_name, s.status, s.suggested_name, s.suggested_category_id, s.model, s.prompt_version, s.created_at, s.decided_at, c.name AS category_name
+FROM line_suggestions s
 JOIN line_items l ON l.user_id = s.user_id AND l.id = s.line_item_id
+LEFT JOIN categories c ON c.user_id = $1 AND c.id = s.suggested_category_id
 WHERE s.user_id = $1 AND s.receipt_id = $2
 ORDER BY l.position
 `
@@ -628,30 +639,37 @@ type ListReceiptSuggestionsParams struct {
 	ReceiptID uuid.UUID
 }
 
+type ListReceiptSuggestionsRow struct {
+	LineSuggestion LineSuggestion
+	CategoryName   *string
+}
+
 // The suggestions of one receipt in line order, without paging: review
-// shows them beside their lines.
-func (q *Queries) ListReceiptSuggestions(ctx context.Context, arg ListReceiptSuggestionsParams) ([]LineSuggestion, error) {
+// shows them beside their lines. The category name travels with the row
+// because the API shows it, not the id.
+func (q *Queries) ListReceiptSuggestions(ctx context.Context, arg ListReceiptSuggestionsParams) ([]ListReceiptSuggestionsRow, error) {
 	rows, err := q.db.Query(ctx, listReceiptSuggestions, arg.UserID, arg.ReceiptID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []LineSuggestion{}
+	items := []ListReceiptSuggestionsRow{}
 	for rows.Next() {
-		var i LineSuggestion
+		var i ListReceiptSuggestionsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.ReceiptID,
-			&i.LineItemID,
-			&i.RawName,
-			&i.Status,
-			&i.SuggestedName,
-			&i.SuggestedCategoryID,
-			&i.Model,
-			&i.PromptVersion,
-			&i.CreatedAt,
-			&i.DecidedAt,
+			&i.LineSuggestion.ID,
+			&i.LineSuggestion.UserID,
+			&i.LineSuggestion.ReceiptID,
+			&i.LineSuggestion.LineItemID,
+			&i.LineSuggestion.RawName,
+			&i.LineSuggestion.Status,
+			&i.LineSuggestion.SuggestedName,
+			&i.LineSuggestion.SuggestedCategoryID,
+			&i.LineSuggestion.Model,
+			&i.LineSuggestion.PromptVersion,
+			&i.LineSuggestion.CreatedAt,
+			&i.LineSuggestion.DecidedAt,
+			&i.CategoryName,
 		); err != nil {
 			return nil, err
 		}

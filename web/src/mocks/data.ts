@@ -594,6 +594,7 @@ export const mockMonthBreakdown: components['schemas']['MonthBreakdown'] = {
 export const mockSettings: components['schemas']['Settings'] = {
   defaultCurrency: 'TRY',
   defaultReceiptTitle: 'Home shopping',
+  llmSuggestionsEnabled: true,
 };
 
 export const mockUsage: components['schemas']['Usage'] = {
@@ -1856,6 +1857,7 @@ export function updateMockSettings(
   mockSettingsState = {
     defaultCurrency: currency,
     defaultReceiptTitle: title,
+    llmSuggestionsEnabled: body.llmSuggestionsEnabled,
   };
   return { ok: true, settings: { ...mockSettingsState } };
 }

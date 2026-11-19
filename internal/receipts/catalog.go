@@ -187,7 +187,7 @@ func (s *Service) Settings(ctx context.Context, userID uuid.UUID) (sqlc.UserSett
 }
 
 // UpdateSettings changes defaults for future uploads and records a before/after audit row.
-func (s *Service) UpdateSettings(ctx context.Context, userID uuid.UUID, currency, title string) (sqlc.UserSetting, error) {
+func (s *Service) UpdateSettings(ctx context.Context, userID uuid.UUID, currency, title string, suggestions bool) (sqlc.UserSetting, error) {
 	var after sqlc.UserSetting
 	err := s.transaction(ctx, func(q *unit) error {
 		before, err := q.LockOwnedSettings(ctx, userID)
@@ -197,7 +197,7 @@ func (s *Service) UpdateSettings(ctx context.Context, userID uuid.UUID, currency
 		if !validCurrency(currency) || !validText(title, 200) {
 			return apperr.New(apperr.Invalid, "invalid receipt defaults")
 		}
-		after, err = q.UpdateOwnedSettings(ctx, sqlc.UpdateOwnedSettingsParams{UserID: userID, DefaultCurrency: currency, DefaultReceiptTitle: strings.TrimSpace(title), LlmSuggestionsEnabled: before.LlmSuggestionsEnabled, Now: s.now().UTC()})
+		after, err = q.UpdateOwnedSettings(ctx, sqlc.UpdateOwnedSettingsParams{UserID: userID, DefaultCurrency: currency, DefaultReceiptTitle: strings.TrimSpace(title), LlmSuggestionsEnabled: suggestions, Now: s.now().UTC()})
 		if err != nil {
 			return err
 		}
