@@ -513,6 +513,30 @@ func TestReceipts_RejectedDecimalsNameTheField(t *testing.T) {
 	}
 }
 
+func TestReceipts_NameEveryRejectedField(t *testing.T) {
+	s := newReceiptServer(t)
+	id := s.seed(s.alice, cleanReceipt())
+	base := "/receipts/" + id.String()
+	positive := "must be positive with at most three decimal places"
+	for _, tc := range []struct {
+		name, method, path, body, field, message string
+	}{
+		{"blank title", "PUT", base, `{"title":"","currency":"TRY"}`, "title", "must be 1 to 200 characters"},
+		{"lowercase currency", "PUT", base, `{"title":"A","currency":"try"}`, "currency", "must be a three-letter currency code, such as TRY"},
+		{"punctuation-only store", "PUT", base, `{"title":"A","currency":"TRY","storeName":"!!!"}`, "storeName", "must be 1 to 200 characters and not only punctuation"},
+		{"partial time", "PUT", base, `{"title":"A","currency":"TRY","purchasedTime":"8:42"}`, "purchasedTime", "must be a time of day as HH:MM, such as 18:42"},
+		{"negative quantity", "POST", base + "/line-items", `{"name":"A","quantity":"-2","lineTotal":"10.00"}`, "quantity", positive},
+		{"zero quantity", "POST", base + "/line-items", `{"name":"A","quantity":"0","lineTotal":"10.00"}`, "quantity", positive},
+		{"long product code", "POST", base + "/line-items", `{"name":"A","lineTotal":"10.00","productCode":"` + strings.Repeat("1", 65) + `"}`, "productCode", "must be 1 to 64 characters"},
+		{"malformed month", "GET", "/receipts?month=2026-13", "", "month", "must be written as YYYY-MM"},
+		{"empty month", "GET", "/receipts?month=", "", "month", "must be written as YYYY-MM"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wantFieldProblem(t, s.call(s.alice, tc.method, tc.path, tc.body), tc.field, tc.message)
+		})
+	}
+}
+
 func TestReceipts_ReprocessPreservesOpenFlagIdentities(t *testing.T) {
 	s := newReceiptServer(t)
 	result := cleanReceipt()

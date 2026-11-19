@@ -133,7 +133,7 @@ func (s *Service) List(ctx context.Context, userID uuid.UUID, f Filter) (Page, e
 	if f.Month != "" {
 		start, err := time.Parse("2006-01", f.Month)
 		if err != nil {
-			return Page{}, apperr.New(apperr.Invalid, "invalid month")
+			return Page{}, apperr.New(apperr.Invalid, "invalid month").WithField("month", "must be written as YYYY-MM")
 		}
 		end := start.AddDate(0, 1, 0)
 		p.MonthStart = &start
