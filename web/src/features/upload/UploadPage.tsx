@@ -224,9 +224,16 @@ export function UploadPage() {
   const [isDragActive, setIsDragActive] = useState(false);
   const [batchLimitError, setBatchLimitError] = useState<string | null>(null);
   const [rejectedFiles, setRejectedFiles] = useState<RejectedFile[]>([]);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const selectingRef = useRef(false);
 
   const usageQuery = useUsage();
   const { items, progress, enqueue, clearSettled } = useUploadQueue();
+
+  const hasPendingUploads = items.some(
+    (item) => item.state === 'pending' || item.state === 'uploading',
+  );
+  const isBusy = isSelecting || hasPendingUploads;
 
   // Receipts whose stage the screen follows: files the queue landed.
   const trackedIds = useMemo(() => {
@@ -301,6 +308,7 @@ export function UploadPage() {
   }, [stagesActive, queryClient]);
 
   function handleSelectedFiles(fileList: FileList | null) {
+    if (selectingRef.current || hasPendingUploads) return;
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList);
 
@@ -332,7 +340,12 @@ export function UploadPage() {
       setRejectedFiles((current) => [...rejected, ...current]);
     }
     if (valid.length > 0) {
-      void enqueue(valid);
+      selectingRef.current = true;
+      setIsSelecting(true);
+      void enqueue(valid).finally(() => {
+        selectingRef.current = false;
+        setIsSelecting(false);
+      });
     }
   }
 
@@ -471,10 +484,13 @@ export function UploadPage() {
           <div
             role="region"
             aria-label="Receipt photo drop area"
+            aria-disabled={isBusy}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             className={`flex flex-col items-center justify-center gap-3 rounded-card border-2 border-dashed px-6 py-10 text-center ${
+              isBusy ? 'pointer-events-none opacity-50' : ''
+            } ${
               isDragActive
                 ? 'border-accent bg-accent-soft'
                 : 'border-border bg-surface-subtle'
@@ -494,10 +510,12 @@ export function UploadPage() {
               accept={UPLOAD_FILE_ACCEPT}
               aria-label="Choose receipt photos"
               className="sr-only"
+              disabled={isBusy}
               onChange={handleInputChange}
             />
             <Button
               variant="primary"
+              disabled={isBusy}
               onClick={() => fileInputRef.current?.click()}
             >
               Select photos

@@ -517,6 +517,41 @@ describe('UploadPage', () => {
     expect(screen.queryByText('notes.pdf')).not.toBeInTheDocument();
   });
 
+  it('disables the drop zone, file input and select button while a batch is pending', async () => {
+    fake.queue.seed([makeItem({ id: 'q-1', state: 'pending' })]);
+
+    renderUploadPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Waiting')).toBeInTheDocument(),
+    );
+
+    expect(screen.getByLabelText('Choose receipt photos')).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Select photos' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('region', { name: 'Receipt photo drop area' }),
+    ).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('ignores a selection made while a batch is in flight', async () => {
+    fake.queue.seed([makeItem({ id: 'q-1', state: 'uploading' })]);
+
+    renderUploadPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Uploading')).toBeInTheDocument(),
+    );
+
+    fireEvent.drop(
+      screen.getByRole('region', { name: 'Receipt photo drop area' }),
+      { dataTransfer: { files: [makeFile('second.jpg', 'image/jpeg')] } },
+    );
+
+    expect(fake.queue.enqueueCalls).toHaveLength(0);
+  });
+
   it('rejects a selection larger than the batch limit without enqueuing', async () => {
     renderUploadPage();
 
