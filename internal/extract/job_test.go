@@ -120,9 +120,15 @@ type flakyResults struct {
 	next  extract.ResultHandler
 	fails int
 	calls int
+	// probe, when set, runs before each apply and records what the receipt
+	// looks like to a reader at that moment.
+	probe func()
 }
 
 func (r *flakyResults) ApplyResult(ctx context.Context, userID, receiptID uuid.UUID, result extract.Result) error {
+	if r.probe != nil {
+		r.probe()
+	}
 	r.calls++
 	if r.calls <= r.fails {
 		return errors.New("database unavailable")
@@ -526,6 +532,42 @@ func TestPipeline_RetryAfterHandlerFailureReusesSavedResult(t *testing.T) {
 	}
 	if report.Used != 1 {
 		t.Errorf("used %d pages, want 1", report.Used)
+	}
+}
+
+func TestPipeline_ReusedResultIsAppliedWhileProcessing(t *testing.T) {
+	p := newPipeline(t, 500)
+	p.results.fails = 1
+	id := p.upload(t, p.alice, photo(t, 1))[0]
+
+	var statuses []string
+	p.results.probe = func() {
+		var status string
+		if err := p.pool.QueryRow(t.Context(), "SELECT status FROM receipts WHERE id = $1", id).Scan(&status); err != nil {
+			t.Errorf("load status: %v", err)
+			return
+		}
+		statuses = append(statuses, status)
+	}
+
+	p.runAll(t)
+	// Whatever re-queued the receipt — a retryable failure resets the
+	// status to queued — the reuse run must still read as work in
+	// progress, not as waiting, while the saved result is applied.
+	if err := sqlc.New(p.pool).SetExtractionStatus(t.Context(), sqlc.SetExtractionStatusParams{Status: "queued", Now: p.clock.Now(), UserID: p.alice, ReceiptID: id}); err != nil {
+		t.Fatalf("requeue: %v", err)
+	}
+	p.clock.Advance(time.Hour)
+	p.runAll(t)
+
+	if diff := cmp.Diff([]string{"processing", "processing"}, statuses); diff != "" {
+		t.Errorf("receipt status while applying mismatch (-want +got):\n%s", diff)
+	}
+	if got := len(p.azure.received()); got != 1 {
+		t.Errorf("Azure received %d submissions, want 1: the retry must reuse the saved result", got)
+	}
+	if got := p.receipt(t, id).Status; got != "needs_review" {
+		t.Errorf("receipt status = %q, want needs_review", got)
 	}
 }
 

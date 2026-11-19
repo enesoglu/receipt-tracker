@@ -64,11 +64,13 @@ func NewJob(db database, store storage.Store, extractor Extractor, quota Quota, 
 }
 
 // Handle implements [jobs.Handler]. In order: a used-up allowance moves the
-// receipt to waiting_quota and postpones the job to the next month; the
-// receipt becomes processing; a raw result kept from an earlier attempt of
-// the same provider is mapped again, otherwise the image is extracted and
-// its raw result saved; then the result handler runs. A permanent failure
-// fails the receipt with a reason for the user.
+// receipt to waiting_quota and postpones the job to the next month; a raw
+// result kept from an earlier attempt of the same provider is mapped again,
+// otherwise the image is extracted and its raw result saved; either way the
+// receipt becomes processing before the result handler runs, so a pipeline
+// stage derived from the status reads matching, not queued, while a reused
+// result is applied. A permanent failure fails the receipt with a reason
+// for the user.
 func (j *Job) Handle(ctx context.Context, job jobs.Job) error {
 	var payload jobs.ExtractReceipt
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
@@ -122,6 +124,13 @@ func (j *Job) Handle(ctx context.Context, job jobs.Job) error {
 			return fmt.Errorf("save extraction: %w", err)
 		}
 		result = &extraction.Result
+	} else {
+		// A reused raw skips the extract step, but the receipt is being
+		// worked on all the same: mark it processing so a stage derived
+		// from the status reads matching, not queued, while this runs.
+		if err := j.setStatus(ctx, userID, receiptID, "processing"); err != nil {
+			return err
+		}
 	}
 	if err := j.results.ApplyResult(ctx, userID, receiptID, *result); err != nil {
 		return fmt.Errorf("apply extraction result: %w", err)
