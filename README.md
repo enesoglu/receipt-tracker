@@ -8,10 +8,16 @@ are in [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES).
 
 ## What it does
 
-- Upload up to 20 JPEG, PNG or HEIC/HEIF photos at once, at most 15 MiB each.
-  HEIC converts to browser-ready JPEG while retaining the untouched original.
+- Upload up to 20 JPEG, PNG or HEIC/HEIF photos at once, at most 15 MiB each,
+  sent one per request with live per-file progress. Photos queue durably in
+  the browser and resume after a closed tab, a lost connection or a drained
+  battery — even with the app closed where the browser supports Background
+  Sync. HEIC converts to browser-ready JPEG while retaining the untouched
+  original.
 - Extract receipt fields with Azure Document Intelligence, then review flagged
-  values and edit receipts or line items. Saved raw results can be reprocessed.
+  values and edit receipts or line items. Saved raw results can be
+  reprocessed. Follow each receipt through queued, extracting and matching
+  stages, on the upload screen and in a global processing indicator.
 - Match products across receipts using names, sizes, stores and codes. Confirm
   uncertain matches, merge duplicates or split products that were joined wrongly.
 - Compare product price history and monthly spending, with currencies kept separate.
