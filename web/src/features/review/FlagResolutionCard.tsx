@@ -15,6 +15,11 @@ import { DateText } from '../../components/ui/DateText';
 import { Input } from '../../components/ui/Input';
 import { Money } from '../../components/ui/Money';
 import {
+  decimalMessage,
+  normaliseDecimal,
+  validateDecimal,
+} from '../../components/ui/decimal';
+import {
   formatFlaggedFieldLabel,
   formatReceiptStatus,
   formatReviewFlagSummary,
@@ -28,6 +33,12 @@ type LineItemInput = components['schemas']['LineItemInput'];
 function toNullable(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/** A decimal field is sent trimmed, in dot form; blank means null. */
+function toNullableAmount(value: string): string | null {
+  const normalised = normaliseDecimal(value);
+  return normalised.length > 0 ? normalised : null;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -66,12 +77,35 @@ function initialLineValues(entry: ReviewFlagEntry): LineEditValues {
 function toLineItemInput(values: LineEditValues): LineItemInput {
   return {
     name: values.name.trim(),
-    quantity: toNullable(values.quantity),
+    quantity: toNullableAmount(values.quantity),
     quantityUnit: toNullable(values.quantityUnit),
-    unitPrice: toNullable(values.unitPrice),
-    lineTotal: values.lineTotal.trim(),
+    unitPrice: toNullableAmount(values.unitPrice),
+    lineTotal: normaliseDecimal(values.lineTotal),
     productCode: toNullable(values.productCode),
   };
+}
+
+/**
+ * Returns the problems that stop a line correction from being sent, by
+ * field. The line total is required, so blank counts as a problem.
+ */
+function lineFieldErrors(values: LineEditValues): Record<string, string> {
+  const errors: Record<string, string> = {};
+  const totalProblem = values.lineTotal.trim()
+    ? validateDecimal(values.lineTotal, 'money')
+    : decimalMessage('money');
+  if (totalProblem) {
+    errors.lineTotal = totalProblem;
+  }
+  const quantityProblem = validateDecimal(values.quantity, 'quantity');
+  if (quantityProblem) {
+    errors.quantity = quantityProblem;
+  }
+  const unitPriceProblem = validateDecimal(values.unitPrice, 'money');
+  if (unitPriceProblem) {
+    errors.unitPrice = unitPriceProblem;
+  }
+  return errors;
 }
 
 interface FlagResolutionCardProps {
@@ -96,6 +130,8 @@ export function FlagResolutionCard({
   const receiptDetailQuery = useReceipt(receipt.id);
 
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [headerFieldError, setHeaderFieldError] = useState<string | null>(null);
+  const [lineErrors, setLineErrors] = useState<Record<string, string>>({});
   const [headerFieldValue, setHeaderFieldValue] = useState<string>(() => {
     if (flag.kind === 'low_confidence') {
       if (flag.detail.field === 'store') return receipt.store?.name ?? '';
@@ -123,6 +159,44 @@ export function FlagResolutionCard({
       });
     } catch (error) {
       setErrorText(getErrorMessage(error));
+    }
+  }
+
+  /** A line correction is validated before it is sent, then normalised. */
+  function submitLineCorrection() {
+    const errors = lineFieldErrors(lineValues);
+    if (Object.keys(errors).length > 0) {
+      setLineErrors(errors);
+      return;
+    }
+    setLineErrors({});
+    void submitResolution({
+      action: 'correct',
+      lineItem: toLineItemInput(lineValues),
+    });
+  }
+
+  /** A header correction is validated when it is a total, then normalised. */
+  function submitHeaderCorrection(field: 'store' | 'purchased_on' | 'total') {
+    const trimmed = headerFieldValue.trim();
+    if (!trimmed) return;
+    if (field === 'total') {
+      const problem = validateDecimal(trimmed, 'money');
+      if (problem) {
+        setHeaderFieldError(problem);
+        return;
+      }
+    }
+    setHeaderFieldError(null);
+    if (field === 'store') {
+      void submitResolution({ action: 'correct', storeName: trimmed });
+    } else if (field === 'purchased_on') {
+      void submitResolution({ action: 'correct', purchasedOn: trimmed });
+    } else {
+      void submitResolution({
+        action: 'correct',
+        total: normaliseDecimal(trimmed),
+      });
     }
   }
 
@@ -199,47 +273,31 @@ export function FlagResolutionCard({
             {field === 'line_item' ? (
               <LineEditForm
                 values={lineValues}
+                fieldErrors={lineErrors}
                 isSubmitting={resolveMutation.isPending}
                 submitLabel="Save corrected line"
                 onChange={setLineValues}
-                onSubmit={() =>
-                  void submitResolution({
-                    action: 'correct',
-                    lineItem: toLineItemInput(lineValues),
-                  })
-                }
+                onSubmit={submitLineCorrection}
               />
             ) : (
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
-                  const trimmed = headerFieldValue.trim();
-                  if (!trimmed) return;
-                  if (field === 'store') {
-                    void submitResolution({
-                      action: 'correct',
-                      storeName: trimmed,
-                    });
-                  } else if (field === 'purchased_on') {
-                    void submitResolution({
-                      action: 'correct',
-                      purchasedOn: trimmed,
-                    });
-                  } else {
-                    void submitResolution({
-                      action: 'correct',
-                      total: trimmed,
-                    });
-                  }
+                  submitHeaderCorrection(field);
                 }}
                 className="flex flex-col gap-3 rounded-control border border-border bg-surface-subtle p-4"
               >
                 <Input
                   label={`Correct ${fieldLabel.toLowerCase()}`}
                   required
-                  placeholder={field === 'purchased_on' ? 'YYYY-MM-DD' : ''}
+                  type={field === 'purchased_on' ? 'date' : 'text'}
+                  placeholder={field === 'total' ? '0.00' : ''}
+                  error={headerFieldError ?? undefined}
                   value={headerFieldValue}
-                  onChange={(event) => setHeaderFieldValue(event.target.value)}
+                  onChange={(event) => {
+                    setHeaderFieldValue(event.target.value);
+                    setHeaderFieldError(null);
+                  }}
                 />
                 <div className="flex justify-end">
                   <Button
@@ -271,10 +329,21 @@ export function FlagResolutionCard({
                 event.preventDefault();
                 const trimmed = headerFieldValue.trim();
                 if (!trimmed) return;
+                if (field === 'total') {
+                  const problem = validateDecimal(trimmed, 'money');
+                  if (problem) {
+                    setHeaderFieldError(problem);
+                    return;
+                  }
+                }
+                setHeaderFieldError(null);
                 void submitResolution(
                   field === 'purchased_on'
                     ? { action: 'correct', purchasedOn: trimmed }
-                    : { action: 'correct', total: trimmed },
+                    : {
+                        action: 'correct',
+                        total: normaliseDecimal(trimmed),
+                      },
                 );
               }}
               className="flex flex-col gap-3 rounded-control border border-border bg-surface-subtle p-4"
@@ -282,9 +351,14 @@ export function FlagResolutionCard({
               <Input
                 label={`Enter ${fieldLabel.toLowerCase()}`}
                 required
-                placeholder={field === 'purchased_on' ? 'YYYY-MM-DD' : '0.00'}
+                type={field === 'purchased_on' ? 'date' : 'text'}
+                placeholder={field === 'purchased_on' ? '' : '0.00'}
+                error={headerFieldError ?? undefined}
                 value={headerFieldValue}
-                onChange={(event) => setHeaderFieldValue(event.target.value)}
+                onChange={(event) => {
+                  setHeaderFieldValue(event.target.value);
+                  setHeaderFieldError(null);
+                }}
               />
               <div className="flex flex-wrap justify-end gap-2">
                 <Button
@@ -358,15 +432,11 @@ export function FlagResolutionCard({
 
             <LineEditForm
               values={lineValues}
+              fieldErrors={lineErrors}
               isSubmitting={resolveMutation.isPending}
               submitLabel="Save corrected line"
               onChange={setLineValues}
-              onSubmit={() =>
-                void submitResolution({
-                  action: 'correct',
-                  lineItem: toLineItemInput(lineValues),
-                })
-              }
+              onSubmit={submitLineCorrection}
             />
           </div>
         );

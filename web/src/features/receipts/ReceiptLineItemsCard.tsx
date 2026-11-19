@@ -14,6 +14,11 @@ import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Money } from '../../components/ui/Money';
 import {
+  decimalMessage,
+  normaliseDecimal,
+  validateDecimal,
+} from '../../components/ui/decimal';
+import {
   formatReviewFlagSummary,
   getOpenFlagsForLineItem,
 } from './flag-reasons';
@@ -45,15 +50,44 @@ function toNullable(value: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** A decimal field is sent trimmed, in dot form; blank means null. */
+function toNullableAmount(value: string): string | null {
+  const normalised = normaliseDecimal(value);
+  return normalised.length > 0 ? normalised : null;
+}
+
 function toLineItemInput(values: LineItemFormValues): LineItemInput {
   return {
     name: values.name.trim(),
-    quantity: toNullable(values.quantity),
+    quantity: toNullableAmount(values.quantity),
     quantityUnit: toNullable(values.quantityUnit),
-    unitPrice: toNullable(values.unitPrice),
-    lineTotal: values.lineTotal.trim(),
+    unitPrice: toNullableAmount(values.unitPrice),
+    lineTotal: normaliseDecimal(values.lineTotal),
     productCode: toNullable(values.productCode),
   };
+}
+
+/**
+ * Returns the problems that stop a line from being sent, by field. The
+ * line total is required, so blank counts as a problem.
+ */
+function lineFieldErrors(values: LineItemFormValues): Record<string, string> {
+  const errors: Record<string, string> = {};
+  const totalProblem = values.lineTotal.trim()
+    ? validateDecimal(values.lineTotal, 'money')
+    : decimalMessage('money');
+  if (totalProblem) {
+    errors.lineTotal = totalProblem;
+  }
+  const quantityProblem = validateDecimal(values.quantity, 'quantity');
+  if (quantityProblem) {
+    errors.quantity = quantityProblem;
+  }
+  const unitPriceProblem = validateDecimal(values.unitPrice, 'money');
+  if (unitPriceProblem) {
+    errors.unitPrice = unitPriceProblem;
+  }
+  return errors;
 }
 
 export interface ReceiptLineItemsCardProps {
@@ -102,6 +136,15 @@ export function ReceiptLineItemsCard({ receipt }: ReceiptLineItemsCardProps) {
   async function handleSaveEdit(event: FormEvent<HTMLFormElement>, id: string) {
     event.preventDefault();
     setEditError(null);
+    const errors = lineFieldErrors(editValues);
+    if (Object.keys(errors).length > 0) {
+      setEditError({
+        title: 'Bad Request',
+        message: 'Check the highlighted fields.',
+        fieldErrors: errors,
+      });
+      return;
+    }
     try {
       await updateLineItem.mutateAsync({
         lineItemId: id,
@@ -116,6 +159,15 @@ export function ReceiptLineItemsCard({ receipt }: ReceiptLineItemsCardProps) {
   async function handleAddSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAddError(null);
+    const errors = lineFieldErrors(addValues);
+    if (Object.keys(errors).length > 0) {
+      setAddError({
+        title: 'Bad Request',
+        message: 'Check the highlighted fields.',
+        fieldErrors: errors,
+      });
+      return;
+    }
     try {
       await createLineItem.mutateAsync(toLineItemInput(addValues));
       setAddValues(EMPTY_FORM);

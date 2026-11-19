@@ -514,4 +514,195 @@ describe('ReviewQueuePage', () => {
       expect(screen.getByText('Flag 1 of 1')).toBeInTheDocument(),
     );
   });
+
+  it('normalises decimal commas when correcting a flagged total', async () => {
+    const submitted: Array<{ flagId: string; body: unknown }> = [];
+    const entry = makeEntry(
+      '0193a1b2-0000-7000-8000-000000000921',
+      {
+        id: '0193a1b2-0000-7000-8000-000000000921',
+        receiptId: BASE_RECEIPT_SUMMARY.id,
+        lineItemId: null,
+        kind: 'low_confidence',
+        detail: { field: 'total', confidence: 0.4 },
+        resolvedAt: null,
+        resolution: null,
+        createdAt: '2026-11-02T16:05:31Z',
+      },
+      null,
+    );
+
+    server.use(
+      http.get('/api/v1/review-flags', () =>
+        HttpResponse.json({ items: [entry], nextCursor: null, totalOpen: 1 }),
+      ),
+      http.post(
+        '/api/v1/review-flags/:flagId/resolve',
+        async ({ request, params }) => {
+          submitted.push({
+            flagId: String(params.flagId),
+            body: await request.json(),
+          });
+          return HttpResponse.json({ ...mockReceipt, openFlagCount: 0 });
+        },
+      ),
+    );
+
+    renderReviewPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Flag 1 of 1')).toBeInTheDocument(),
+    );
+    const totalInput = screen.getByLabelText(/Correct total/i);
+    expect(totalInput).toHaveAttribute('type', 'text');
+    fireEvent.change(totalInput, { target: { value: '129,4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0]).toEqual({
+      flagId: '0193a1b2-0000-7000-8000-000000000921',
+      body: { action: 'correct', total: '129.4' },
+    });
+  });
+
+  it('shows the message for a malformed total instead of sending', async () => {
+    let resolves = 0;
+    const entry = makeEntry(
+      '0193a1b2-0000-7000-8000-000000000922',
+      {
+        id: '0193a1b2-0000-7000-8000-000000000922',
+        receiptId: BASE_RECEIPT_SUMMARY.id,
+        lineItemId: null,
+        kind: 'low_confidence',
+        detail: { field: 'total', confidence: 0.4 },
+        resolvedAt: null,
+        resolution: null,
+        createdAt: '2026-11-02T16:05:31Z',
+      },
+      null,
+    );
+
+    server.use(
+      http.get('/api/v1/review-flags', () =>
+        HttpResponse.json({ items: [entry], nextCursor: null, totalOpen: 1 }),
+      ),
+      http.post('/api/v1/review-flags/:flagId/resolve', () => {
+        resolves += 1;
+        return HttpResponse.json({ ...mockReceipt, openFlagCount: 0 });
+      }),
+    );
+
+    renderReviewPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Flag 1 of 1')).toBeInTheDocument(),
+    );
+    const totalInput = screen.getByLabelText(/Correct total/i);
+    fireEvent.change(totalInput, { target: { value: '1.234,56' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+
+    expect(
+      await screen.findByText(
+        'enter a number with up to two decimal places, using . or , — such as 351.90',
+      ),
+    ).toBeInTheDocument();
+    expect(resolves).toBe(0);
+    expect(totalInput).toHaveValue('1.234,56');
+  });
+
+  it('validates line corrections, then sends them normalised', async () => {
+    const submitted: Array<{ flagId: string; body: unknown }> = [];
+    const entry = makeEntry('0193a1b2-0000-7000-8000-000000000923', {
+      id: '0193a1b2-0000-7000-8000-000000000923',
+      receiptId: BASE_RECEIPT_SUMMARY.id,
+      lineItemId: BASE_LINE_ITEM.id,
+      kind: 'line_math',
+      detail: {
+        quantity: '2',
+        unitPrice: '15.00',
+        lineTotal: '28.00',
+        expectedTotal: '30.00',
+      },
+      resolvedAt: null,
+      resolution: null,
+      createdAt: '2026-11-02T16:05:31Z',
+    });
+
+    server.use(
+      http.get('/api/v1/review-flags', () =>
+        HttpResponse.json({ items: [entry], nextCursor: null, totalOpen: 1 }),
+      ),
+      http.post(
+        '/api/v1/review-flags/:flagId/resolve',
+        async ({ request, params }) => {
+          submitted.push({
+            flagId: String(params.flagId),
+            body: await request.json(),
+          });
+          return HttpResponse.json({ ...mockReceipt, openFlagCount: 0 });
+        },
+      ),
+    );
+
+    renderReviewPage();
+
+    await waitFor(() =>
+      expect(screen.getByText('Flag 1 of 1')).toBeInTheDocument(),
+    );
+
+    // A malformed line total is stopped before it is sent.
+    fireEvent.change(screen.getByLabelText(/Line total/i), {
+      target: { value: 'bad' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save corrected line' }),
+    );
+
+    expect(
+      await screen.findByText(
+        'enter a number with up to two decimal places, using . or , — such as 351.90',
+      ),
+    ).toBeInTheDocument();
+    expect(submitted).toHaveLength(0);
+
+    // A non-positive quantity is stopped before it is sent.
+    fireEvent.change(screen.getByLabelText(/Line total/i), {
+      target: { value: '28.00' },
+    });
+    fireEvent.change(screen.getByLabelText(/Quantity/i), {
+      target: { value: '-1' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save corrected line' }),
+    );
+
+    expect(
+      await screen.findByText(
+        'must be positive with at most three decimal places',
+      ),
+    ).toBeInTheDocument();
+    expect(submitted).toHaveLength(0);
+
+    // Valid comma values are sent normalised.
+    fireEvent.change(screen.getByLabelText(/Quantity/i), {
+      target: { value: '2,5' },
+    });
+    fireEvent.change(screen.getByLabelText(/Unit price/i), {
+      target: { value: '11,2' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save corrected line' }),
+    );
+
+    await waitFor(() => expect(submitted).toHaveLength(1));
+    expect(submitted[0].body).toMatchObject({
+      action: 'correct',
+      lineItem: {
+        name: BASE_LINE_ITEM.name,
+        quantity: '2.5',
+        unitPrice: '11.2',
+        lineTotal: '28.00',
+      },
+    });
+  });
 });

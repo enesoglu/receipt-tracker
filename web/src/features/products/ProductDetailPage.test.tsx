@@ -156,6 +156,104 @@ describe('ProductDetailPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('normalises decimal commas in the package size and shows field-level errors', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    let failNextSave = false;
+
+    server.use(
+      http.put('/api/v1/products/:productId', async ({ request }) => {
+        if (failNextSave) {
+          failNextSave = false;
+          return HttpResponse.json(
+            {
+              type: 'https://receipt-tracker.example/problems/invalid',
+              title: 'Bad Request',
+              status: 400,
+              detail: 'invalid size',
+              errors: [
+                {
+                  field: 'sizeValue',
+                  message: 'must be positive with at most three decimal places',
+                },
+              ],
+            },
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/problem+json' },
+            },
+          );
+        }
+        updates.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json(mockProduct);
+      }),
+    );
+
+    renderProductDetail();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Ayran 1 l' }),
+      ).toBeInTheDocument(),
+    );
+
+    // A decimal comma is accepted and sent as a dot.
+    fireEvent.change(screen.getByLabelText('Package size'), {
+      target: { value: '1,5' },
+    });
+    fireEvent.change(screen.getByLabelText('Size unit'), {
+      target: { value: 'l' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    expect(
+      await screen.findByText('Product details saved.'),
+    ).toBeInTheDocument();
+    expect(updates).toMatchObject([
+      { canonicalName: 'Ayran 1 l', sizeValue: '1.5', sizeUnit: 'l' },
+    ]);
+
+    // A zero size is rejected before it is sent.
+    fireEvent.change(screen.getByLabelText('Package size'), {
+      target: { value: '0' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    expect(
+      await screen.findByText(
+        'must be positive with at most three decimal places',
+      ),
+    ).toBeInTheDocument();
+    expect(updates).toHaveLength(1);
+
+    // A field error from the server is shown at the input, not discarded.
+    fireEvent.change(screen.getByLabelText('Package size'), {
+      target: { value: '2' },
+    });
+    failNextSave = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('must be positive with at most three decimal places'),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole('heading', { name: 'Could not save product' }),
+    ).toBeInTheDocument();
+    expect(updates).toHaveLength(1);
+
+    // The corrected value saves.
+    fireEvent.click(screen.getByRole('button', { name: 'Save details' }));
+
+    expect(
+      await screen.findByText('Product details saved.'),
+    ).toBeInTheDocument();
+    expect(updates).toMatchObject([
+      { canonicalName: 'Ayran 1 l', sizeValue: '1.5' },
+      { canonicalName: 'Ayran 1 l', sizeValue: '2', sizeUnit: 'l' },
+    ]);
+  });
+
   it('supports merge picker with confirmation summary, server error recovery, and merge commit', async () => {
     let failMergeOnce = true;
     server.use(

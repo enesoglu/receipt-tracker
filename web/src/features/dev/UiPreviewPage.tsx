@@ -154,7 +154,7 @@ export function UiPreviewPage() {
               <Input
                 label="Line total"
                 defaultValue="forty"
-                error="Must be a decimal amount with two places."
+                error="enter a number with up to two decimal places, using . or , — such as 351.90"
               />
               <Input label="Source" value="web" disabled readOnly />
               <Select
