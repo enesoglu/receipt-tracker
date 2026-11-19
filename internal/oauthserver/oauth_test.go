@@ -381,21 +381,25 @@ func TestOAuth_RegistrationValidationExpiryAndRateLimits(t *testing.T) {
 
 func TestOAuth_LoopbackMatchingKeepsPathHostAndExchangePortBound(t *testing.T) {
 	f := setup(t)
-	for _, host := range []string{"localhost", "127.0.0.1"} {
-		client, err := f.oauth.Register(t.Context(), oauthserver.Registration{RedirectURIs: []string{"http://" + host + "/callback"}})
+	for _, host := range []string{"localhost", "127.0.0.1", "::1"} {
+		authority := host
+		if strings.Contains(host, ":") {
+			authority = "[" + host + "]"
+		}
+		client, err := f.oauth.Register(t.Context(), oauthserver.Registration{RedirectURIs: []string{"http://" + authority + "/callback"}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		input := oauthserver.Authorization{ClientID: client.ID, RedirectURI: "http://" + host + ":12345/callback", ResponseType: "code", Challenge: parameters(client.ID).Get("code_challenge"), ChallengeMethod: "S256", Resource: base + "/mcp"}
+		input := oauthserver.Authorization{ClientID: client.ID, RedirectURI: "http://" + authority + ":12345/callback", ResponseType: "code", Challenge: parameters(client.ID).Get("code_challenge"), ChallengeMethod: "S256", Resource: base + "/mcp"}
 		code, err := f.oauth.IssueCode(t.Context(), f.user, input)
 		if err != nil {
 			t.Fatal(err)
 		}
-		input.RedirectURI = "http://" + host + ":12345/wrong"
+		input.RedirectURI = "http://" + authority + ":12345/wrong"
 		if _, err := f.oauth.ValidateAuthorization(t.Context(), input); err == nil {
 			t.Fatal("changed path accepted")
 		}
-		if _, err := f.oauth.Exchange(t.Context(), oauthserver.Exchange{GrantType: "authorization_code", ClientID: client.ID, Code: code, RedirectURI: "http://" + host + ":23456/callback", Verifier: verifier, Resource: base + "/mcp"}); err == nil {
+		if _, err := f.oauth.Exchange(t.Context(), oauthserver.Exchange{GrantType: "authorization_code", ClientID: client.ID, Code: code, RedirectURI: "http://" + authority + ":23456/callback", Verifier: verifier, Resource: base + "/mcp"}); err == nil {
 			t.Fatal("code not bound to actual callback port")
 		}
 	}
