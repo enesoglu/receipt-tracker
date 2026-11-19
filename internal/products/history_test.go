@@ -3,6 +3,7 @@ package products_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -197,5 +198,55 @@ func TestPriceHistory_ItemProductHasNoBasisPrice(t *testing.T) {
 		if p.Basis != "item" || p.BasisPrice.Valid {
 			t.Errorf("point = %+v", p)
 		}
+	}
+}
+
+// Clearing the time of the latest purchase of a day must not change which
+// purchase that is: a purchase with no time is not known to be earlier.
+func TestPriceHistory_ClearingTimeKeepsLatestStable(t *testing.T) {
+	f := newFixture(t)
+	milk := f.product(f.alice, "Süt 1 L")
+	market := f.store(f.alice, "Synthetic Market")
+
+	// Both purchases of one day carry the same clock, so the receipt
+	// created later is the latest purchase.
+	earlier := f.receipt(f.alice, receipt{store: market, date: "2026-11-03", time: "18:42"})
+	latest := f.receipt(f.alice, receipt{store: market, date: "2026-11-03", time: "18:42"})
+	f.exec(`UPDATE receipts SET created_at = $1 WHERE id = $2`, time.Date(2026, 11, 3, 17, 0, 0, 0, time.UTC), earlier)
+	f.exec(`UPDATE receipts SET created_at = $1 WHERE id = $2`, time.Date(2026, 11, 3, 18, 0, 0, 0, time.UTC), latest)
+	f.line(f.alice, earlier, 0, line{quantity: "1", unitPrice: "32.50", total: "32.50", product: milk})
+	f.line(f.alice, latest, 0, line{quantity: "1", unitPrice: "99.00", total: "99.00", product: milk})
+
+	prices := func() (points []decimal.Decimal, latestPrice decimal.Decimal) {
+		h, err := f.service.PriceHistory(t.Context(), f.alice, milk, products.HistoryFilter{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range h.Points {
+			points = append(points, p.UnitPrice)
+		}
+		if len(h.Stores) != 1 {
+			t.Fatalf("store summaries: %d, want 1", len(h.Stores))
+		}
+		return points, h.Stores[0].Latest
+	}
+
+	wantPrices := []decimal.Decimal{dec("32.50"), dec("99.00")}
+	before, beforeLatest := prices()
+	if diff := cmp.Diff(wantPrices, before); diff != "" {
+		t.Errorf("points before clearing (-want +got):\n%s", diff)
+	}
+	if !beforeLatest.Equal(dec("99.00")) {
+		t.Errorf("latest before clearing: got %s, want 99.00", beforeLatest)
+	}
+
+	f.exec(`UPDATE receipts SET purchased_time = NULL WHERE id = $1`, latest)
+
+	after, afterLatest := prices()
+	if diff := cmp.Diff(wantPrices, after); diff != "" {
+		t.Errorf("points after clearing (-want +got):\n%s", diff)
+	}
+	if !afterLatest.Equal(beforeLatest) {
+		t.Errorf("latest after clearing: got %s, want %s", afterLatest, beforeLatest)
 	}
 }

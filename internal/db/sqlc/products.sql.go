@@ -419,7 +419,7 @@ WHERE l.user_id = $1
   AND ($3::date IS NULL OR r.purchased_on >= $3::date)
   AND ($4::date IS NULL OR r.purchased_on <= $4::date)
   AND ($5::uuid IS NULL OR r.store_id = $5::uuid)
-ORDER BY r.purchased_on, r.purchased_time NULLS FIRST, r.created_at, r.id, l.position
+ORDER BY r.purchased_on, r.purchased_time NULLS LAST, r.created_at, r.id, l.position
 `
 
 type ListProductPricePointsParams struct {
@@ -446,7 +446,9 @@ type ListProductPricePointsRow struct {
 
 // ListProductPricePoints returns one row per purchase of a product, oldest
 // first, by the rules of ListProductPurchaseStats, optionally within a date
-// range and at one store.
+// range and at one store. A purchase without a time sorts after every
+// purchase of the same day with one, so an unknown time can neither jump
+// ahead of a known one nor change which purchase is the latest.
 func (q *Queries) ListProductPricePoints(ctx context.Context, arg ListProductPricePointsParams) ([]ListProductPricePointsRow, error) {
 	rows, err := q.db.Query(ctx, listProductPricePoints,
 		arg.UserID,
