@@ -202,6 +202,56 @@ describe('MSW API handlers', () => {
     );
     expect(updatedStore.name).toBe('Corner Market');
 
+    const createdStore = await unwrap(
+      api.POST('/stores', { body: { name: 'Migros Jet' } }),
+    );
+    expect(createdStore.receiptCount).toBe(0);
+    expect(createdStore.vkn).toBeNull();
+
+    const detail = await unwrap(
+      api.GET('/stores/{storeId}', {
+        params: { path: { storeId: stores.items[1].id } },
+      }),
+    );
+    expect(detail.name).toBe('Example Market');
+    expect(detail.aliases).toHaveLength(2);
+    expect(detail.branches.map((branch) => branch.name)).toEqual([
+      'Çankaya',
+      'Kızılay',
+    ]);
+
+    const mergedStore = await unwrap(
+      api.POST('/stores/{storeId}/merge', {
+        params: { path: { storeId: stores.items[1].id } },
+        body: { sourceId: stores.items[0].id },
+      }),
+    );
+    expect(mergedStore.receiptCount).toBe(17);
+    expect(mergedStore.vkn).toBe('1234567890');
+
+    const afterMerge = await unwrap(api.GET('/stores'));
+    expect(afterMerge.items.map((store) => store.name)).toEqual([
+      'Example Market',
+      'Migros Jet',
+    ]);
+
+    await expect(
+      unwrap(
+        api.DELETE('/stores/{storeId}', {
+          params: { path: { storeId: stores.items[1].id } },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+
+    await unwrap(
+      api.DELETE('/stores/{storeId}', {
+        params: { path: { storeId: createdStore.id } },
+      }),
+    );
+
+    const afterDelete = await unwrap(api.GET('/stores'));
+    expect(afterDelete.items).toHaveLength(1);
+
     const categories = await unwrap(api.GET('/categories'));
     expect(categories.items).toHaveLength(2);
 

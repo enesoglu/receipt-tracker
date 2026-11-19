@@ -536,6 +536,26 @@ export const mockStore: components['schemas']['Store'] = {
   aliasCount: 2,
 };
 
+export const mockStoreDetail: components['schemas']['StoreDetail'] = {
+  ...mockStore,
+  aliases: [
+    {
+      rawName: 'Example Market',
+      seenCount: 12,
+      lastSeenAt: '2026-11-02T16:05:31Z',
+    },
+    {
+      rawName: 'Exmple Mrket',
+      seenCount: 2,
+      lastSeenAt: '2026-10-18T09:12:04Z',
+    },
+  ],
+  branches: [
+    { name: 'Çankaya', receiptCount: 13 },
+    { name: 'Kızılay', receiptCount: 1 },
+  ],
+};
+
 export const mockCategoryPage: components['schemas']['CategoryPage'] = {
   items: [
     {
@@ -739,6 +759,10 @@ let mockCategoriesState: components['schemas']['Category'][] = structuredClone(
   mockCategoryPage.items,
 );
 let nextMockCategoryIndex = 29;
+let mockStoresState: components['schemas']['Store'][] = structuredClone(
+  mockStorePage.items,
+);
+let nextMockStoreIndex = 39;
 let mockSettingsState: components['schemas']['Settings'] =
   structuredClone(mockSettings);
 let mockStorageState: components['schemas']['StorageStatus'] =
@@ -758,6 +782,8 @@ export function resetMockState(): void {
   nextMockSplitIndex = 499;
   mockCategoriesState = structuredClone(mockCategoryPage.items);
   nextMockCategoryIndex = 29;
+  mockStoresState = structuredClone(mockStorePage.items);
+  nextMockStoreIndex = 39;
   mockSettingsState = structuredClone(mockSettings);
   mockStorageState = structuredClone(mockStorageStatus);
   mockSuggestionsState = structuredClone(mockSuggestions.items);
@@ -1959,6 +1985,184 @@ export function deleteMockCategory(categoryId: string): boolean {
       : product,
   );
   return true;
+}
+
+/** Sorts and cursor-paginates stateful mock stores ordered by name. */
+export function queryMockStores(
+  searchParams: URLSearchParams,
+): components['schemas']['StorePage'] {
+  const sorted = [...mockStoresState].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+
+  const rawLimit = Number.parseInt(searchParams.get('limit') ?? '50', 10);
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit >= 1 && rawLimit <= 100
+      ? rawLimit
+      : 50;
+  const rawOffset = Number.parseInt(searchParams.get('cursor') ?? '0', 10);
+  const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+
+  const items = sorted.slice(offset, offset + limit);
+  const nextOffset = offset + items.length;
+  const nextCursor = nextOffset < sorted.length ? String(nextOffset) : null;
+
+  return { items, nextCursor };
+}
+
+/** Creates a mock store if its name is valid and unique case-insensitively. */
+export function createMockStore(
+  body: components['schemas']['StoreCreate'],
+):
+  | { ok: true; store: components['schemas']['Store'] }
+  | { ok: false; reason: 'invalid' | 'conflict' } {
+  const trimmed = body.name.trim();
+  if (trimmed.length === 0 || trimmed.length > 200) {
+    return { ok: false, reason: 'invalid' };
+  }
+  const normalized = trimmed.toLowerCase();
+  if (
+    mockStoresState.some(
+      (store) => store.name.trim().toLowerCase() === normalized,
+    )
+  ) {
+    return { ok: false, reason: 'conflict' };
+  }
+
+  const seq = nextMockStoreIndex++;
+  const created: components['schemas']['Store'] = {
+    id: `0193a1b2-0000-7000-8000-${String(seq).padStart(12, '0')}`,
+    name: trimmed,
+    receiptCount: 0,
+    vkn: null,
+    aliasCount: 0,
+  };
+  mockStoresState.push(created);
+  return { ok: true, store: created };
+}
+
+/** Renames a mock store if found, valid, and not conflicting case-insensitively. */
+export function updateMockStore(
+  storeId: string,
+  body: components['schemas']['StoreUpdate'],
+):
+  | { ok: true; store: components['schemas']['Store'] }
+  | { ok: false; reason: 'invalid' | 'not_found' | 'conflict' } {
+  const trimmed = body.name.trim();
+  if (trimmed.length === 0 || trimmed.length > 200) {
+    return { ok: false, reason: 'invalid' };
+  }
+
+  const index = mockStoresState.findIndex((store) => store.id === storeId);
+  if (index === -1) {
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (
+    mockStoresState.some(
+      (store) =>
+        store.id !== storeId && store.name.trim().toLowerCase() === normalized,
+    )
+  ) {
+    return { ok: false, reason: 'conflict' };
+  }
+
+  const updated: components['schemas']['Store'] = {
+    ...mockStoresState[index],
+    name: trimmed,
+  };
+  mockStoresState[index] = updated;
+  return { ok: true, store: updated };
+}
+
+/** Builds a mock store's detail: the Example Market fixture carries the seen names. */
+function storeDetailOf(
+  store: components['schemas']['Store'],
+): components['schemas']['StoreDetail'] {
+  return store.id === mockStore.id
+    ? {
+        ...store,
+        aliases: mockStoreDetail.aliases,
+        branches: mockStoreDetail.branches,
+      }
+    : { ...store, aliases: [], branches: [] };
+}
+
+/** Returns a stateful mock store with its raw names and branches, or null. */
+export function getMockStoreDetail(
+  storeId: string,
+): components['schemas']['StoreDetail'] | null {
+  const store = mockStoresState.find((entry) => entry.id === storeId);
+  return store ? storeDetailOf(store) : null;
+}
+
+/** Merges a source mock store into the target and deletes the source. */
+export function mergeMockStore(
+  targetId: string,
+  sourceId: string,
+):
+  | { ok: true; detail: components['schemas']['StoreDetail'] }
+  | { ok: false; reason: 'invalid' }
+  | { ok: false; reason: 'not_found' }
+  | {
+      ok: false;
+      reason: 'vkn_conflict';
+      targetVkn: string;
+      sourceVkn: string;
+    } {
+  if (targetId === sourceId) {
+    return { ok: false, reason: 'invalid' };
+  }
+  const targetIndex = mockStoresState.findIndex(
+    (store) => store.id === targetId,
+  );
+  const sourceIndex = mockStoresState.findIndex(
+    (store) => store.id === sourceId,
+  );
+  if (targetIndex === -1 || sourceIndex === -1) {
+    return { ok: false, reason: 'not_found' };
+  }
+  const target = mockStoresState[targetIndex];
+  const source = mockStoresState[sourceIndex];
+  if (target.vkn !== null && source.vkn !== null && target.vkn !== source.vkn) {
+    return {
+      ok: false,
+      reason: 'vkn_conflict',
+      targetVkn: target.vkn,
+      sourceVkn: source.vkn,
+    };
+  }
+
+  const merged: components['schemas']['Store'] = {
+    ...target,
+    receiptCount: target.receiptCount + source.receiptCount,
+    aliasCount: target.aliasCount + source.aliasCount,
+    // The target adopts the source's tax number only while it has none.
+    vkn: target.vkn ?? source.vkn,
+  };
+  mockStoresState[targetIndex] = merged;
+  mockStoresState.splice(sourceIndex, 1);
+  return { ok: true, detail: storeDetailOf(merged) };
+}
+
+/** Deletes a mock store only when it has no receipts left. */
+export function deleteMockStore(
+  storeId: string,
+):
+  | { ok: true }
+  | { ok: false; reason: 'not_found' }
+  | { ok: false; reason: 'in_use'; receiptCount: number } {
+  const index = mockStoresState.findIndex((store) => store.id === storeId);
+  if (index === -1) {
+    return { ok: false, reason: 'not_found' };
+  }
+  const store = mockStoresState[index];
+  if (store.receiptCount > 0) {
+    return { ok: false, reason: 'in_use', receiptCount: store.receiptCount };
+  }
+  mockStoresState.splice(index, 1);
+  return { ok: true };
 }
 
 /** Returns current stateful mock user settings. */

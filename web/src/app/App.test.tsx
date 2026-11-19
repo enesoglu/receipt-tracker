@@ -169,6 +169,7 @@ describe('App routing and authentication gate', () => {
     ['/review', 'Review queue'],
     ['/products', 'Products'],
     ['/spending', 'Spending'],
+    ['/stores', 'Stores'],
     ['/categories', 'Categories'],
     ['/settings', 'Settings'],
   ])('renders %s for signed-in users', async (route, expectedHeading) => {
