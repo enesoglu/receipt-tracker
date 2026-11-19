@@ -167,6 +167,11 @@ never the value.
 | `AZURE_DI_ENDPOINT`      | when `EXTRACTOR=azure`                                   | `https` endpoint of the Document Intelligence resource    |
 | `AZURE_DI_KEY`           | when `EXTRACTOR=azure`                                   | Its key                                                   |
 | `AZURE_DI_MONTHLY_PAGES` | no, default `500`                                        | Pages allowed per month                                   |
+| `LLM_PROTOCOL`           | no, default `openai`                                     | `openai` or `ollama`: the wire protocol of the endpoint   |
+| `LLM_BASE_URL`           | no                                                       | Origin of the suggestion model; off while unset            |
+| `LLM_MODEL`              | when `LLM_BASE_URL` is set                               | The model the endpoint serves                             |
+| `LLM_API_KEY`            | no                                                       | Bearer token of a protected endpoint                      |
+| `LLM_TIMEOUT`            | no, default `300s`                                       | Timeout of one suggestion request                         |
 | `BACKUP_DESTINATION`     | yes                                                      | `drive`, `local` or `none`                                |
 | `BACKUP_LOCAL_DIR`       | when `BACKUP_DESTINATION=local`                          | Directory for dumps                                       |
 | `BACKUP_SCHEDULE`        | unless `BACKUP_DESTINATION=none`                         | Daily start time in UTC as `HH:MM`                        |

@@ -286,6 +286,104 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/receipts/{receiptId}/suggestions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000100
+         */
+        receiptId: components['parameters']['ReceiptId'];
+      };
+      cookie?: never;
+    };
+    /**
+     * Get the suggestions of a receipt
+     * @description The model's suggestions for the receipt's lines, in line order,
+     *     without paging: review shows them beside their lines. A receipt of
+     *     another user is reported the same way as a missing one.
+     */
+    get: operations['getReceiptSuggestions'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/receipts/{receiptId}/suggestions/{suggestionId}/accept': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000100
+         */
+        receiptId: components['parameters']['ReceiptId'];
+        /**
+         * @description Id of a suggestion of the receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000501
+         */
+        suggestionId: components['parameters']['SuggestionId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept a suggestion
+     * @description Applies the suggestion to its line: the product is renamed (or
+     *     created) with the suggested name and category, the line is linked
+     *     to it as confirmed by a person, and an open match flag on the line
+     *     closes as `different_product`. Returns the receipt after the
+     *     change, like every other decision on a receipt.
+     *
+     *     A suggestion that is no longer `pending`, or whose line has already
+     *     been resolved or re-matched, is a `409`.
+     */
+    post: operations['acceptReceiptSuggestion'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/receipts/{receiptId}/suggestions/{suggestionId}/ignore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000100
+         */
+        receiptId: components['parameters']['ReceiptId'];
+        /**
+         * @description Id of a suggestion of the receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000501
+         */
+        suggestionId: components['parameters']['SuggestionId'];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Ignore a suggestion
+     * @description Marks the suggestion as ignored and changes nothing else on the
+     *     receipt. A suggestion that is no longer `pending` is a `409`.
+     */
+    post: operations['ignoreReceiptSuggestion'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/review-flags': {
     parameters: {
       query?: never;
@@ -680,6 +778,28 @@ export interface paths {
      *     status `waiting_quota` until the next month.
      */
     get: operations['getUsage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/suggestions/status': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get the state of the suggestion feature
+     * @description Whether this instance has a suggestion endpoint configured, and
+     *     whether the newest suggestion job found it offline. The error text
+     *     of a failed job never leaves the server.
+     */
+    get: operations['getSuggestionsStatus'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1544,6 +1664,44 @@ export interface components {
        */
       action: 'accept';
     };
+    /**
+     * @description The model's answer for one line the matcher could not confidently
+     *     resolve. Nothing enters the catalogue until the user accepts it.
+     */
+    LineSuggestion: {
+      /** Format: uuid */
+      id: string;
+      /** Format: uuid */
+      receiptId: string;
+      /** Format: uuid */
+      lineItemId: string;
+      /** @description The printed text of the line when the model saw it. */
+      rawName: string;
+      /**
+       * @description The decision on the suggestion; `pending` until the user decides.
+       * @enum {string}
+       */
+      status: 'pending' | 'accepted' | 'ignored';
+      /** @description The clean name the model suggested for the line. */
+      suggestedName: string;
+      /** @description The suggested category, or `null` when the model had none. */
+      category: components['schemas']['CategoryRef'] | null;
+      /** @description The model that produced the suggestion. */
+      model: string;
+      /** @description The prompt the suggestion was produced with. */
+      promptVersion: number;
+      /** Format: date-time */
+      createdAt: string;
+      /**
+       * Format: date-time
+       * @description When the suggestion was accepted or ignored; `null` while it is pending.
+       */
+      decidedAt: string | null;
+    };
+    ReceiptSuggestions: {
+      /** @description The suggestions of the receipt, in line order. */
+      items: components['schemas']['LineSuggestion'][];
+    };
     /** @description The most recent purchase of a product. */
     LastPurchase: {
       /** Format: date */
@@ -1812,6 +1970,11 @@ export interface components {
       defaultCurrency: components['schemas']['Currency'];
       /** @description Title given to an uploaded receipt. */
       defaultReceiptTitle: string;
+      /**
+       * @description The per-user switch for model suggestions. Suggestions are off
+       *     for everyone while the instance has no endpoint configured.
+       */
+      llmSuggestionsEnabled: boolean;
     };
     /**
      * @description What reads receipt images on this instance.
@@ -1824,6 +1987,13 @@ export interface components {
       period: components['schemas']['Month'];
       pagesUsed: number;
       pagesLimit: number;
+    };
+    /** @description What the settings page shows about the suggestion model. */
+    SuggestionsStatus: {
+      /** @description False when this instance has no suggestion endpoint configured. */
+      available: boolean;
+      /** @description True when the newest suggestion job found the endpoint unreachable. */
+      offline: boolean;
     };
     /**
      * @description Where receipt images are kept.
@@ -1963,6 +2133,11 @@ export interface components {
      * @example 0193a1b2-0000-7000-8000-000000000301
      */
     FlagId: string;
+    /**
+     * @description Id of a suggestion of the receipt.
+     * @example 0193a1b2-0000-7000-8000-000000000501
+     */
+    SuggestionId: string;
     /**
      * @description Id of a product.
      * @example 0193a1b2-0000-7000-8000-000000000401
@@ -2457,6 +2632,108 @@ export interface operations {
       400: components['responses']['BadRequest'];
       401: components['responses']['Unauthorized'];
       404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  getReceiptSuggestions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000100
+         */
+        receiptId: components['parameters']['ReceiptId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The suggestions of the receipt. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReceiptSuggestions'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthorized'];
+      404: components['responses']['NotFound'];
+      default: components['responses']['Error'];
+    };
+  };
+  acceptReceiptSuggestion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000100
+         */
+        receiptId: components['parameters']['ReceiptId'];
+        /**
+         * @description Id of a suggestion of the receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000501
+         */
+        suggestionId: components['parameters']['SuggestionId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The receipt after the change. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Receipt'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthorized'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
+      default: components['responses']['Error'];
+    };
+  };
+  ignoreReceiptSuggestion: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /**
+         * @description Id of a receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000100
+         */
+        receiptId: components['parameters']['ReceiptId'];
+        /**
+         * @description Id of a suggestion of the receipt.
+         * @example 0193a1b2-0000-7000-8000-000000000501
+         */
+        suggestionId: components['parameters']['SuggestionId'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The ignored suggestion. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['LineSuggestion'];
+        };
+      };
+      400: components['responses']['BadRequest'];
+      401: components['responses']['Unauthorized'];
+      404: components['responses']['NotFound'];
+      409: components['responses']['Conflict'];
       default: components['responses']['Error'];
     };
   };
@@ -3087,6 +3364,28 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Usage'];
+        };
+      };
+      401: components['responses']['Unauthorized'];
+      default: components['responses']['Error'];
+    };
+  };
+  getSuggestionsStatus: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The state of the suggestion feature. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SuggestionsStatus'];
         };
       };
       401: components['responses']['Unauthorized'];

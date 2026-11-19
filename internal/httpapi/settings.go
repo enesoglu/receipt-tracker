@@ -19,7 +19,7 @@ func (h settingsHandlers) GetSettings(ctx context.Context, _ GetSettingsRequestO
 	if err != nil {
 		return nil, err
 	}
-	return GetSettings200JSONResponse{DefaultCurrency: row.DefaultCurrency, DefaultReceiptTitle: row.DefaultReceiptTitle}, nil
+	return GetSettings200JSONResponse{DefaultCurrency: row.DefaultCurrency, DefaultReceiptTitle: row.DefaultReceiptTitle, LlmSuggestionsEnabled: row.LlmSuggestionsEnabled}, nil
 }
 
 // UpdateSettings changes the defaults used by future uploads.
@@ -31,9 +31,9 @@ func (h settingsHandlers) UpdateSettings(ctx context.Context, request UpdateSett
 	if request.Body == nil {
 		return nil, apperr.New(apperr.Invalid, "settings body is required")
 	}
-	row, err := h.receipts.UpdateSettings(ctx, id, request.Body.DefaultCurrency, request.Body.DefaultReceiptTitle)
+	row, err := h.receipts.UpdateSettings(ctx, id, request.Body.DefaultCurrency, request.Body.DefaultReceiptTitle, request.Body.LlmSuggestionsEnabled)
 	if err != nil {
 		return nil, err
 	}
-	return UpdateSettings200JSONResponse{DefaultCurrency: row.DefaultCurrency, DefaultReceiptTitle: row.DefaultReceiptTitle}, nil
+	return UpdateSettings200JSONResponse{DefaultCurrency: row.DefaultCurrency, DefaultReceiptTitle: row.DefaultReceiptTitle, LlmSuggestionsEnabled: row.LlmSuggestionsEnabled}, nil
 }

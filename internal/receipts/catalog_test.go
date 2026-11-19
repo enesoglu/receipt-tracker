@@ -8,9 +8,8 @@ import (
 	"github.com/enesoglu/receipt-tracker/internal/db/sqlc"
 )
 
-// A settings save carries the suggestion switch through unchanged until
-// the settings operation exposes it explicitly.
-func TestUpdateSettings_KeepsTheSuggestionSwitch(t *testing.T) {
+// A settings save stores the suggestion switch with the other defaults.
+func TestUpdateSettings_StoresTheSuggestionSwitch(t *testing.T) {
 	pool := dbtest.New(t)
 	q := sqlc.New(pool)
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
@@ -30,22 +29,19 @@ func TestUpdateSettings_KeepsTheSuggestionSwitch(t *testing.T) {
 	if !before.LlmSuggestionsEnabled {
 		t.Fatal("a new user has suggestions switched on by default")
 	}
-	after, err := service.UpdateSettings(t.Context(), user.ID, "EUR", "Shopping")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !after.LlmSuggestionsEnabled {
-		t.Fatal("saving defaults switched suggestions off")
-	}
-
-	if _, err := q.UpdateOwnedSettings(t.Context(), sqlc.UpdateOwnedSettingsParams{UserID: user.ID, DefaultCurrency: "TRY", DefaultReceiptTitle: "Receipt", LlmSuggestionsEnabled: false, Now: now}); err != nil {
-		t.Fatal(err)
-	}
-	after, err = service.UpdateSettings(t.Context(), user.ID, "USD", "Groceries")
+	after, err := service.UpdateSettings(t.Context(), user.ID, "EUR", "Shopping", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if after.LlmSuggestionsEnabled {
-		t.Fatal("saving defaults switched suggestions back on")
+		t.Fatal("the save did not switch suggestions off")
+	}
+
+	after, err = service.UpdateSettings(t.Context(), user.ID, "USD", "Groceries", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.LlmSuggestionsEnabled {
+		t.Fatal("the save did not switch suggestions back on")
 	}
 }

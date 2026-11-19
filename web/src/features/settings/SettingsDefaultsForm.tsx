@@ -60,6 +60,7 @@ export function SettingsDefaultsForm({
       await updateSettings.mutateAsync({
         defaultCurrency: normalizedCurrency,
         defaultReceiptTitle: trimmedTitle,
+        llmSuggestionsEnabled: settings.llmSuggestionsEnabled,
       });
       setDefaultCurrency(normalizedCurrency);
       setDefaultReceiptTitle(trimmedTitle);

@@ -74,6 +74,11 @@ tags:
     description: |
       Review flags: things on a receipt that a person should look at. A
       receipt is `ready` when it has no open flag.
+  - name: suggestions
+    description: |
+      Optional model suggestions for lines the matcher could not
+      confidently resolve. The user decides on each one; nothing enters the
+      catalogue until a suggestion is accepted.
   - name: products
     description: The product catalogue built from line items, and price history.
   - name: stores
@@ -589,6 +594,103 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /receipts/{receiptId}/suggestions:
+    parameters:
+      - $ref: "#/components/parameters/ReceiptId"
+    get:
+      operationId: getReceiptSuggestions
+      tags: [suggestions]
+      summary: Get the suggestions of a receipt
+      description: |
+        The model's suggestions for the receipt's lines, in line order,
+        without paging: review shows them beside their lines. A receipt of
+        another user is reported the same way as a missing one.
+      responses:
+        "200":
+          description: The suggestions of the receipt.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptSuggestions"
+              examples:
+                suggestions:
+                  $ref: "#/components/examples/ReceiptSuggestions"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        default:
+          $ref: "#/components/responses/Error"
+  /receipts/{receiptId}/suggestions/{suggestionId}/accept:
+    parameters:
+      - $ref: "#/components/parameters/ReceiptId"
+      - $ref: "#/components/parameters/SuggestionId"
+    post:
+      operationId: acceptReceiptSuggestion
+      tags: [suggestions]
+      summary: Accept a suggestion
+      description: |
+        Applies the suggestion to its line: the product is renamed (or
+        created) with the suggested name and category, the line is linked
+        to it as confirmed by a person, and an open match flag on the line
+        closes as `different_product`. Returns the receipt after the
+        change, like every other decision on a receipt.
+
+        A suggestion that is no longer `pending`, or whose line has already
+        been resolved or re-matched, is a `409`.
+      responses:
+        "200":
+          description: The receipt after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Receipt"
+              examples:
+                receipt:
+                  $ref: "#/components/examples/Receipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        default:
+          $ref: "#/components/responses/Error"
+  /receipts/{receiptId}/suggestions/{suggestionId}/ignore:
+    parameters:
+      - $ref: "#/components/parameters/ReceiptId"
+      - $ref: "#/components/parameters/SuggestionId"
+    post:
+      operationId: ignoreReceiptSuggestion
+      tags: [suggestions]
+      summary: Ignore a suggestion
+      description: |
+        Marks the suggestion as ignored and changes nothing else on the
+        receipt. A suggestion that is no longer `pending` is a `409`.
+      responses:
+        "200":
+          description: The ignored suggestion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineSuggestion"
+              examples:
+                ignored:
+                  $ref: "#/components/examples/LineSuggestionDecided"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         default:
           $ref: "#/components/responses/Error"
   /review-flags:
@@ -1253,6 +1355,29 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         default:
           $ref: "#/components/responses/Error"
+  /suggestions/status:
+    get:
+      operationId: getSuggestionsStatus
+      tags: [suggestions]
+      summary: Get the state of the suggestion feature
+      description: |
+        Whether this instance has a suggestion endpoint configured, and
+        whether the newest suggestion job found it offline. The error text
+        of a failed job never leaves the server.
+      responses:
+        "200":
+          description: The state of the suggestion feature.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuggestionsStatus"
+              examples:
+                status:
+                  $ref: "#/components/examples/SuggestionsStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
   /storage:
     get:
       operationId: getStorageStatus
@@ -1408,6 +1533,15 @@ components:
         type: string
         format: uuid
       example: 0193a1b2-0000-7000-8000-000000000301
+    SuggestionId:
+      name: suggestionId
+      in: path
+      required: true
+      description: Id of a suggestion of the receipt.
+      schema:
+        type: string
+        format: uuid
+      example: 0193a1b2-0000-7000-8000-000000000501
     ProductId:
       name: productId
       in: path
@@ -2623,6 +2757,63 @@ components:
         action:
           type: string
           enum: [accept]
+    LineSuggestion:
+      type: object
+      description: |
+        The model's answer for one line the matcher could not confidently
+        resolve. Nothing enters the catalogue until the user accepts it.
+      required: [id, receiptId, lineItemId, rawName, status, suggestedName, category, model, promptVersion, createdAt, decidedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        receiptId:
+          type: string
+          format: uuid
+        lineItemId:
+          type: string
+          format: uuid
+        rawName:
+          type: string
+          description: The printed text of the line when the model saw it.
+        status:
+          type: string
+          description: The decision on the suggestion; `pending` until the user decides.
+          enum: [pending, accepted, ignored]
+        suggestedName:
+          type: string
+          description: The clean name the model suggested for the line.
+          minLength: 1
+          maxLength: 200
+        category:
+          nullable: true
+          description: The suggested category, or `null` when the model had none.
+          allOf:
+            - $ref: "#/components/schemas/CategoryRef"
+        model:
+          type: string
+          description: The model that produced the suggestion.
+        promptVersion:
+          type: integer
+          description: The prompt the suggestion was produced with.
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the suggestion was accepted or ignored; `null` while it is pending.
+    ReceiptSuggestions:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: The suggestions of the receipt, in line order.
+          items:
+            $ref: "#/components/schemas/LineSuggestion"
     LastPurchase:
       type: object
       description: The most recent purchase of a product.
@@ -3132,7 +3323,7 @@ components:
           minimum: 0
     Settings:
       type: object
-      required: [defaultCurrency, defaultReceiptTitle]
+      required: [defaultCurrency, defaultReceiptTitle, llmSuggestionsEnabled]
       properties:
         defaultCurrency:
           description: Currency given to a receipt that does not state one.
@@ -3144,6 +3335,11 @@ components:
           minLength: 1
           maxLength: 200
           pattern: '^[^\x00]*$'
+        llmSuggestionsEnabled:
+          type: boolean
+          description: |
+            The per-user switch for model suggestions. Suggestions are off
+            for everyone while the instance has no endpoint configured.
     ExtractionProvider:
       type: string
       description: What reads receipt images on this instance.
@@ -3164,6 +3360,17 @@ components:
         pagesLimit:
           type: integer
           minimum: 1
+    SuggestionsStatus:
+      type: object
+      description: What the settings page shows about the suggestion model.
+      required: [available, offline]
+      properties:
+        available:
+          type: boolean
+          description: False when this instance has no suggestion endpoint configured.
+        offline:
+          type: boolean
+          description: True when the newest suggestion job found the endpoint unreachable.
     StorageBackend:
       type: string
       description: Where receipt images are kept.
@@ -3841,6 +4048,7 @@ components:
       value:
         defaultCurrency: TRY
         defaultReceiptTitle: Home shopping
+        llmSuggestionsEnabled: true
     Usage:
       summary: Part of the monthly allowance used
       value:
@@ -3848,6 +4056,57 @@ components:
         period: "2026-11"
         pagesUsed: 137
         pagesLimit: 500
+    ReceiptSuggestions:
+      summary: Two lines a person still has to decide on
+      value:
+        items:
+          - id: 0193a1b2-0000-7000-8000-000000000501
+            receiptId: 0193a1b2-0000-7000-8000-000000000100
+            lineItemId: 0193a1b2-0000-7000-8000-000000000202
+            rawName: EKMEK
+            status: pending
+            suggestedName: Ekmek
+            category:
+              id: 0193a1b2-0000-7000-8000-000000000601
+              name: Bakery
+            model: qwen3.5:4b
+            promptVersion: 1
+            createdAt: "2026-11-02T16:06:01Z"
+            decidedAt: null
+          - id: 0193a1b2-0000-7000-8000-000000000502
+            receiptId: 0193a1b2-0000-7000-8000-000000000100
+            lineItemId: 0193a1b2-0000-7000-8000-000000000203
+            rawName: SUT 1LT TAM YAGLI
+            status: pending
+            suggestedName: Süt 1 l tam yağlı
+            category:
+              id: 0193a1b2-0000-7000-8000-000000000602
+              name: Dairy
+            model: qwen3.5:4b
+            promptVersion: 1
+            createdAt: "2026-11-02T16:06:01Z"
+            decidedAt: null
+    LineSuggestionDecided:
+      summary: The suggestion after the user ignored it
+      value:
+        id: 0193a1b2-0000-7000-8000-000000000501
+        receiptId: 0193a1b2-0000-7000-8000-000000000100
+        lineItemId: 0193a1b2-0000-7000-8000-000000000202
+        rawName: EKMEK
+        status: ignored
+        suggestedName: Ekmek
+        category:
+          id: 0193a1b2-0000-7000-8000-000000000601
+          name: Bakery
+        model: qwen3.5:4b
+        promptVersion: 1
+        createdAt: "2026-11-02T16:06:01Z"
+        decidedAt: "2026-11-02T16:40:12Z"
+    SuggestionsStatus:
+      summary: The endpoint is configured and was reachable
+      value:
+        available: true
+        offline: false
     StorageStatusConnected:
       summary: Drive is connected and backups work
       value:

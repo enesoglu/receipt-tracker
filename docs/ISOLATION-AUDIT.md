@@ -32,6 +32,9 @@ transport test; the E2E test validates its unconfigured and foreign-user errors.
 | createLineItem         | TestReceipts_IsolatesEveryOperation                            | 404                                         |
 | updateLineItem         | TestReceipts_IsolatesEveryOperation                            | 404                                         |
 | deleteLineItem         | TestReceipts_IsolatesEveryOperation                            | 404                                         |
+| getReceiptSuggestions   | TestSuggestions_AreIsolatedToTheirOwner                       | 404                                         |
+| acceptReceiptSuggestion | TestSuggestions_AreIsolatedToTheirOwner                       | 404; a foreign call decides nothing         |
+| ignoreReceiptSuggestion | TestSuggestions_AreIsolatedToTheirOwner                       | 404; a foreign call decides nothing         |
 | listReviewFlags        | TestReview_ListsOnlyOpenOwnedFlagsOldestReceiptFirst           | Own open flags only                         |
 | resolveReviewFlag      | TestReview_RejectsInvalidActionsCorrectionsAndForeignResources | 404; foreign product choice rolls back      |
 | listProducts           | TestProducts_IsolatesReadOperations                            | Empty collection                            |
@@ -50,6 +53,7 @@ transport test; the E2E test validates its unconfigured and foreign-user errors.
 | getMonthBreakdown      | TestGetMonthBreakdown_IsolatesUsers                            | Empty foreign breakdown                     |
 | getSettings            | TestSettings_DefaultsAreIsolatedAndDoNotAlterExistingReceipts  | Own defaults only                           |
 | updateSettings         | TestSettings_DefaultsAreIsolatedAndDoNotAlterExistingReceipts  | Other user's defaults unchanged             |
+| getSuggestionsStatus   | TestSuggestionsStatus_NeverReturnsJobErrors                   | Own newest job only; no error text          |
 | getUsage               | TestGetUsage_ReportsTheInstanceAllowance                       | Intentionally shared provider counter       |
 | getStorageStatus       | TestStorage_AdminConsentIsolationAndHealth                     | Safe shared state; management right differs |
 | connectDrive           | TestStorage_AdminConsentIsolationAndHealth                     | Non-admin gets 404                          |

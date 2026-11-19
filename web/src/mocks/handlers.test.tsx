@@ -238,7 +238,11 @@ describe('MSW API handlers', () => {
 
     const updatedSettings = await unwrap(
       api.PUT('/settings', {
-        body: { defaultCurrency: 'EUR', defaultReceiptTitle: 'Groceries' },
+        body: {
+          defaultCurrency: 'EUR',
+          defaultReceiptTitle: 'Groceries',
+          llmSuggestionsEnabled: true,
+        },
       }),
     );
     expect(updatedSettings.defaultCurrency).toBe('EUR');

@@ -171,6 +171,23 @@ func TestE2E_RealServerWorkflowAndContract(t *testing.T) {
 	s.json(alice, "PUT", linePath+"/"+lineID, line, 200, nil)
 	s.json(alice, "DELETE", linePath+"/"+lineID, nil, 200, nil)
 
+	// The suggestion model is unconfigured here: the reads stay honest, and a
+	// decision on a suggestion that does not exist is still contract-shaped.
+	var suggestions httpapi.ReceiptSuggestions
+	s.json(alice, "GET", "/receipts/"+ids[0]+"/suggestions", nil, 200, &suggestions)
+	if len(suggestions.Items) != 0 {
+		t.Fatalf("unconfigured deployment listed suggestions: %+v", suggestions.Items)
+	}
+	s.json(bob, "GET", "/receipts/"+ids[0]+"/suggestions", nil, 404, nil)
+	var suggestionStatus httpapi.SuggestionsStatus
+	s.json(alice, "GET", "/suggestions/status", nil, 200, &suggestionStatus)
+	if suggestionStatus.Available || suggestionStatus.Offline {
+		t.Fatalf("unconfigured suggestion status = %+v", suggestionStatus)
+	}
+	const unknownSuggestion = "0193a1b2-0000-7000-8000-000000000901"
+	s.json(alice, "POST", "/receipts/"+ids[0]+"/suggestions/"+unknownSuggestion+"/accept", nil, 404, nil)
+	s.json(alice, "POST", "/receipts/"+ids[0]+"/suggestions/"+unknownSuggestion+"/ignore", nil, 404, nil)
+
 	var products httpapi.ProductPage
 	s.json(alice, "GET", "/products", nil, 200, &products)
 	if len(products.Items) < 2 {

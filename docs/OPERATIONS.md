@@ -192,6 +192,21 @@ Validation versions are recorded in the deployment PR. The final
 [resource report](RESOURCES.md) records the capped upload measurements and
 their limits; the [hardening report](HARDENING.md) records the release checks.
 
+## Optional line suggestions
+
+Suggestions come from an optional, self-hosted model: they stay off for
+everyone while `LLM_BASE_URL` is unset, and the production endpoint speaks
+the native Ollama API, so set `LLM_PROTOCOL=ollama` beside `LLM_BASE_URL`
+and `LLM_MODEL`, plus `LLM_API_KEY` only for a protected endpoint. The
+worker's `suggest_lines` job asks the model after matching and stores the
+answers; transient failures retry with backoff, rate limits postpone the
+job, and an unusable answer fails permanently, with the reason in the logs.
+The user accepts or ignores each answer in review, and each user can switch
+suggestions off in settings. `GET /api/v1/suggestions/status` reports
+`available: false` while the endpoint is unconfigured and `offline: true`
+when the newest job could not reach it; job error text never leaves the
+server. Removing `LLM_BASE_URL` turns the feature off again.
+
 ## Health, alerts and logs
 
 Both endpoints are unauthenticated. `/livez` answers 200 whenever HTTP serves
