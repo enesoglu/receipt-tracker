@@ -229,7 +229,7 @@ func (q *Queries) GetReviewProduct(ctx context.Context, arg GetReviewProductPara
 }
 
 const getReviewReceipt = `-- name: GetReviewReceipt :one
-SELECT id, user_id, title, store_id, purchased_on, purchased_time, currency, subtotal, tax_total, total, status, source, failure_reason, created_at, updated_at FROM receipts WHERE user_id = $1 AND id = $2
+SELECT id, user_id, title, store_id, purchased_on, purchased_time, currency, subtotal, tax_total, total, status, source, failure_reason, created_at, updated_at, invoice_number, ettn, seller_tax_number FROM receipts WHERE user_id = $1 AND id = $2
 `
 
 type GetReviewReceiptParams struct {
@@ -256,6 +256,9 @@ func (q *Queries) GetReviewReceipt(ctx context.Context, arg GetReviewReceiptPara
 		&i.FailureReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.InvoiceNumber,
+		&i.Ettn,
+		&i.SellerTaxNumber,
 	)
 	return i, err
 }
@@ -495,7 +498,7 @@ func (q *Queries) LockOwnedSettings(ctx context.Context, userID uuid.UUID) (User
 }
 
 const lockReviewReceipt = `-- name: LockReviewReceipt :one
-SELECT id, user_id, title, store_id, purchased_on, purchased_time, currency, subtotal, tax_total, total, status, source, failure_reason, created_at, updated_at FROM receipts WHERE user_id = $1 AND id = $2 FOR UPDATE
+SELECT id, user_id, title, store_id, purchased_on, purchased_time, currency, subtotal, tax_total, total, status, source, failure_reason, created_at, updated_at, invoice_number, ettn, seller_tax_number FROM receipts WHERE user_id = $1 AND id = $2 FOR UPDATE
 `
 
 type LockReviewReceiptParams struct {
@@ -522,6 +525,9 @@ func (q *Queries) LockReviewReceipt(ctx context.Context, arg LockReviewReceiptPa
 		&i.FailureReason,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.InvoiceNumber,
+		&i.Ettn,
+		&i.SellerTaxNumber,
 	)
 	return i, err
 }
@@ -781,22 +787,27 @@ func (q *Queries) UpdateReviewLine(ctx context.Context, arg UpdateReviewLinePara
 const updateReviewReceipt = `-- name: UpdateReviewReceipt :exec
 UPDATE receipts SET title = $1, store_id = $2, purchased_on = $3,
  purchased_time = $4, currency = $5, subtotal = $6,
- tax_total = $7, total = $8, updated_at = $9
-WHERE user_id = $10 AND id = $11
+ tax_total = $7, total = $8,
+ invoice_number = $9, ettn = $10,
+ seller_tax_number = $11, updated_at = $12
+WHERE user_id = $13 AND id = $14
 `
 
 type UpdateReviewReceiptParams struct {
-	Title         string
-	StoreID       uuid.NullUUID
-	PurchasedOn   *time.Time
-	PurchasedTime pgtype.Time
-	Currency      string
-	Subtotal      decimal.NullDecimal
-	TaxTotal      decimal.NullDecimal
-	Total         decimal.NullDecimal
-	Now           time.Time
-	UserID        uuid.UUID
-	ReceiptID     uuid.UUID
+	Title           string
+	StoreID         uuid.NullUUID
+	PurchasedOn     *time.Time
+	PurchasedTime   pgtype.Time
+	Currency        string
+	Subtotal        decimal.NullDecimal
+	TaxTotal        decimal.NullDecimal
+	Total           decimal.NullDecimal
+	InvoiceNumber   *string
+	Ettn            uuid.NullUUID
+	SellerTaxNumber *string
+	Now             time.Time
+	UserID          uuid.UUID
+	ReceiptID       uuid.UUID
 }
 
 func (q *Queries) UpdateReviewReceipt(ctx context.Context, arg UpdateReviewReceiptParams) error {
@@ -809,6 +820,9 @@ func (q *Queries) UpdateReviewReceipt(ctx context.Context, arg UpdateReviewRecei
 		arg.Subtotal,
 		arg.TaxTotal,
 		arg.Total,
+		arg.InvoiceNumber,
+		arg.Ettn,
+		arg.SellerTaxNumber,
 		arg.Now,
 		arg.UserID,
 		arg.ReceiptID,

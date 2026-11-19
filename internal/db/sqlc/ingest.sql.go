@@ -47,23 +47,29 @@ UPDATE receipts SET
     subtotal = $5,
     tax_total = $6,
     total = $7,
+    invoice_number = $8,
+    ettn = $9,
+    seller_tax_number = $10,
     status = 'needs_review',
     failure_reason = NULL,
-    updated_at = $8
-WHERE user_id = $9 AND id = $10
+    updated_at = $11
+WHERE user_id = $12 AND id = $13
 `
 
 type ApplyExtractedReceiptParams struct {
-	StoreID       uuid.NullUUID
-	PurchasedOn   *time.Time
-	PurchasedTime pgtype.Time
-	Currency      *string
-	Subtotal      decimal.NullDecimal
-	TaxTotal      decimal.NullDecimal
-	Total         decimal.NullDecimal
-	Now           time.Time
-	UserID        uuid.UUID
-	ReceiptID     uuid.UUID
+	StoreID         uuid.NullUUID
+	PurchasedOn     *time.Time
+	PurchasedTime   pgtype.Time
+	Currency        *string
+	Subtotal        decimal.NullDecimal
+	TaxTotal        decimal.NullDecimal
+	Total           decimal.NullDecimal
+	InvoiceNumber   *string
+	Ettn            uuid.NullUUID
+	SellerTaxNumber *string
+	Now             time.Time
+	UserID          uuid.UUID
+	ReceiptID       uuid.UUID
 }
 
 func (q *Queries) ApplyExtractedReceipt(ctx context.Context, arg ApplyExtractedReceiptParams) error {
@@ -75,6 +81,9 @@ func (q *Queries) ApplyExtractedReceipt(ctx context.Context, arg ApplyExtractedR
 		arg.Subtotal,
 		arg.TaxTotal,
 		arg.Total,
+		arg.InvoiceNumber,
+		arg.Ettn,
+		arg.SellerTaxNumber,
 		arg.Now,
 		arg.UserID,
 		arg.ReceiptID,

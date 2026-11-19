@@ -74,7 +74,9 @@ SELECT * FROM receipt_images WHERE user_id = @user_id AND receipt_id = @receipt_
 -- name: UpdateReviewReceipt :exec
 UPDATE receipts SET title = @title, store_id = sqlc.narg(store_id), purchased_on = sqlc.narg(purchased_on),
  purchased_time = sqlc.narg(purchased_time), currency = @currency, subtotal = sqlc.narg(subtotal),
- tax_total = sqlc.narg(tax_total), total = sqlc.narg(total), updated_at = @now
+ tax_total = sqlc.narg(tax_total), total = sqlc.narg(total),
+ invoice_number = sqlc.narg(invoice_number), ettn = sqlc.narg(ettn),
+ seller_tax_number = sqlc.narg(seller_tax_number), updated_at = @now
 WHERE user_id = @user_id AND id = @receipt_id;
 
 -- name: UpdateReviewLine :one

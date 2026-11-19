@@ -40,7 +40,10 @@ func (s *Service) applyResult(ctx context.Context, q *unit, userID, receiptID uu
 		return err
 	}
 	now := s.now().UTC()
-	p := sqlc.ApplyExtractedReceiptParams{UserID: userID, ReceiptID: receiptID, Subtotal: amount(result.Subtotal, 2), TaxTotal: amount(result.Tax, 2), Total: amount(result.Total, 2), Now: now}
+	p := sqlc.ApplyExtractedReceiptParams{UserID: userID, ReceiptID: receiptID, Subtotal: amount(result.Subtotal, 2), TaxTotal: amount(result.Tax, 2), Total: amount(result.Total, 2), InvoiceNumber: text(result.InvoiceNumber), SellerTaxNumber: text(result.SellerTaxNumber), Now: now}
+	if result.Ettn.Found {
+		p.Ettn = uuid.NullUUID{UUID: result.Ettn.Value, Valid: true}
+	}
 	if name := text(result.StoreName); name != nil {
 		key := matching.Normalize(*name).Key
 		if key != "" {
