@@ -198,6 +198,14 @@ per receipt later without a schema change.
    either printed spelling, and an unreadable value stays null rather
    than being guessed. The raw is stored as received, so a reprocess
    reads the identity again the same way.
+   On receipt detail, the stored seller VKN is matched against the static
+   `internal/chains` registry and the chain's e-archive lookup values are
+   derived server-side into a `chain` object on the `Receipt` response:
+   `belgeno` prefers the invoice number and falls back to the canonical
+   ETTN, `tarih` is `DD-MM-YYYY`, and `tutar` passes the canonical total
+   string through unchanged. The portal endpoint and verification flag stay
+   server-side; the client opens only the landing page and copies values —
+   no automated lookup, captcha solving, or client money/date formatting.
 6. The UI polls `GET /api/v1/pipeline` every 2 s while any receipt is
    `queued`, `extracting` or `matching`: with `ids` for the receipts an
    upload produced, without ids for everything of this user still

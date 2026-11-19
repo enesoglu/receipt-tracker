@@ -193,16 +193,60 @@ func decodeReceipt(t *testing.T, r *httptest.ResponseRecorder, status int) httpa
 	return receipt
 }
 
+func assertBimChain(t *testing.T, chain *httpapi.ReceiptChain) {
+	t.Helper()
+	if chain == nil {
+		t.Fatal("chain is nil")
+	}
+	if chain.Id != "bim" || chain.Name != "BİM" || chain.PortalUrl != "https://arsiv.bim.com.tr/" || chain.Captcha != httpapi.ReceiptChainCaptchaNone {
+		t.Fatalf("chain identity=%+v", chain)
+	}
+	want := []struct{ name, description, value string }{
+		{"belgeno", "Invoice number, ETTN or barcode/reference", "BIM2026001234"},
+		{"tarih", "Invoice date", "05-03-2026"},
+		{"tutar", "Total paid", "129.40"},
+	}
+	if len(chain.Fields) != len(want) {
+		t.Fatalf("fields=%+v, want %d", chain.Fields, len(want))
+	}
+	for i, field := range want {
+		got := chain.Fields[i]
+		if got.Name != field.name || got.Description != field.description || got.Value == nil || *got.Value != field.value {
+			t.Errorf("field %d=%+v, want %+v", i, got, field)
+		}
+	}
+}
+
+func TestReceipts_ChainFollowsSellerTaxNumber(t *testing.T) {
+	s := newReceiptServer(t)
+	id := s.seed(s.alice, cleanReceipt())
+	base := "/receipts/" + id.String()
+	updated := decodeReceipt(t, s.call(s.alice, "PUT", base, `{"title":"Chain receipt","currency":"TRY","purchasedOn":"2026-03-05","total":"129.40","invoiceNumber":"BIM2026001234","sellerTaxNumber":"1750051846"}`), 200)
+	assertBimChain(t, updated.Chain)
+
+	got := decodeReceipt(t, s.call(s.alice, "GET", base, ""), 200)
+	assertBimChain(t, got.Chain)
+
+	changed := decodeReceipt(t, s.call(s.alice, "PUT", base, `{"title":"Chain receipt","currency":"TRY","purchasedOn":"2026-03-05","total":"129.40","invoiceNumber":"BIM2026001234","sellerTaxNumber":"9999999999"}`), 200)
+	if changed.Chain != nil {
+		t.Errorf("chain for an unknown VKN=%+v, want nil", changed.Chain)
+	}
+}
+
 func TestReceipts_IsolatesEveryOperation(t *testing.T) {
 	s := newReceiptServer(t)
 	id := s.seed(s.alice, cleanReceipt())
+	base := "/receipts/" + id.String()
+	// Make the receipt chain-bearing as the owner before the foreign-user
+	// matrix, so every 404 below covers a receipt that does carry chain data.
+	decodeReceipt(t, s.call(s.alice, "PUT", base, `{"title":"Chain receipt","currency":"TRY","purchasedOn":"2026-03-05","total":"129.40","invoiceNumber":"BIM2026001234","sellerTaxNumber":"1750051846"}`), 200)
+	assertBimChain(t, decodeReceipt(t, s.call(s.alice, "GET", base, ""), 200).Chain)
 	imageID := s.image(id, true)
 	d, err := s.service.Get(t.Context(), s.alice, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lineID := d.Lines[0].Item.ID
-	base := "/receipts/" + id.String()
 	for _, tc := range []struct{ method, path, body string }{
 		{"GET", base, ""}, {"PUT", base, `{"title":"Changed","currency":"TRY","total":"10.00","invoiceNumber":"T112026000000000","ettn":"1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d","sellerTaxNumber":"1234567890"}`}, {"DELETE", base, ""}, {"POST", base + "/reprocess", ""}, {"GET", base + "/images/" + imageID.String(), ""}, {"GET", base + "/images/" + imageID.String() + "?variant=original", ""}, {"POST", base + "/line-items", `{"name":"Milk","lineTotal":"3.00"}`}, {"PUT", base + "/line-items/" + lineID.String(), `{"name":"Milk","lineTotal":"3.00"}`}, {"DELETE", base + "/line-items/" + lineID.String(), ""},
 	} {

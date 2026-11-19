@@ -321,6 +321,8 @@ paths:
               examples:
                 receipt:
                   $ref: "#/components/examples/Receipt"
+                receipt-with-chain:
+                  $ref: "#/components/examples/ReceiptWithChain"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1845,6 +1847,48 @@ components:
           type: string
           format: date-time
           description: When the receipt was uploaded.
+    ReceiptChain:
+      type: object
+      description: A chain's e-archive lookup, ready to paste into its portal.
+      required: [id, name, portalUrl, captcha, fields]
+      properties:
+        id:
+          type: string
+          description: Stable registry key of the chain.
+        name:
+          type: string
+          description: Display name of the chain.
+        portalUrl:
+          type: string
+          format: uri
+          description: The portal's landing page; the only URL the client opens.
+        captcha:
+          type: string
+          enum: [none, image, turnstile]
+          description: The challenge the portal puts in front of a lookup; the user completes it themselves.
+        fields:
+          type: array
+          description: The portal's lookup fields in form order, without the captcha. Empty when the portal's fields are not known.
+          items:
+            $ref: "#/components/schemas/ReceiptChainField"
+    ReceiptChainField:
+      type: object
+      description: One lookup field and the receipt's value for it.
+      required: [name, description, value]
+      properties:
+        name:
+          type: string
+          description: The wire name the portal's form carries.
+        description:
+          type: string
+          description: What the user enters into that field.
+        value:
+          type: string
+          nullable: true
+          description: >
+            The receipt's value in the portal's wire format — the invoice
+            number or canonical ETTN, the date as DD-MM-YYYY, the total with
+            a dot decimal — or null when the receipt does not carry it.
     Receipt:
       description: A receipt with everything on it.
       allOf:
@@ -1857,11 +1901,19 @@ components:
             - invoiceNumber
             - ettn
             - sellerTaxNumber
+            - chain
             - updatedAt
             - lineItems
             - flags
             - images
           properties:
+            chain:
+              nullable: true
+              description: >
+                The chain the seller tax number resolves to, with the
+                portal's lookup values ready to paste, or null.
+              allOf:
+                - $ref: "#/components/schemas/ReceiptChain"
             purchasedTime:
               nullable: true
               description: The time printed on the receipt, or `null`.
@@ -3223,6 +3275,7 @@ components:
         invoiceNumber: T112026000000000
         ettn: "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d"
         sellerTaxNumber: "1234567890"
+        chain: null
         status: needs_review
         failureReason: null
         source: web
@@ -3329,6 +3382,47 @@ components:
             original:
               contentType: image/heic
               sizeBytes: 2516582
+    ReceiptWithChain:
+      summary: A chain receipt with lookup values ready to paste
+      value:
+        id: 0193a1b2-0000-7000-8000-000000000105
+        title: Groceries
+        store:
+          id: 0193a1b2-0000-7000-8000-000000000011
+          name: BİM
+        purchasedOn: "2026-03-05"
+        purchasedTime: "12:15"
+        currency: TRY
+        subtotal: null
+        taxTotal: null
+        total: "129.40"
+        invoiceNumber: BIM2026001234
+        ettn: null
+        sellerTaxNumber: "1750051846"
+        chain:
+          id: bim
+          name: BİM
+          portalUrl: "https://arsiv.bim.com.tr/"
+          captcha: none
+          fields:
+            - name: belgeno
+              description: Invoice number, ETTN or barcode/reference
+              value: BIM2026001234
+            - name: tarih
+              description: Invoice date
+              value: "05-03-2026"
+            - name: tutar
+              description: Total paid
+              value: "129.40"
+        status: ready
+        failureReason: null
+        source: web
+        openFlagCount: 0
+        createdAt: "2026-03-05T12:30:00Z"
+        updatedAt: "2026-03-05T12:31:00Z"
+        lineItems: []
+        flags: []
+        images: []
     ReceiptUpdate:
       summary: Correct the store, the date and the printed identity
       value:
