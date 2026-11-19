@@ -68,6 +68,17 @@ func (f *authFixture) request(t *testing.T, method, target string, cookies ...*h
 	return response
 }
 
+func (f *authFixture) requestWithHeaders(t *testing.T, method, target string, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequestWithContext(t.Context(), method, target, nil)
+	for name, value := range headers {
+		request.Header.Set(name, value)
+	}
+	response := httptest.NewRecorder()
+	f.server.Handler().ServeHTTP(response, request)
+	return response
+}
+
 func (f *authFixture) start(t *testing.T, mutate func(*tokenCase)) (string, string, *http.Cookie) {
 	t.Helper()
 	response := f.request(t, http.MethodGet, "/auth/google/login")
@@ -387,6 +398,49 @@ func TestLogin_DevAdmissionAndSameSubjectProvisionOnlyOnce(t *testing.T) {
 	_, err := f.users.DevLogin(t.Context())
 	if !errors.Is(err, apperr.NotFound) {
 		t.Errorf("disabled dev login: %v", err)
+	}
+}
+
+func TestLogin_RejectsCrossSiteSignInNavigations(t *testing.T) {
+	f := newAuthFixture(t)
+	tests := []struct {
+		name    string
+		target  string
+		headers map[string]string
+		allowed bool
+	}{
+		{name: "same-origin google login", target: "/auth/google/login", headers: map[string]string{"Sec-Fetch-Site": "same-origin"}, allowed: true},
+		{name: "cross-site google login", target: "/auth/google/login", headers: map[string]string{"Sec-Fetch-Site": "cross-site"}},
+		{name: "same-site google login", target: "/auth/google/login", headers: map[string]string{"Sec-Fetch-Site": "same-site"}},
+		{name: "foreign origin google login", target: "/auth/google/login", headers: map[string]string{"Origin": "https://evil.example"}},
+		{name: "own origin google login", target: "/auth/google/login", headers: map[string]string{"Origin": "http://example.com"}, allowed: true},
+		{name: "same-origin dev login", target: "/auth/dev/login", headers: map[string]string{"Sec-Fetch-Site": "same-origin"}, allowed: true},
+		{name: "cross-site dev login", target: "/auth/dev/login", headers: map[string]string{"Sec-Fetch-Site": "cross-site"}},
+		{name: "foreign origin dev login", target: "/auth/dev/login", headers: map[string]string{"Origin": "https://evil.example"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response := f.requestWithHeaders(t, http.MethodGet, tt.target, tt.headers)
+			if tt.allowed {
+				if response.Code != http.StatusFound && response.Code != http.StatusSeeOther {
+					t.Fatalf("got %d, want a redirect", response.Code)
+				}
+				return
+			}
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("got %d, want 403", response.Code)
+			}
+			if cookieNamed(response, "session") != nil {
+				t.Fatal("rejected sign-in still set a session")
+			}
+			var problem httpapi.Problem
+			if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+				t.Fatal(err)
+			}
+			if problem.Code == nil || *problem.Code != "cross_origin" {
+				t.Errorf("problem code = %v, want cross_origin", problem.Code)
+			}
+		})
 	}
 }
 
