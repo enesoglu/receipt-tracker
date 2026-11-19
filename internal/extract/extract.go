@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -55,6 +56,14 @@ type Result struct {
 	Tax      Field[decimal.Decimal] `json:"tax"`
 	Total    Field[decimal.Decimal] `json:"total"`
 	Lines    []Line                 `json:"lines"`
+	// InvoiceNumber is the e-archive invoice number printed as FATURA NO
+	// or BELGE NO, on receipts that carry one.
+	InvoiceNumber Field[string] `json:"invoiceNumber"`
+	// Ettn is the e-archive invoice UUID printed next to the ETTN label.
+	Ettn Field[uuid.UUID] `json:"ettn"`
+	// SellerTaxNumber is the seller's VKN, a tax number whose check digit
+	// holds.
+	SellerTaxNumber Field[string] `json:"sellerTaxNumber"`
 }
 
 // Line is one extracted line item. A negative Total is a discount.
