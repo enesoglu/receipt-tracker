@@ -76,7 +76,8 @@ type pricedLine struct {
 //   - a weighed line (a mass or volume unit): the line total divided by
 //     the quantity in kilograms or litres;
 //   - any other line: the line total divided by the quantity (1 when
-//     absent) times the size printed in the line's name.
+//     absent) times the size printed in the line's name, multiplied by the
+//     item count when the name is a multipack such as "6X200ML".
 //
 // A size or unit of the other dimension, a line without a usable size and
 // a product with basis item give no price. Without a line total, the unit
@@ -101,15 +102,15 @@ func basisPrice(basis string, l pricedLine) decimal.NullDecimal {
 		}
 		amount = l.quantity.Decimal.Mul(perUnit)
 	} else {
-		size := matching.Normalize(l.name).Size
-		if size == nil {
+		name := matching.Normalize(l.name)
+		if name.Size == nil {
 			return decimal.NullDecimal{}
 		}
-		dim, each, ok := inBasisUnits(size.Value, size.Unit)
+		dim, each, ok := inBasisUnits(name.Size.Value, name.Size.Unit)
 		if !ok || dim != want {
 			return decimal.NullDecimal{}
 		}
-		amount = count.Mul(each)
+		amount = count.Mul(each).Mul(name.PackCount)
 	}
 	if !amount.IsPositive() {
 		return decimal.NullDecimal{}

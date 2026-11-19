@@ -18,6 +18,10 @@ type Name struct {
 	Key string
 	// Size is the amount printed in the name, or nil when there is none.
 	Size *Size
+	// PackCount is the number of items in a printed multipack such as
+	// "6X200ML": six items of Size. It is 1 for a single item. Size and Key
+	// stay those of one item, so matching and size rules are unchanged.
+	PackCount decimal.Decimal
 }
 
 // Size is an amount printed in a product name, such as "1 l" or "500 g".
@@ -68,6 +72,7 @@ func Normalize(raw string) Name {
 	tokens := tokenize(fold(raw))
 	words := make([]string, 0, len(tokens))
 	var measure, count *Size
+	pack := decimal.NewFromInt(1)
 	for i := 0; i < len(tokens); i++ {
 		if size, ok := sizeAt(tokens, i); ok {
 			base, amount := size.inBaseUnit()
@@ -78,6 +83,7 @@ func Normalize(raw string) Name {
 					count = &size
 				case size.Unit != unitCount && measure == nil:
 					measure = &size
+					pack = multipackCount(tokens, i)
 				}
 			}
 			i++ // the unit token is consumed with its number
@@ -91,7 +97,19 @@ func Normalize(raw string) Name {
 	if size == nil {
 		size = count
 	}
-	return Name{Tokens: words, Key: strings.Join(words, " "), Size: size}
+	return Name{Tokens: words, Key: strings.Join(words, " "), Size: size, PackCount: pack}
+}
+
+// multipackCount reads the multiplier of a printed multipack. A number before
+// an "x" and a size ("6X200ML") counts the items in the pack; the Size kept in
+// Name is the size of one item. Anything else is a single item.
+func multipackCount(tokens []token, sizeIndex int) decimal.Decimal {
+	if sizeIndex >= 2 && tokens[sizeIndex-1].text == "x" && tokens[sizeIndex-2].number {
+		if count, err := decimal.NewFromString(tokens[sizeIndex-2].text); err == nil && count.IsPositive() {
+			return count
+		}
+	}
+	return decimal.NewFromInt(1)
 }
 
 // fold applies steps 1 to 3 of Normalize.
