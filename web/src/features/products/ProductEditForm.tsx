@@ -70,6 +70,7 @@ export function ProductEditForm({
         categoryId: categoryId || null,
         sizeValue: trimmedSizeValue ? normaliseDecimal(trimmedSizeValue) : null,
         sizeUnit: trimmedSizeUnit || null,
+        priceBasis: product.priceBasis,
       });
       onSaveNotice('Product details saved.');
     } catch (error) {
