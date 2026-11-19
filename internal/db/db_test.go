@@ -35,7 +35,8 @@ func applicationTables() []string {
 		"line_suggestions", "match_rejections", "oauth_clients", "oauth_codes", "oauth_tokens",
 		"product_aliases", "product_codes", "products", "provider_usage",
 		"receipt_images", "receipts", "review_flags", "sessions",
-		"storage_connections", "stores", "user_settings", "users",
+		"storage_connections", "store_aliases", "stores", "user_settings",
+		"users",
 	}
 }
 
@@ -44,7 +45,7 @@ func userOwnedTables() []string {
 	return []string{
 		"audit_events", "categories", "extractions", "line_items",
 		"line_suggestions", "match_rejections", "product_aliases", "product_codes", "products",
-		"receipt_images", "receipts", "review_flags", "stores", "user_settings",
+		"receipt_images", "receipts", "review_flags", "store_aliases", "stores", "user_settings",
 	}
 }
 
@@ -176,6 +177,11 @@ func TestSchema_RejectsReferencesToAnotherUsersRows(t *testing.T) {
 			name: "alias at another user's store",
 			sql:  `INSERT INTO product_aliases (user_id, product_id, raw_name, normalized_name, store_id) VALUES ($1, $2, 'SUT', 'sut', $3)`,
 			args: []any{bob.user, bob.product, alice.store},
+		},
+		{
+			name: "store alias at another user's store",
+			sql:  `INSERT INTO store_aliases (user_id, store_id, raw_name, normalized_name) VALUES ($1, $2, 'Branch Market', 'branch market')`,
+			args: []any{bob.user, alice.store},
 		},
 		{
 			name: "code of another user's product",
@@ -475,6 +481,10 @@ func newFixture(t *testing.T, pool *pgxpool.Pool, label string) fixture {
 		"sub-"+label, label+"@example.com", label)
 	insert(new(uuid.UUID), `INSERT INTO user_settings (user_id) VALUES ($1) RETURNING user_id`, f.user)
 	insert(&f.store, `INSERT INTO stores (user_id, name, normalized_name) VALUES ($1, 'Example Market', 'example market') RETURNING id`, f.user)
+	// The store's own name is its first alias, as migration 00180 seeds
+	// it for stores that predate store resolution.
+	insert(new(uuid.UUID), `INSERT INTO store_aliases (user_id, store_id, raw_name, normalized_name)
+		VALUES ($1, $2, 'Example Market', 'example market') RETURNING id`, f.user, f.store)
 	insert(&f.category, `INSERT INTO categories (user_id, name) VALUES ($1, 'Dairy') RETURNING id`, f.user)
 	insert(&f.receipt, `INSERT INTO receipts (user_id, title, currency, store_id, purchased_on, total, status)
 		VALUES ($1, 'Home shopping', 'TRY', $2, '2026-11-02', 84.50, 'needs_review') RETURNING id`, f.user, f.store)

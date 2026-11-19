@@ -288,7 +288,7 @@ func (q *Queries) GetOwnedSuggestion(ctx context.Context, arg GetOwnedSuggestion
 }
 
 const getReceiptStore = `-- name: GetReceiptStore :one
-SELECT id, user_id, name, normalized_name, created_at, updated_at FROM stores WHERE user_id = $1 AND id = $2
+SELECT id, user_id, name, normalized_name, created_at, updated_at, vkn FROM stores WHERE user_id = $1 AND id = $2
 `
 
 type GetReceiptStoreParams struct {
@@ -306,6 +306,7 @@ func (q *Queries) GetReceiptStore(ctx context.Context, arg GetReceiptStoreParams
 		&i.NormalizedName,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Vkn,
 	)
 	return i, err
 }
@@ -337,7 +338,7 @@ func (q *Queries) GetReviewProduct(ctx context.Context, arg GetReviewProductPara
 }
 
 const getReviewReceipt = `-- name: GetReviewReceipt :one
-SELECT id, user_id, title, store_id, purchased_on, purchased_time, currency, subtotal, tax_total, total, status, source, failure_reason, created_at, updated_at, invoice_number, ettn, seller_tax_number FROM receipts WHERE user_id = $1 AND id = $2
+SELECT id, user_id, title, store_id, purchased_on, purchased_time, currency, subtotal, tax_total, total, status, source, failure_reason, created_at, updated_at, invoice_number, ettn, seller_tax_number, branch_name FROM receipts WHERE user_id = $1 AND id = $2
 `
 
 type GetReviewReceiptParams struct {
@@ -367,6 +368,7 @@ func (q *Queries) GetReviewReceipt(ctx context.Context, arg GetReviewReceiptPara
 		&i.InvoiceNumber,
 		&i.Ettn,
 		&i.SellerTaxNumber,
+		&i.BranchName,
 	)
 	return i, err
 }
@@ -699,7 +701,7 @@ func (q *Queries) LockOwnedSettings(ctx context.Context, userID uuid.UUID) (User
 }
 
 const lockReviewReceipt = `-- name: LockReviewReceipt :one
-SELECT id, user_id, title, store_id, purchased_on, purchased_time, currency, subtotal, tax_total, total, status, source, failure_reason, created_at, updated_at, invoice_number, ettn, seller_tax_number FROM receipts WHERE user_id = $1 AND id = $2 FOR UPDATE
+SELECT id, user_id, title, store_id, purchased_on, purchased_time, currency, subtotal, tax_total, total, status, source, failure_reason, created_at, updated_at, invoice_number, ettn, seller_tax_number, branch_name FROM receipts WHERE user_id = $1 AND id = $2 FOR UPDATE
 `
 
 type LockReviewReceiptParams struct {
@@ -729,6 +731,7 @@ func (q *Queries) LockReviewReceipt(ctx context.Context, arg LockReviewReceiptPa
 		&i.InvoiceNumber,
 		&i.Ettn,
 		&i.SellerTaxNumber,
+		&i.BranchName,
 	)
 	return i, err
 }

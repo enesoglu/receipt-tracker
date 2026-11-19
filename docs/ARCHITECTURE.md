@@ -116,9 +116,10 @@ The [isolation audit](ISOLATION-AUDIT.md) records these boundaries and their tes
 | `users` | `google_sub` (unique), `email`, `name`, `is_admin` |
 | `user_settings` | `default_currency` (default `TRY`), `default_receipt_title` (default `Home shopping`), `llm_suggestions_enabled` (default on; an opt-out, §5.8) |
 | `sessions` | scs session store |
-| `stores` | `name`, `normalized_name` (unique per user) |
+| `stores` | `name`, `normalized_name` (unique per user), `vkn` (the chain's registry tax number, unique per user, machine-assigned) |
+| `store_aliases` | `store_id`, `raw_name`, `normalized_name` (unique per store), `seen_count`, `last_seen_at`: the raw names a store's receipts printed, so OCR noise keeps matching; GiST trigram index on (`user_id`, `normalized_name`) for the nearest-name step of store resolution; seeded from existing store names |
 | `categories` | `name` (unique per user); seeded defaults per new user |
-| `receipts` | `title`, `store_id`, `purchased_on` (date), `purchased_time`, `currency`, `subtotal`, `tax_total`, `total`, `status`, `source` (`web`, later others), `failure_reason`, `invoice_number` (e-archive `FATURA NO` / `BELGE NO`), `ettn` (uuid), `seller_tax_number` (VKN, 10 digits) |
+| `receipts` | `title`, `store_id`, `purchased_on` (date), `purchased_time`, `currency`, `subtotal`, `tax_total`, `total`, `status`, `source` (`web`, later others), `failure_reason`, `invoice_number` (e-archive `FATURA NO` / `BELGE NO`), `ettn` (uuid), `seller_tax_number` (VKN, 10 digits), `branch_name` (the printed branch; data on the receipt, never a store) |
 | `receipt_images` | `receipt_id`, `position`, `sha256` of the uploaded bytes (unique per user), `content_type`, `size_bytes`, `storage_backend`, `storage_ref` (the image the pipeline and UI use); `original_ref`, `original_content_type`, `original_size_bytes` (set only when the upload was converted) |
 | `extractions` | `receipt_id`, `provider`, `model`, `raw` (jsonb), `created_at`; lets matching be re-run without spending quota |
 | `line_items` | `receipt_id`, `position`, `raw_name`, `name`, `quantity`, `quantity_unit`, `unit_price`, `line_total`, `product_code`, `confidence`, `product_id`, `match_status`, `match_score`, `match_method` |

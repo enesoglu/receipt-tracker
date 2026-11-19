@@ -194,6 +194,7 @@ type Receipt struct {
 	InvoiceNumber   *string
 	Ettn            uuid.NullUUID
 	SellerTaxNumber *string
+	BranchName      *string
 }
 
 type ReceiptImage struct {
@@ -249,6 +250,18 @@ type Store struct {
 	NormalizedName string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	Vkn            *string
+}
+
+type StoreAlias struct {
+	ID             uuid.UUID
+	UserID         uuid.UUID
+	StoreID        uuid.UUID
+	RawName        string
+	NormalizedName string
+	SeenCount      int32
+	LastSeenAt     time.Time
+	CreatedAt      time.Time
 }
 
 type User struct {
