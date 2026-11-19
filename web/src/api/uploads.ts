@@ -1,41 +1,14 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, ApiError, unwrap } from './client';
-import { queryKeys } from './query-keys';
+import { ApiError } from './client';
 import type { components } from './schema.gen';
 
 export type UploadResponse = components['schemas']['UploadResponse'];
 export type UploadResult = components['schemas']['UploadResult'];
 
-/** Uploads up to 20 receipt photos as multipart/form-data. */
-export function useUploadReceipts() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (files: readonly File[]) =>
-      unwrap(
-        api.POST('/receipts', {
-          body: { files: files as unknown as string[] },
-          bodySerializer: () => {
-            const form = new FormData();
-            for (const file of files) {
-              form.append('files', file);
-            }
-            return form;
-          },
-        }),
-      ),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.receipts.all });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.settings.usage,
-      });
-    },
-  });
-}
-
 /*
- * One file per request. The queue sends each file on its own so progress
- * and failure are per file; the batch mutation above is the fallback for
- * callers that do not track progress.
+ * One file per request: each photo is sent on its own so progress and
+ * failure are per file. The senders below stay typed against the same
+ * contract operation (same path, same `files` field, same response
+ * schema) and live in `api/` so no component builds a request itself.
  */
 
 /** The upload operation of the contract, with the versioned base path. */

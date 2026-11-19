@@ -12,12 +12,12 @@ import { Link } from 'react-router';
 import { getErrorMessage } from '../../api/errors';
 import { queryKeys } from '../../api/query-keys';
 import {
-  useReceipts,
-  type ReceiptPage,
-  type ReceiptSummary,
-} from '../../api/receipts';
+  usePipeline,
+  type PipelineItem,
+  type PipelinePage,
+} from '../../api/pipeline';
 import { useUsage } from '../../api/settings';
-import { useUploadReceipts } from '../../api/uploads';
+import type { UploadItem } from '../../api/upload-queue';
 import { Badge, type BadgeVariant } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -32,131 +32,210 @@ import {
   UPLOAD_FILE_ACCEPT,
   validateUploadFile,
 } from './upload-validation';
+import { useUploadQueue, type UploadProgress } from './use-upload-queue';
 
 const POLL_INTERVAL_MS = 2000;
 
-type DisplayState =
-  | 'uploading'
-  | 'queued'
-  | 'processing'
-  | 'needs_review'
-  | 'ready'
-  | 'failed'
-  | 'waiting_quota'
-  | 'duplicate';
+/** One row of the upload list: either a queued file or a rejected selection. */
+interface UploadRow {
+  key: string;
+  fileName: string;
+  sizeBytes: number;
+  label: string;
+  variant: BadgeVariant;
+  detail: string | null;
+  /** Upload percent while the file is being sent; null otherwise. */
+  percent: number | null;
+  receiptId: string | null;
+  linkLabel: string | null;
+}
 
-interface UploadBatchItem {
+/** A file rejected client-side; it never enters the durable queue. */
+interface RejectedFile {
   localId: string;
   fileName: string;
   sizeBytes: number;
-  phase: 'uploading' | 'created' | 'duplicate' | 'rejected';
-  receiptId: string | null;
-  errorMessage: string | null;
+  errorMessage: string;
 }
 
-interface FailedBatch {
-  files: File[];
-  localIds: string[];
+function percentOf(progress: UploadProgress | undefined): number | null {
+  if (!progress || progress.total <= 0) return null;
+  return Math.min(100, Math.round((progress.uploaded / progress.total) * 100));
 }
 
-function getStatePresentation(state: DisplayState): {
-  label: string;
-  variant: BadgeVariant;
-} {
-  switch (state) {
-    case 'uploading':
-      return { label: 'Uploading', variant: 'accent' };
-    case 'queued':
-      return { label: 'Queued', variant: 'neutral' };
-    case 'processing':
-      return { label: 'Processing', variant: 'accent' };
-    case 'needs_review':
-      return { label: 'Needs review', variant: 'warning' };
-    case 'ready':
-      return { label: 'Ready', variant: 'success' };
-    case 'failed':
-      return { label: 'Failed', variant: 'danger' };
-    case 'waiting_quota':
-      return { label: 'Waiting for quota', variant: 'warning' };
-    case 'duplicate':
-      return { label: 'Duplicate', variant: 'neutral' };
-  }
-}
-
-function resolveItemState(
-  item: UploadBatchItem,
-  summaries: ReadonlyMap<string, ReceiptSummary>,
-): {
-  state: DisplayState;
-  detail: string | null;
-} {
-  if (item.phase === 'uploading') {
-    return { state: 'uploading', detail: 'Sending photo to the server...' };
-  }
-  if (item.phase === 'duplicate') {
+/** Merges one queued item with its server-side pipeline stage. */
+function describeQueueItem(
+  item: UploadItem,
+  stages: ReadonlyMap<string, PipelineItem>,
+  progress: ReadonlyMap<string, UploadProgress>,
+): UploadRow {
+  const base = {
+    key: item.id,
+    fileName: item.fileName,
+    sizeBytes: item.sizeBytes,
+  };
+  if (item.state === 'uploading') {
+    const sent = progress.get(item.id);
+    const percent = percentOf(sent);
     return {
-      state: 'duplicate',
-      detail: 'Already uploaded earlier.',
+      ...base,
+      label: 'Uploading',
+      variant: 'accent',
+      detail: sent
+        ? `Sending photo to the server (${percent}% of ${formatByteSize(sent.total)})...`
+        : 'Sending photo to the server...',
+      percent,
+      receiptId: null,
+      linkLabel: null,
     };
   }
-  if (item.phase === 'rejected') {
+  if (item.state === 'pending') {
     return {
-      state: 'failed',
-      detail: item.errorMessage ?? 'Upload failed.',
+      ...base,
+      label: 'Waiting',
+      variant: 'neutral',
+      detail: item.error ?? 'Waiting for its turn to upload.',
+      percent: null,
+      receiptId: null,
+      linkLabel: null,
     };
   }
-
-  const summary = item.receiptId ? summaries.get(item.receiptId) : undefined;
-  const status = summary?.status ?? 'queued';
-  switch (status) {
+  if (item.state === 'needs_signin') {
+    return {
+      ...base,
+      label: 'Sign in required',
+      variant: 'warning',
+      detail:
+        item.error ??
+        'Your session expired; sign in again to finish this upload.',
+      percent: null,
+      receiptId: null,
+      linkLabel: null,
+    };
+  }
+  if (item.state === 'failed') {
+    return {
+      ...base,
+      label: 'Failed',
+      variant: 'danger',
+      detail: item.error ?? 'The photo could not be uploaded.',
+      percent: null,
+      receiptId: null,
+      linkLabel: null,
+    };
+  }
+  // Done: the file reached the server; show where its receipt stands.
+  if (item.outcome === 'duplicate' && item.receiptId) {
+    return {
+      ...base,
+      label: 'Duplicate',
+      variant: 'neutral',
+      detail: 'These photo bytes were already uploaded earlier.',
+      percent: null,
+      receiptId: item.receiptId,
+      linkLabel: 'View existing receipt',
+    };
+  }
+  const stage = item.receiptId ? stages.get(item.receiptId) : undefined;
+  switch (stage?.stage ?? 'queued') {
     case 'queued':
-      return { state: 'queued', detail: 'Waiting for extraction...' };
-    case 'processing':
-      return { state: 'processing', detail: 'Extracting receipt fields...' };
-    case 'needs_review':
       return {
-        state: 'needs_review',
-        detail:
-          summary && summary.openFlagCount > 0
-            ? `${summary.openFlagCount} item${summary.openFlagCount === 1 ? '' : 's'} flagged for review.`
-            : 'Needs review before finalizing.',
+        ...base,
+        label: 'Queued',
+        variant: 'neutral',
+        detail: stage?.queuePosition
+          ? `Position ${stage.queuePosition} in the extraction queue.`
+          : 'Waiting for extraction.',
+        percent: null,
+        receiptId: item.receiptId,
+        linkLabel: null,
       };
-    case 'ready':
-      return { state: 'ready', detail: 'Extraction complete.' };
+    case 'extracting':
+      return {
+        ...base,
+        label: 'Extracting',
+        variant: 'accent',
+        detail: 'Reading the receipt image.',
+        percent: null,
+        receiptId: item.receiptId,
+        linkLabel: null,
+      };
+    case 'matching':
+      return {
+        ...base,
+        label: 'Matching',
+        variant: 'accent',
+        detail: 'Applying the extracted fields.',
+        percent: null,
+        receiptId: item.receiptId,
+        linkLabel: null,
+      };
     case 'waiting_quota':
       return {
-        state: 'waiting_quota',
+        ...base,
+        label: 'Waiting for quota',
+        variant: 'warning',
         detail: 'Monthly extraction allowance reached; queued for next month.',
+        percent: null,
+        receiptId: item.receiptId,
+        linkLabel: null,
+      };
+    case 'needs_review':
+      return {
+        ...base,
+        label: 'Needs review',
+        variant: 'warning',
+        detail: 'Some items are flagged for review.',
+        percent: null,
+        receiptId: item.receiptId,
+        linkLabel: 'View receipt',
+      };
+    case 'ready':
+      return {
+        ...base,
+        label: 'Ready',
+        variant: 'success',
+        detail: 'Extraction complete.',
+        percent: null,
+        receiptId: item.receiptId,
+        linkLabel: 'View receipt',
       };
     case 'failed':
       return {
-        state: 'failed',
-        detail: summary?.failureReason ?? 'Extraction failed.',
+        ...base,
+        label: 'Failed',
+        variant: 'danger',
+        detail: stage?.failureReason ?? 'Extraction failed.',
+        percent: null,
+        receiptId: item.receiptId,
+        linkLabel: null,
       };
   }
 }
 
-/** Batch receipt photo upload screen with client validation, usage meter, and status polling. */
+/** Receipt photo upload screen: a durable queue with per-file progress and
+ * server-derived pipeline stages, polled every 2 s while anything runs. */
 export function UploadPage() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nextLocalSeqRef = useRef(1);
-  const prevHasActiveRef = useRef(false);
+  const prevStagesActiveRef = useRef(false);
 
   const [isDragActive, setIsDragActive] = useState(false);
   const [batchLimitError, setBatchLimitError] = useState<string | null>(null);
-  const [items, setItems] = useState<UploadBatchItem[]>([]);
-  const [failedBatch, setFailedBatch] = useState<FailedBatch | null>(null);
+  const [rejectedFiles, setRejectedFiles] = useState<RejectedFile[]>([]);
 
   const usageQuery = useUsage();
-  const uploadMutation = useUploadReceipts();
+  const { items, progress, enqueue, clearSettled } = useUploadQueue();
 
-  const createdIds = useMemo(() => {
+  // Receipts whose stage the screen follows: files the queue landed.
+  const trackedIds = useMemo(() => {
     const seen = new Set<string>();
     const ids: string[] = [];
     for (const item of items) {
       if (
-        item.phase === 'created' &&
+        item.state === 'done' &&
+        item.outcome !== 'duplicate' &&
         item.receiptId &&
         !seen.has(item.receiptId)
       ) {
@@ -167,46 +246,50 @@ export function UploadPage() {
     return ids.slice(-100);
   }, [items]);
 
-  const hasPendingReceipt = useCallback(
-    (page: ReceiptPage | undefined) => {
-      if (createdIds.length === 0) return false;
+  const hasUnsettledStages = useCallback(
+    (page: PipelinePage | undefined) => {
+      if (trackedIds.length === 0) return false;
       const byId = new Map(
-        (page?.items ?? []).map((entry) => [entry.id, entry]),
+        (page?.items ?? []).map((entry) => [entry.receiptId, entry]),
       );
-      return createdIds.some((id) => {
-        const status = byId.get(id)?.status ?? 'queued';
-        return status === 'queued' || status === 'processing';
+      return trackedIds.some((id) => {
+        const stage = byId.get(id)?.stage ?? 'queued';
+        return (
+          stage === 'queued' || stage === 'extracting' || stage === 'matching'
+        );
       });
     },
-    [createdIds],
+    [trackedIds],
   );
 
-  const pollingQuery = useReceipts(
-    { ids: createdIds },
+  const pipelineQuery = usePipeline(
+    { ids: trackedIds },
     {
-      enabled: createdIds.length > 0,
+      enabled: trackedIds.length > 0,
       refetchInterval: (data, isError) => {
         if (isError) return false;
-        return hasPendingReceipt(data) ? POLL_INTERVAL_MS : false;
+        return hasUnsettledStages(data) ? POLL_INTERVAL_MS : false;
       },
     },
   );
 
-  const summaryMap = useMemo(() => {
-    const map = new Map<string, ReceiptSummary>();
-    for (const summary of pollingQuery.data?.items ?? []) {
-      map.set(summary.id, summary);
+  const stageById = useMemo(() => {
+    const map = new Map<string, PipelineItem>();
+    for (const entry of pipelineQuery.data?.items ?? []) {
+      map.set(entry.receiptId, entry);
     }
     return map;
-  }, [pollingQuery.data]);
+  }, [pipelineQuery.data]);
 
-  const hasActiveReceipts = useMemo(
-    () => !pollingQuery.isError && hasPendingReceipt(pollingQuery.data),
-    [hasPendingReceipt, pollingQuery.data, pollingQuery.isError],
+  const stagesActive = useMemo(
+    () => !pipelineQuery.isError && hasUnsettledStages(pipelineQuery.data),
+    [hasUnsettledStages, pipelineQuery.data, pipelineQuery.isError],
   );
 
+  // When the last tracked receipt settles, the usage counter and the
+  // review list may have changed behind the caches.
   useEffect(() => {
-    if (prevHasActiveRef.current && !hasActiveReceipts) {
+    if (prevStagesActiveRef.current && !stagesActive) {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.settings.usage,
       });
@@ -214,67 +297,8 @@ export function UploadPage() {
         queryKey: queryKeys.reviewFlags.all,
       });
     }
-    prevHasActiveRef.current = hasActiveReceipts;
-  }, [hasActiveReceipts, queryClient]);
-
-  function sendBatch(validFiles: File[], validLocalIds: string[]) {
-    setFailedBatch(null);
-    uploadMutation.mutate(validFiles, {
-      onSuccess: (response) => {
-        const resultByIndex = new Map(
-          response.results.map((entry) => [entry.index, entry]),
-        );
-        setItems((current) =>
-          current.map((item) => {
-            const validIdx = validLocalIds.indexOf(item.localId);
-            if (validIdx === -1) return item;
-            const result = resultByIndex.get(validIdx);
-            if (!result) {
-              return {
-                ...item,
-                phase: 'rejected',
-                errorMessage: 'Missing server upload result for this file.',
-              };
-            }
-            if (result.outcome === 'created') {
-              return {
-                ...item,
-                phase: 'created',
-                receiptId: result.receiptId,
-                errorMessage: null,
-              };
-            }
-            if (result.outcome === 'duplicate') {
-              return {
-                ...item,
-                phase: 'duplicate',
-                receiptId: result.receiptId,
-                errorMessage: null,
-              };
-            }
-            return {
-              ...item,
-              phase: 'rejected',
-              receiptId: null,
-              errorMessage:
-                result.error?.message ?? 'File was rejected by the server.',
-            };
-          }),
-        );
-      },
-      onError: (error) => {
-        const message = getErrorMessage(error);
-        setFailedBatch({ files: validFiles, localIds: validLocalIds });
-        setItems((current) =>
-          current.map((item) =>
-            validLocalIds.includes(item.localId)
-              ? { ...item, phase: 'rejected', errorMessage: message }
-              : item,
-          ),
-        );
-      },
-    });
-  }
+    prevStagesActiveRef.current = stagesActive;
+  }, [stagesActive, queryClient]);
 
   function handleSelectedFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -282,47 +306,33 @@ export function UploadPage() {
 
     if (files.length > MAX_BATCH_FILES) {
       setBatchLimitError(
-        `You can upload at most ${MAX_BATCH_FILES} files in one batch (${files.length} selected).`,
+        `You can upload at most ${MAX_BATCH_FILES} files in one selection (${files.length} chosen).`,
       );
       return;
     }
 
     setBatchLimitError(null);
 
-    const newItems: UploadBatchItem[] = [];
-    const validFiles: File[] = [];
-    const validLocalIds: string[] = [];
-
+    const rejected: RejectedFile[] = [];
+    const valid: File[] = [];
     for (const file of files) {
-      const localId = `upload-${nextLocalSeqRef.current++}`;
-      const validationError = validateUploadFile(file);
-      if (validationError) {
-        newItems.push({
-          localId,
+      const errorMessage = validateUploadFile(file);
+      if (errorMessage) {
+        rejected.push({
+          localId: `rejected-${nextLocalSeqRef.current++}`,
           fileName: file.name,
           sizeBytes: file.size,
-          phase: 'rejected',
-          receiptId: null,
-          errorMessage: validationError,
+          errorMessage,
         });
       } else {
-        newItems.push({
-          localId,
-          fileName: file.name,
-          sizeBytes: file.size,
-          phase: 'uploading',
-          receiptId: null,
-          errorMessage: null,
-        });
-        validFiles.push(file);
-        validLocalIds.push(localId);
+        valid.push(file);
       }
     }
-
-    setItems((current) => [...newItems, ...current]);
-
-    if (validFiles.length > 0) {
-      sendBatch(validFiles, validLocalIds);
+    if (rejected.length > 0) {
+      setRejectedFiles((current) => [...rejected, ...current]);
+    }
+    if (valid.length > 0) {
+      void enqueue(valid);
     }
   }
 
@@ -350,17 +360,9 @@ export function UploadPage() {
     handleSelectedFiles(event.dataTransfer.files);
   }
 
-  function handleRetryFailedBatch() {
-    if (!failedBatch || uploadMutation.isPending) return;
-    const { files, localIds } = failedBatch;
-    setItems((current) =>
-      current.map((item) =>
-        localIds.includes(item.localId)
-          ? { ...item, phase: 'uploading', errorMessage: null }
-          : item,
-      ),
-    );
-    sendBatch(files, localIds);
+  function handleClearSettled() {
+    setRejectedFiles([]);
+    void clearSettled();
   }
 
   function renderUsageCard() {
@@ -425,12 +427,30 @@ export function UploadPage() {
     );
   }
 
+  const rejectedRows: UploadRow[] = rejectedFiles.map((entry) => ({
+    key: entry.localId,
+    fileName: entry.fileName,
+    sizeBytes: entry.sizeBytes,
+    label: 'Failed',
+    variant: 'danger',
+    detail: entry.errorMessage,
+    percent: null,
+    receiptId: null,
+    linkLabel: null,
+  }));
+
+  const queueRows = items.map((item) =>
+    describeQueueItem(item, stageById, progress),
+  );
+  const rows = [...rejectedRows, ...queueRows];
+  const needsSignin = items.some((item) => item.state === 'needs_signin');
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="Upload"
         title="Upload receipts"
-        description="Send up to 20 JPEG, PNG, or HEIC/HEIF photos (15 MB max each) in a single batch."
+        description="Each photo uploads on its own and resumes automatically if the connection drops or the app closes."
         actions={
           <Link
             to="/receipts"
@@ -445,7 +465,7 @@ export function UploadPage() {
 
       <Card
         title="Select receipt photos"
-        description="Photos are uploaded together as one batch. Previews are omitted because browsers do not render HEIC files natively."
+        description="Photos are stored on this device before sending, so an interrupted upload continues where it left off. Previews are omitted because browsers do not render HEIC files natively."
       >
         <div className="flex flex-col gap-4">
           <div
@@ -465,7 +485,7 @@ export function UploadPage() {
             </p>
             <p className="text-small text-muted">
               Accepted formats: JPEG, PNG, HEIC, HEIF · Maximum 15 MB per file ·
-              Up to 20 files per batch
+              Up to 20 files per selection
             </p>
             <input
               ref={fileInputRef}
@@ -478,66 +498,60 @@ export function UploadPage() {
             />
             <Button
               variant="primary"
-              loading={uploadMutation.isPending}
               onClick={() => fileInputRef.current?.click()}
             >
-              {uploadMutation.isPending
-                ? 'Uploading batch...'
-                : 'Select photos'}
+              Select photos
             </Button>
           </div>
 
           {batchLimitError ? (
-            <ErrorState title="Batch size limit" message={batchLimitError} />
-          ) : null}
-
-          {uploadMutation.isError && failedBatch ? (
             <ErrorState
-              title="Upload failed"
-              message={getErrorMessage(uploadMutation.error)}
-              onRetry={handleRetryFailedBatch}
-              retryLabel="Retry batch"
+              title="Selection size limit"
+              message={batchLimitError}
             />
           ) : null}
         </div>
       </Card>
 
-      {pollingQuery.isError ? (
+      {needsSignin ? (
         <ErrorState
-          title="Could not refresh receipt statuses"
-          message={getErrorMessage(pollingQuery.error)}
+          title="Sign in required"
+          message="Your session expired. Sign in again; queued photos resume when you return to this page."
+        />
+      ) : null}
+
+      {pipelineQuery.isError ? (
+        <ErrorState
+          title="Could not refresh extraction progress"
+          message={getErrorMessage(pipelineQuery.error)}
           onRetry={() => {
-            void pollingQuery.refetch();
+            void pipelineQuery.refetch();
           }}
         />
       ) : null}
 
-      {items.length === 0 ? (
+      {rows.length === 0 ? (
         <EmptyState
           title="No files uploaded yet"
           description="Choose or drop receipt photos above to start extraction."
         />
       ) : (
         <Card
-          title="Upload batch status"
+          title="Upload status"
           description={
-            hasActiveReceipts
+            stagesActive
               ? 'Checking extraction progress every 2 seconds...'
-              : 'All files in this session have reached a settled state.'
+              : 'Everything in this list has settled.'
           }
           actions={
             <div className="flex items-center gap-2">
-              {hasActiveReceipts ? (
+              {stagesActive ? (
                 <Spinner size="sm" showLabel label="Polling" />
               ) : null}
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={uploadMutation.isPending}
-                onClick={() => {
-                  setItems([]);
-                  setFailedBatch(null);
-                }}
+                onClick={handleClearSettled}
               >
                 Clear list
               </Button>
@@ -545,54 +559,59 @@ export function UploadPage() {
           }
         >
           <ul className="divide-y divide-border">
-            {items.map((item) => {
-              const { state, detail } = resolveItemState(item, summaryMap);
-              const badge = getStatePresentation(state);
-              const showReceiptLink =
-                item.receiptId !== null &&
-                (state === 'ready' ||
-                  state === 'needs_review' ||
-                  state === 'duplicate');
-
-              return (
-                <li
-                  key={item.localId}
-                  className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex min-w-0 flex-col gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-small font-semibold text-ink">
-                        {item.fileName}
-                      </span>
-                      <span className="text-caption text-muted tabular-nums">
-                        {formatByteSize(item.sizeBytes)}
-                      </span>
+            {rows.map((row) => (
+              <li
+                key={row.key}
+                className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-small font-semibold text-ink">
+                      {row.fileName}
+                    </span>
+                    <span className="text-caption text-muted tabular-nums">
+                      {formatByteSize(row.sizeBytes)}
+                    </span>
+                  </div>
+                  {row.detail ? (
+                    <p
+                      className={`text-caption ${row.variant === 'danger' ? 'text-danger' : 'text-muted'}`}
+                    >
+                      {row.detail}
+                    </p>
+                  ) : null}
+                  {row.percent !== null ? (
+                    <div
+                      role="progressbar"
+                      aria-label={`Upload progress for ${row.fileName}`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={row.percent}
+                      className="h-2 w-full max-w-48 overflow-hidden rounded-control bg-surface-subtle"
+                    >
+                      {/* Static and determinate by design: the width is the
+                          only thing that changes between renders. */}
+                      <div
+                        className="h-full rounded-control bg-accent"
+                        style={{ width: `${row.percent}%` }}
+                      />
                     </div>
-                    {detail ? (
-                      <p
-                        className={`text-caption ${state === 'failed' ? 'text-danger' : 'text-muted'}`}
-                      >
-                        {detail}
-                      </p>
-                    ) : null}
-                  </div>
+                  ) : null}
+                </div>
 
-                  <div className="flex shrink-0 flex-wrap items-center gap-3">
-                    <Badge variant={badge.variant}>{badge.label}</Badge>
-                    {showReceiptLink && item.receiptId ? (
-                      <Link
-                        to={`/receipts/${item.receiptId}`}
-                        className="text-small font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                      >
-                        {state === 'duplicate'
-                          ? 'View existing receipt'
-                          : 'View receipt'}
-                      </Link>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
+                <div className="flex shrink-0 flex-wrap items-center gap-3">
+                  <Badge variant={row.variant}>{row.label}</Badge>
+                  {row.receiptId && row.linkLabel ? (
+                    <Link
+                      to={`/receipts/${row.receiptId}`}
+                      className="text-small font-medium text-accent hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      {row.linkLabel}
+                    </Link>
+                  ) : null}
+                </div>
+              </li>
+            ))}
           </ul>
         </Card>
       )}
