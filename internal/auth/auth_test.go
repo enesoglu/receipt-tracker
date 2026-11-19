@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -505,6 +506,57 @@ func TestSession_StoreFailureReturnsProblemWithoutSensitiveLogs(t *testing.T) {
 		t.Error("session failure exposed internals")
 	}
 	safeSecrets(t, f.logged.String(), cookie.Value, "private-cookie-data")
+}
+
+// destroyFailingStore lets LoadAndSave read the session while making only the
+// cleanup after a deleted user fail, which is the path RequireUser must keep
+// answering with 401.
+type destroyFailingStore struct {
+	scs.Store
+}
+
+func (destroyFailingStore) Delete(string) error {
+	return errors.New("session store unavailable")
+}
+
+func (destroyFailingStore) DeleteCtx(context.Context, string) error {
+	return errors.New("session store unavailable")
+}
+
+func (s destroyFailingStore) FindCtx(ctx context.Context, token string) ([]byte, bool, error) {
+	if store, ok := s.Store.(interface {
+		FindCtx(context.Context, string) ([]byte, bool, error)
+	}); ok {
+		return store.FindCtx(ctx, token)
+	}
+	return s.Find(token)
+}
+
+func (s destroyFailingStore) CommitCtx(ctx context.Context, token string, data []byte, expiry time.Time) error {
+	if store, ok := s.Store.(interface {
+		CommitCtx(context.Context, string, []byte, time.Time) error
+	}); ok {
+		return store.CommitCtx(ctx, token, data, expiry)
+	}
+	return s.Commit(token, data, expiry)
+}
+
+func TestSession_DestroyFailureStillReturnsUnauthenticated(t *testing.T) {
+	f := newAuthFixture(t)
+	cookie := f.login(t)
+	user := readMe(t, f.request(t, http.MethodGet, "/api/v1/me", cookie))
+	if _, err := f.pool.Exec(t.Context(), "DELETE FROM users WHERE id = $1", user.Id); err != nil {
+		t.Fatal(err)
+	}
+	original := f.sessions.Store
+	f.sessions.Store = destroyFailingStore{Store: original}
+	t.Cleanup(func() { f.sessions.Store = original })
+
+	response := f.request(t, http.MethodGet, "/api/v1/me", cookie)
+	statusBody(t, response, http.StatusUnauthorized)
+	if strings.Contains(strings.ToLower(response.Body.String()), "destroy") {
+		t.Errorf("session failure leaked internals: %s", response.Body.String())
+	}
 }
 
 func TestLogin_ProvisioningRollsBackOnDefaultFailure(t *testing.T) {

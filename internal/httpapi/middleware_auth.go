@@ -40,10 +40,10 @@ func RequireUser(users *auth.Service, sessions *scs.SessionManager, onError func
 			}
 			if _, err := users.User(r.Context(), userID); err != nil {
 				if errors.Is(err, apperr.NotFound) {
-					if err := sessions.Destroy(r.Context()); err != nil {
-						onError(w, r, errors.New("destroy session failed"))
-						return
-					}
+					// The identity is gone. Best-effort cleanup must not turn a
+					// stale session into a server error: the request is still
+					// unauthenticated either way, so answer with 401 and no data.
+					_ = sessions.Destroy(r.Context())
 					onError(w, r, unauthenticated())
 				} else {
 					onError(w, r, err)
