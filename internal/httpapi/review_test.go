@@ -46,8 +46,10 @@ func TestReview_ConfirmCorrectAndAcceptEveryAllowedValue(t *testing.T) {
 		{"correct date", "low_confidence", "correct", `{"action":"correct","purchasedOn":"2026-11-16"}`, func(r *extract.Result) { r.Date.Confidence = .7 }},
 		{"confirm total", "low_confidence", "confirm", `{"action":"confirm"}`, func(r *extract.Result) { r.Total.Confidence = .7 }},
 		{"correct total", "low_confidence", "correct", `{"action":"correct","total":"10.00"}`, func(r *extract.Result) { r.Total.Confidence = .7 }},
+		{"correct total comma", "low_confidence", "correct", `{"action":"correct","total":"10,0"}`, func(r *extract.Result) { r.Total.Confidence = .7 }},
 		{"confirm line", "low_confidence", "confirm", `{"action":"confirm"}`, func(r *extract.Result) { r.Lines[0].Confidence = .7 }},
 		{"correct line", "low_confidence", "correct", `{"action":"correct","lineItem":{"name":"BREAD","quantity":"2","unitPrice":"5.00","lineTotal":"10.00"}}`, func(r *extract.Result) { r.Lines[0].Confidence = .7 }},
+		{"correct line comma", "low_confidence", "correct", `{"action":"correct","lineItem":{"name":"BREAD","quantity":",5","unitPrice":"20,0","lineTotal":"10,0"}}`, func(r *extract.Result) { r.Lines[0].Confidence = .7 }},
 		{"supply date", "missing_field", "correct", `{"action":"correct","purchasedOn":"2026-11-16"}`, func(r *extract.Result) { r.Date.Found = false }},
 		{"accept missing date", "missing_field", "accept", `{"action":"accept"}`, func(r *extract.Result) { r.Date.Found = false }},
 		{"supply total", "missing_field", "correct", `{"action":"correct","total":"10.00"}`, func(r *extract.Result) { r.Total.Found = false }},
@@ -210,7 +212,7 @@ func TestReview_RejectsInvalidActionsCorrectionsAndForeignResources(t *testing.T
 	if r := s.call(s.alice, "POST", "/review-flags/"+uuid.NewString()+"/resolve", `{"action":"confirm"}`); r.Code != 404 {
 		t.Fatalf("unknown flag=%d", r.Code)
 	}
-	for _, body := range []string{`{"action":"accept"}`, `{"action":"unknown"}`, `{"action":"correct"}`, `{"action":"correct","total":"10.00","storeName":"Extra"}`, `{"action":"correct","storeName":"Wrong field"}`, `{"action":"correct","total":"10.0"}`, `{"action":"correct","lineItem":{"name":"BREAD","lineTotal":"10.00"}}`} {
+	for _, body := range []string{`{"action":"accept"}`, `{"action":"unknown"}`, `{"action":"correct"}`, `{"action":"correct","total":"10.00","storeName":"Extra"}`, `{"action":"correct","storeName":"Wrong field"}`, `{"action":"correct","total":"abc"}`, `{"action":"correct","total":""}`, `{"action":"correct","total":"1.234,56"}`, `{"action":"correct","lineItem":{"name":"BREAD","lineTotal":"10.00"}}`} {
 		t.Run(body, func(t *testing.T) {
 			r := s.call(s.alice, "POST", path, body)
 			if r.Code != 400 {

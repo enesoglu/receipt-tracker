@@ -76,7 +76,7 @@ func resolutionRequest(body ReviewResolution) (receipts.Resolution, error) {
 		if correction.PurchasedOn != nil {
 			r.Correction.PurchasedOn = &correction.PurchasedOn.Time
 		}
-		r.Correction.Total, err = parseAmount(correction.Total, 2)
+		r.Correction.Total, err = parseAmount(correction.Total, 2, "total", false)
 		if err != nil {
 			return r, err
 		}

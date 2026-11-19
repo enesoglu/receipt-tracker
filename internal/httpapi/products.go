@@ -89,9 +89,9 @@ func (h productsHandlers) UpdateProduct(ctx context.Context, request UpdateProdu
 		return nil, apperr.New(apperr.Invalid, "product body is required")
 	}
 	body := *request.Body
-	size, err := parseAmount(body.SizeValue, 3)
+	size, err := parseAmount(body.SizeValue, 3, "sizeValue", false)
 	if err != nil {
-		return nil, apperr.New(apperr.Invalid, "invalid size").WithField("sizeValue", "must be a decimal with at most three places")
+		return nil, err
 	}
 	u := products.Update{CanonicalName: body.CanonicalName, SizeValue: size, SizeUnit: body.SizeUnit}
 	if body.PriceBasis != nil {

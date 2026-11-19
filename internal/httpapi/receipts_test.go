@@ -434,7 +434,7 @@ func TestReceipts_RejectsInvalidInputsAndMissingResources(t *testing.T) {
 		{"GET", "/receipts?cursor=invalid", "", 400},
 		{"PUT", base, `{"title":"","currency":"TRY"}`, 400},
 		{"PUT", base, `{"title":"A","currency":"try"}`, 400},
-		{"PUT", base, `{"title":"A","currency":"TRY","total":"10.0"}`, 400},
+		{"PUT", base, `{"title":"A","currency":"TRY","total":"abc"}`, 400},
 		{"POST", base + "/line-items", `{"name":"A","lineTotal":"NaN"}`, 400},
 		{"POST", base + "/line-items", `{"name":"A","quantity":"1.0001","lineTotal":"10.00"}`, 400},
 		{"GET", base + "/images/" + uuid.NewString(), "", 404},
@@ -454,6 +454,62 @@ func TestReceipts_RejectsInvalidInputsAndMissingResources(t *testing.T) {
 	}
 	if r := s.call(s.alice, "POST", "/receipts/"+queued.String()+"/reprocess", ""); r.Code != 409 {
 		t.Fatalf("missing extraction=%d: %s", r.Code, r.Body.String())
+	}
+}
+
+// wantFieldProblem checks that a 400 problem names exactly one field, with
+// the message a person can act on.
+func wantFieldProblem(t *testing.T, r *httptest.ResponseRecorder, field, message string) {
+	t.Helper()
+	if r.Code != 400 {
+		t.Fatalf("status=%d want 400: %s", r.Code, r.Body.String())
+	}
+	problem := decodeProblem(t, r)
+	if problem.Errors == nil || len(*problem.Errors) != 1 {
+		t.Fatalf("problem has no single field error: %s", r.Body.String())
+	}
+	want := []httpapi.FieldProblem{{Field: field, Message: message}}
+	if diff := cmp.Diff(want, *problem.Errors); diff != "" {
+		t.Errorf("field errors mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestReceipts_AcceptFlexibleDecimalInput(t *testing.T) {
+	s := newReceiptServer(t)
+	id := s.seed(s.alice, cleanReceipt())
+	base := "/receipts/" + id.String()
+	updated := decodeReceipt(t, s.call(s.alice, "PUT", base, `{"title":"Flexible forms","currency":"TRY","subtotal":"84,5","taxTotal":"10.","total":"351,9"}`), 200)
+	if updated.Subtotal == nil || *updated.Subtotal != "84.50" || updated.TaxTotal == nil || *updated.TaxTotal != "10.00" || updated.Total == nil || *updated.Total != "351.90" {
+		t.Fatalf("updated=%+v", updated)
+	}
+	added := decodeReceipt(t, s.call(s.alice, "POST", base+"/line-items", `{"name":"SYNTH","quantity":"1,25","unitPrice":"5,5","lineTotal":"6,88"}`), 201)
+	if len(added.LineItems) != 2 {
+		t.Fatalf("lines=%d", len(added.LineItems))
+	}
+	line := added.LineItems[1]
+	if line.Quantity == nil || *line.Quantity != "1.250" || line.UnitPrice == nil || *line.UnitPrice != "5.50" || line.LineTotal == nil || string(*line.LineTotal) != "6.88" {
+		t.Fatalf("added line=%+v", line)
+	}
+}
+
+func TestReceipts_RejectedDecimalsNameTheField(t *testing.T) {
+	s := newReceiptServer(t)
+	id := s.seed(s.alice, cleanReceipt())
+	base := "/receipts/" + id.String()
+	money := "enter a number with up to two decimal places, using . or , — such as 351.90"
+	quantity := "enter a number with up to three decimal places, using . or , — such as 1.250"
+	for _, tc := range []struct {
+		name, method, path, body, field, message string
+	}{
+		{"text amount", "PUT", base, `{"title":"A","currency":"TRY","total":"abc"}`, "total", money},
+		{"grouped thousands", "PUT", base, `{"title":"A","currency":"TRY","total":"1.234,56"}`, "total", money},
+		{"three decimals", "PUT", base, `{"title":"A","currency":"TRY","total":"0,114"}`, "total", money},
+		{"blank required line total", "POST", base + "/line-items", `{"name":"A","lineTotal":""}`, "lineTotal", money},
+		{"four decimal quantity", "POST", base + "/line-items", `{"name":"A","quantity":"1.0001","lineTotal":"10.00"}`, "quantity", quantity},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			wantFieldProblem(t, s.call(s.alice, tc.method, tc.path, tc.body), tc.field, tc.message)
+		})
 	}
 }
 

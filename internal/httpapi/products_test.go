@@ -180,9 +180,9 @@ func TestProducts_UpdateFollowsTheContract(t *testing.T) {
 	milk := s.seedMilk(s.alice)
 	category := s.id(`INSERT INTO categories (user_id, name) VALUES ($1, 'Dairy') RETURNING id`, s.alice)
 
-	body := `{"canonicalName":"Süt 2 L","categoryId":"` + category.String() + `","sizeValue":"2","sizeUnit":"l"}`
+	body := `{"canonicalName":"Süt 2 L","categoryId":"` + category.String() + `","sizeValue":"1,5","sizeUnit":"l"}`
 	product := decodeAs[httpapi.Product](t, s.call(s.alice, http.MethodPut, "/products/"+milk.String(), body), http.StatusOK, "Product")
-	if product.CanonicalName != "Süt 2 L" || product.Category == nil || product.Category.Id != category || *product.SizeValue != "2.000" {
+	if product.CanonicalName != "Süt 2 L" || product.Category == nil || product.Category.Id != category || *product.SizeValue != "1.500" {
 		t.Errorf("product = %+v", product)
 	}
 
@@ -198,6 +198,37 @@ func TestProducts_UpdateFollowsTheContract(t *testing.T) {
 				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
 			}
 			decodeProblem(t, response)
+		})
+	}
+}
+
+func TestProducts_SizeErrorsNameTheField(t *testing.T) {
+	s := newProductServer(t)
+	milk := s.seedMilk(s.alice)
+	quantity := "enter a number with up to three decimal places, using . or , — such as 1.250"
+	positive := "must be positive with at most three decimal places"
+	for name, tc := range map[string]struct {
+		body, message string
+	}{
+		"text":        {`{"canonicalName":"Süt","sizeValue":"two","sizeUnit":"l"}`, quantity},
+		"zero":        {`{"canonicalName":"Süt","sizeValue":"0","sizeUnit":"g"}`, positive},
+		"negative":    {`{"canonicalName":"Süt","sizeValue":"-1,5","sizeUnit":"g"}`, positive},
+		"four places": {`{"canonicalName":"Süt","sizeValue":"1.2345","sizeUnit":"g"}`, quantity},
+		"grouped":     {`{"canonicalName":"Süt","sizeValue":"1.234,56","sizeUnit":"l"}`, quantity},
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := s.call(s.alice, http.MethodPut, "/products/"+milk.String(), tc.body)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+			}
+			problem := decodeProblem(t, response)
+			if problem.Errors == nil || len(*problem.Errors) != 1 {
+				t.Fatalf("problem has no single field error: %s", response.Body.String())
+			}
+			want := []httpapi.FieldProblem{{Field: "sizeValue", Message: tc.message}}
+			if diff := cmp.Diff(want, *problem.Errors); diff != "" {
+				t.Errorf("field errors mismatch (-want +got):\n%s", diff)
+			}
 		})
 	}
 }

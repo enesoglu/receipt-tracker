@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -324,54 +323,35 @@ func receiptResponse(d receipts.Detail) (Receipt, error) {
 	return response, nil
 }
 
-func parseAmount(value *string, places int32) (decimal.NullDecimal, error) {
-	if value == nil {
-		return decimal.NullDecimal{}, nil
-	}
-	pattern := `^-?\d{1,10}\.\d{2}$`
-	if places == 3 {
-		pattern = `^-?\d{1,9}(\.\d{1,3})?$`
-	}
-	matches, _ := regexp.MatchString(pattern, *value)
-	if !matches {
-		return decimal.NullDecimal{}, apperr.New(apperr.Invalid, "invalid decimal amount")
-	}
-	number, err := decimal.NewFromString(*value)
-	if err != nil {
-		return decimal.NullDecimal{}, apperr.Wrap(apperr.Invalid, "invalid decimal amount", err)
-	}
-	return decimal.NewNullDecimal(number), nil
-}
-
 func receiptRequest(body ReceiptUpdate) (receipts.ReceiptInput, error) {
 	input := receipts.ReceiptInput{Title: body.Title, StoreName: body.StoreName, PurchasedTime: body.PurchasedTime, Currency: body.Currency}
 	if body.PurchasedOn != nil {
 		input.PurchasedOn = &body.PurchasedOn.Time
 	}
 	var err error
-	input.Subtotal, err = parseAmount(body.Subtotal, 2)
+	input.Subtotal, err = parseAmount(body.Subtotal, 2, "subtotal", false)
 	if err != nil {
 		return input, err
 	}
-	input.TaxTotal, err = parseAmount(body.TaxTotal, 2)
+	input.TaxTotal, err = parseAmount(body.TaxTotal, 2, "taxTotal", false)
 	if err != nil {
 		return input, err
 	}
-	input.Total, err = parseAmount(body.Total, 2)
+	input.Total, err = parseAmount(body.Total, 2, "total", false)
 	return input, err
 }
 
 func lineRequest(body LineItemInput) (receipts.LineInput, error) {
 	input := receipts.LineInput{Name: body.Name, QuantityUnit: body.QuantityUnit, ProductCode: body.ProductCode}
-	total, err := parseAmount(&body.LineTotal, 2)
+	total, err := parseAmount(&body.LineTotal, 2, "lineTotal", true)
 	if err != nil {
 		return input, err
 	}
 	input.LineTotal = total.Decimal
-	input.Quantity, err = parseAmount(body.Quantity, 3)
+	input.Quantity, err = parseAmount(body.Quantity, 3, "quantity", false)
 	if err != nil {
 		return input, err
 	}
-	input.UnitPrice, err = parseAmount(body.UnitPrice, 2)
+	input.UnitPrice, err = parseAmount(body.UnitPrice, 2, "unitPrice", false)
 	return input, err
 }
