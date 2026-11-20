@@ -13,6 +13,12 @@ export default tseslint.config(
       'public/vendor',
     ],
   },
+  {
+    files: ['public/scanner-worker.js'],
+    languageOptions: {
+      globals: { ...globals.worker, importScripts: 'readonly' },
+    },
+  },
   js.configs.recommended,
   ...tseslint.configs.strict,
   { languageOptions: { globals: { ...globals.browser, ...globals.node } } },
