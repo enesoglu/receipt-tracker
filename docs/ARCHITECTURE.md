@@ -121,7 +121,7 @@ The [isolation audit](ISOLATION-AUDIT.md) records these boundaries and their tes
 | `store_aliases` | `store_id`, `raw_name`, `normalized_name` (unique per store), `seen_count`, `last_seen_at`: the raw names a store's receipts printed, so OCR noise keeps matching; GiST trigram index on (`user_id`, `normalized_name`) for the nearest-name step of store resolution; seeded from existing store names |
 | `categories` | `name` (unique per user); seeded defaults per new user |
 | `receipts` | `title`, `store_id`, `purchased_on` (date), `purchased_time`, `currency`, `subtotal`, `tax_total`, `total`, `status`, `source` (`web`, later others), `failure_reason`, `invoice_number` (e-archive `FATURA NO` / `BELGE NO`), `ettn` (uuid), `seller_tax_number` (VKN, 10 digits), `branch_name` (the printed branch; data on the receipt, never a store) |
-| `receipt_images` | `receipt_id`, `position`, `sha256` of the uploaded bytes (unique per user), `content_type`, `size_bytes`, `storage_backend`, `storage_ref` (the image the pipeline and UI use); `original_ref`, `original_content_type`, `original_size_bytes` (set only when the upload was converted) |
+| `receipt_images` | `receipt_id`, `position`, `sha256` of the uploaded bytes (unique per user), `content_type`, `size_bytes`, `storage_backend`, `storage_ref` (the image the pipeline and UI use); `original_ref`, `original_content_type`, `original_size_bytes` (the untouched source bytes, of any accepted type: set when the upload was converted or when an explicit `original` photo arrived beside it; the explicit photo wins over the converted upload's own bytes) |
 | `extractions` | `receipt_id`, `provider`, `model`, `raw` (jsonb), `created_at`; lets matching be re-run without spending quota |
 | `line_items` | `receipt_id`, `position`, `raw_name`, `name`, `quantity`, `quantity_unit`, `unit_price`, `line_total`, `product_code`, `confidence`, `product_id`, `match_status`, `match_score`, `match_method` |
 | `products` | `canonical_name`, `category_id`, `size_value`, `size_unit`, `price_basis` (`item`: packs are compared and sizes matter; `kg` or `l`: a generic product across brands and pack sizes, compared per kilogram or litre, with no size of its own) |
@@ -149,11 +149,21 @@ per receipt later without a schema change.
 
 ### 5.1 Upload and extraction
 
-1. `POST /api/v1/receipts` streams up to 20 files (JPEG, PNG or HEIC/HEIF, at
-   most 15 MiB each), holding one file at a time. The handler calls
+1. `POST /api/v1/receipts` accepts up to 20 files (JPEG, PNG or HEIC/HEIF,
+   at most 15 MiB each). The handler collects the parts before submitting,
+   so a request over the limit, or with an invalid original, is rejected
+   before any receipt is committed. A file may be paired with an optional
+   `original` part (same types and limit, type sniffed from bytes): the
+   untouched photo the file was derived from, read fully when seen — one
+   buffered original per request — and paired with its file in either part
+   order. An `original` is valid beside exactly one file; an invalid,
+   duplicated or unpaired one is a field error (`original`, or `files` when
+   no file arrived). The handler calls
    `ingest.Service.Submit(ctx, userID, source, files)`; any future channel
    (Telegram) calls the same function, so conversion below applies to all.
-2. Per file: reject duplicates by SHA-256 of the uploaded bytes, normalise
+2. Per file: reject duplicates by SHA-256 of the file's own bytes — an
+   explicit `original` is stored untouched and never hashed, so two
+   different photos of one paper still create two receipts — normalise
    (below), store through `storage.Store`, create the receipt (`queued`,
    default title) and one `extract_receipt` job. The response lists a result
    per file.
@@ -162,7 +172,9 @@ per receipt later without a schema change.
    orientation applied) and encoded once as JPEG (quality 85, longest side at
    most 3000 px, no metadata), with a 26-million-pixel decode cap. Both files are stored: the JPEG as
    `storage_ref`, which extraction, the API and the UI use, and the untouched
-   HEIC as `original_ref`. Everything after ingest sees only JPEG or PNG.
+   HEIC as `original_ref`, unless the request carried an explicit `original`
+   photo — that photo is what `original_ref` holds instead. Everything after
+   ingest sees only JPEG or PNG.
    Azure accepts HEIF directly (verified), but browsers do not display it and
    the downscale step needs decoded pixels, so one conversion at ingest keeps
    a single path. Keeping both costs roughly half as much again per HEIC
@@ -241,7 +253,19 @@ per receipt later without a schema change.
    unusable or full IndexedDB falls back to a memory queue that sends
    immediately; page and worker may race one file, and the SHA-256 dedupe
    above keeps the outcome one receipt. The browser never downscales or
-   recompresses; HEIC normalisation stays at ingest.
+   recompresses — the scanner's scan (step 8) is the one deliberate
+   exception; HEIC normalisation stays at ingest.
+ 8. The scanner is a second upload source, entirely client-side. On the
+   upload screen it opens as an overlay (no new route); its engine —
+   OpenCV.js, fetched lazily only when the scanner opens, plus the
+   dependency-free jscanify client source — finds the paper, and the
+   corner handles can be dragged before capture. Capture keeps the
+   full-resolution frame as the untouched photo and encodes the warped
+   crop once as the scan: the scan is sent as the `files` part (step 1)
+   with the photo as its `original`, so the paper the user aligned is
+   what extraction sees and the camera photo is what `original_ref`
+   preserves. A scan deduplicates like any other upload; its photo never
+   takes part.
 
 ### 5.2 Product matching (no LLM)
 

@@ -44,10 +44,10 @@ func classify(b []byte) brand {
 	}
 }
 
-// sniff returns the content type of an upload from its first bytes, or ""
+// Sniff returns the content type of an upload from its first bytes, or ""
 // when it is not a JPEG, PNG or HEIC/HEIF image. The declared type and the
 // file name are never consulted: both come from the client.
-func sniff(head []byte) string {
+func Sniff(head []byte) string {
 	head = head[:min(len(head), sniffLength)]
 	switch {
 	case bytes.HasPrefix(head, []byte{0xff, 0xd8, 0xff}):

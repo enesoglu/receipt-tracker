@@ -1861,7 +1861,8 @@ type ReceiptImage struct {
 	Id          openapi_types.UUID      `json:"id"`
 
 	// Original The untouched upload, served with `variant=original`. `null` when
-	// the upload was stored as it came (JPEG or PNG).
+	// nothing was kept: an upload stored as it came that was neither
+	// converted nor sent with an explicit `original` part.
 	Original  *OriginalImage `json:"original"`
 	Position  int            `json:"position"`
 	SizeBytes int64          `json:"sizeBytes"`
@@ -2340,6 +2341,11 @@ type UploadOutcome string
 type UploadRequest struct {
 	// Files The photos, one receipt each. Repeat the `files` part for each file.
 	Files []openapi_types.File `json:"files"`
+
+	// Original The untouched photo the file was made from, such as the camera
+	// photo a document scan came from. Optional, and valid only in a
+	// request with exactly one `files` part, before or after it.
+	Original *openapi_types.File `json:"original,omitempty"`
 }
 
 // UploadResponse defines model for UploadResponse.

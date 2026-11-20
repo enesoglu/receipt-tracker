@@ -237,7 +237,7 @@ func TestSchema_RejectsValuesOutsideEnumerations(t *testing.T) {
 		{"image storage backend", `UPDATE receipt_images SET storage_backend = 's3' WHERE id = $1`, []any{f.image}},
 		{"image hash length", `UPDATE receipt_images SET sha256 = '\x00' WHERE id = $1`, []any{f.image}},
 		{"image original without its content type", `UPDATE receipt_images SET original_ref = 'ref' WHERE id = $1`, []any{f.image}},
-		{"image original content type", `UPDATE receipt_images SET original_ref = 'ref', original_content_type = 'image/png', original_size_bytes = 1 WHERE id = $1`, []any{f.image}},
+		{"image original content type", `UPDATE receipt_images SET original_ref = 'ref', original_content_type = 'image/webp', original_size_bytes = 1 WHERE id = $1`, []any{f.image}},
 		{"image original details without the original", `UPDATE receipt_images SET original_content_type = 'image/heic', original_size_bytes = 1 WHERE id = $1`, []any{f.image}},
 		{"extraction provider", `UPDATE extractions SET provider = 'tesseract' WHERE id = $1`, []any{f.extraction}},
 		{"product size without unit", `UPDATE products SET size_unit = NULL WHERE id = $1`, []any{f.product}},
