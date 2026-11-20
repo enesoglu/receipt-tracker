@@ -101,6 +101,18 @@ func files(contents ...[]byte) iter.Seq[ingest.File] {
 	}
 }
 
+// withOriginal returns a one-file submission whose file carries an
+// explicit original.
+func withOriginal(file, original []byte) iter.Seq[ingest.File] {
+	return func(yield func(ingest.File) bool) {
+		yield(ingest.File{
+			Name:     "scan.jpg",
+			Body:     bytes.NewReader(file),
+			Original: &ingest.File{Name: "original.jpg", Body: bytes.NewReader(original)},
+		})
+	}
+}
+
 // photo returns a small distinct JPEG or PNG.
 func photo(t testing.TB, n int, format string) []byte {
 	t.Helper()
@@ -567,5 +579,134 @@ func TestSubmit_UnreadableBodyIsRejected(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, summarize(results)); diff != "" {
 		t.Errorf("results mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestSubmit_StoresExplicitOriginalUntouched(t *testing.T) {
+	f := newFixture(t, nil)
+	user := newUser(t, f.pool, "ada@example.com")
+	originals := []struct {
+		name string
+		data []byte
+		kind string
+	}{
+		{"jpeg", photo(t, 5, "jpeg"), "image/jpeg"},
+		{"png", photo(t, 6, "png"), "image/png"},
+		{"heic", readFixture(t, "sample.heic"), "image/heic"},
+	}
+	for i, original := range originals {
+		t.Run(original.name, func(t *testing.T) {
+			scan := photo(t, 20+i, "jpeg")
+
+			result := f.service.Submit(t.Context(), user, ingest.SourceWeb, withOriginal(scan, original.data))[0]
+
+			if result.Outcome != ingest.OutcomeCreated {
+				t.Fatalf("result = %+v, want created", result)
+			}
+			row := f.image(t, result.ReceiptID)
+			// The scan stays the image: its own hash, type, size and
+			// stored bytes.
+			digest := sha256.Sum256(scan)
+			if !bytes.Equal(row.Sha256, digest[:]) || row.ContentType != "image/jpeg" ||
+				row.SizeBytes != int64(len(scan)) || !bytes.Equal(f.object(t, row.StorageRef), scan) {
+				t.Errorf("image row = %+v, want the scan stored as the image", row)
+			}
+			// The original is stored byte for byte, with its own sniffed
+			// type, whatever type it is.
+			if row.OriginalRef == nil || *row.OriginalContentType != original.kind || *row.OriginalSizeBytes != int64(len(original.data)) {
+				t.Fatalf("original columns = %+v, want the untouched original", row)
+			}
+			if !bytes.Equal(f.object(t, *row.OriginalRef), original.data) {
+				t.Error("stored original differs from the original bytes")
+			}
+		})
+	}
+}
+
+func TestSubmit_HEICPrimaryWithExplicitOriginalKeepsTheExplicitOne(t *testing.T) {
+	f := newFixture(t, nil)
+	user := newUser(t, f.pool, "ada@example.com")
+	camera := readFixture(t, "sample-main10.heic")
+
+	result := f.service.Submit(t.Context(), user, ingest.SourceWeb, withOriginal(readFixture(t, "sample.heic"), camera))[0]
+
+	if result.Outcome != ingest.OutcomeCreated {
+		t.Fatalf("result = %+v, want created", result)
+	}
+	row := f.image(t, result.ReceiptID)
+	if row.ContentType != "image/jpeg" {
+		t.Fatalf("content type = %s, want the converted JPEG", row.ContentType)
+	}
+	// The explicit original wins over the HEIC upload: original_ref holds
+	// the camera photo, not the file's own bytes.
+	if row.OriginalRef == nil || *row.OriginalContentType != "image/heic" || *row.OriginalSizeBytes != int64(len(camera)) {
+		t.Fatalf("original columns = %+v, want the explicit original", row)
+	}
+	if !bytes.Equal(f.object(t, *row.OriginalRef), camera) {
+		t.Error("stored original differs from the camera photo")
+	}
+	if got := f.storedFiles(t); got != 2 {
+		t.Errorf("%d stored objects, want the converted JPEG and the original only", got)
+	}
+}
+
+func TestSubmit_DeduplicatesOnPrimaryBytesOnly(t *testing.T) {
+	f := newFixture(t, nil)
+	user := newUser(t, f.pool, "ada@example.com")
+	scan, other, camera := photo(t, 2, "jpeg"), photo(t, 3, "jpeg"), readFixture(t, "sample.heic")
+
+	first := f.service.Submit(t.Context(), user, ingest.SourceWeb, withOriginal(scan, camera))[0]
+	withoutOriginal := f.service.Submit(t.Context(), user, ingest.SourceWeb, files(scan))[0]
+	withOtherOriginal := f.service.Submit(t.Context(), user, ingest.SourceWeb, withOriginal(scan, photo(t, 6, "png")))[0]
+	reusedOriginal := f.service.Submit(t.Context(), user, ingest.SourceWeb, withOriginal(other, camera))[0]
+
+	if first.Outcome != ingest.OutcomeCreated {
+		t.Fatalf("first = %+v, want created", first)
+	}
+	// A re-sent identical scan is still a duplicate, with or without an
+	// original beside it.
+	if withoutOriginal.Outcome != ingest.OutcomeDuplicate || withoutOriginal.ReceiptID != first.ReceiptID {
+		t.Errorf("same scan without original = %+v, want a duplicate of the first", withoutOriginal)
+	}
+	if withOtherOriginal.Outcome != ingest.OutcomeDuplicate || withOtherOriginal.ReceiptID != first.ReceiptID {
+		t.Errorf("same scan with another original = %+v, want a duplicate of the first", withOtherOriginal)
+	}
+	// The original's bytes never take part in duplicate detection: a
+	// different scan carrying them is a receipt of its own.
+	if reusedOriginal.Outcome != ingest.OutcomeCreated || reusedOriginal.ReceiptID == first.ReceiptID {
+		t.Errorf("new scan with a reused original = %+v, want its own receipt", reusedOriginal)
+	}
+	row := f.image(t, reusedOriginal.ReceiptID)
+	if row.OriginalRef == nil || *row.OriginalContentType != "image/heic" || !bytes.Equal(f.object(t, *row.OriginalRef), camera) {
+		t.Errorf("image row = %+v, want the reused original stored untouched", row)
+	}
+}
+
+func TestSubmit_RejectsInvalidOriginals(t *testing.T) {
+	f := newFixture(t, nil)
+	user := newUser(t, f.pool, "ada@example.com")
+	tests := []struct {
+		name     string
+		original []byte
+		code     ingest.Code
+	}{
+		{"oversized", append([]byte{0xff, 0xd8, 0xff}, make([]byte, ingest.MaxFileBytes)...), ingest.CodeTooLarge},
+		{"empty", nil, ingest.CodeUnreadable},
+		{"not a photo", []byte("milk, bread"), ingest.CodeUnsupportedType},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := f.service.Submit(t.Context(), user, ingest.SourceWeb, withOriginal(photo(t, 1, "jpeg"), tt.original))[0]
+			if result.Outcome != ingest.OutcomeRejected || result.Code != tt.code {
+				t.Fatalf("result = %+v, want rejected as %s", result, tt.code)
+			}
+			// Nothing of the file is kept, its original included.
+			if got := f.storedFiles(t); got != 0 {
+				t.Errorf("%d stored objects, want none", got)
+			}
+			if got := f.count(t, "receipts"); got != 0 {
+				t.Errorf("%d receipts, want none", got)
+			}
+		})
 	}
 }

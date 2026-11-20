@@ -39,6 +39,10 @@ type File struct {
 	// back, never used as a path or key.
 	Name string
 	Body io.Reader
+	// Original, when set, is the untouched photo the file was made from.
+	// Submit stores it as received, without conversion, and its bytes
+	// never take part in duplicate detection.
+	Original *File
 }
 
 // Outcome says what happened to one file.
@@ -120,9 +124,10 @@ func New(db database, store storage.Store, backend string, converter Converter, 
 // file, in order. Per file: the type is sniffed from the bytes, the size is
 // limited, the SHA-256 of the uploaded bytes is computed while reading, a
 // file this user submitted before is reported as a duplicate, a HEIC/HEIF
-// image is converted to JPEG (the original is kept), the image is stored,
-// and the receipt, its image row and its extraction job are created in one
-// transaction. Nothing of a refused file is kept.
+// image is converted to JPEG (the original is kept), an explicit original
+// photo is stored as received, the image is stored, and the receipt, its
+// image row and its extraction job are created in one transaction. Nothing
+// of a refused file is kept.
 func (s *Service) Submit(ctx context.Context, userID uuid.UUID, source Source, files iter.Seq[File]) []Result {
 	results := []Result{}
 	for file := range files {
@@ -154,7 +159,7 @@ func (s *Service) submit(ctx context.Context, userID uuid.UUID, source Source, f
 	case len(data) == 0:
 		return rejected(CodeUnreadable, "The file is empty.")
 	}
-	contentType := sniff(data[:min(len(data), sniffLength)])
+	contentType := Sniff(data)
 	if contentType == "" {
 		return rejected(CodeUnsupportedType, "Only JPEG, PNG and HEIC/HEIF photos are accepted.")
 	}
@@ -168,22 +173,26 @@ func (s *Service) submit(ctx context.Context, userID uuid.UUID, source Source, f
 		return unavailable(err)
 	}
 
-	primary := object{data: data, contentType: contentType, extension: "png"}
 	var original *object
+	if file.Original != nil {
+		stored, result := readOriginal(file.Original.Body)
+		if stored == nil {
+			return result
+		}
+		original = stored
+	}
+
+	primary := object{data: data, contentType: contentType, extension: extension(contentType)}
 	switch contentType {
-	case typeJPEG:
-		primary.extension = "jpg"
 	case typeHEIC, typeHEIF:
 		converted, err := s.convert(ctx, data)
 		if err != nil {
 			s.logger.Info("heic conversion refused", "user_id", userID, "size_bytes", len(data), "error", err)
 			return rejected(CodeUnreadable, "The photo could not be decoded. It may be damaged or of a kind that is not supported.")
 		}
-		extension := "heic"
-		if contentType == typeHEIF {
-			extension = "heif"
+		if original == nil {
+			original = &object{data: data, contentType: contentType, extension: extension(contentType)}
 		}
-		original = &object{data: data, contentType: contentType, extension: extension}
 		primary = object{data: converted, contentType: typeJPEG, extension: "jpg"}
 	}
 
@@ -227,6 +236,43 @@ func read(body io.Reader) (data, sum []byte, tooLarge bool, err error) {
 	return data, digest.Sum(nil), false, nil
 }
 
+// readOriginal reads and judges the body of a file's explicit original. It
+// returns nil with the result that refuses the file when the body is not an
+// accepted photo within the limit. The bytes are read without a digest: an
+// original is stored as received, and only the file's own bytes take part
+// in duplicate detection.
+func readOriginal(body io.Reader) (*object, Result) {
+	data, err := io.ReadAll(io.LimitReader(body, MaxFileBytes+1))
+	switch {
+	case err != nil:
+		return nil, rejected(CodeUnreadable, "The original photo could not be read completely.")
+	case len(data) > MaxFileBytes:
+		return nil, rejected(CodeTooLarge, "The original photo is larger than 15 MB.")
+	case len(data) == 0:
+		return nil, rejected(CodeUnreadable, "The original photo is empty.")
+	}
+	contentType := Sniff(data)
+	if contentType == "" {
+		return nil, rejected(CodeUnsupportedType, "Only JPEG, PNG and HEIC/HEIF photos are accepted.")
+	}
+	return &object{data: data, contentType: contentType, extension: extension(contentType)}, Result{}
+}
+
+// extension maps a sniffed content type to the file extension of the
+// object stored for it.
+func extension(contentType string) string {
+	switch contentType {
+	case typeJPEG:
+		return "jpg"
+	case typeHEIC:
+		return "heic"
+	case typeHEIF:
+		return "heif"
+	default:
+		return "png"
+	}
+}
+
 // convert runs the converter once at a time.
 func (s *Service) convert(ctx context.Context, data []byte) ([]byte, error) {
 	select {
@@ -263,8 +309,8 @@ func (s *Service) save(ctx context.Context, userID uuid.UUID, source Source, sum
 			s.discard(ctx, userID, receiptID, stored)
 		}
 	}()
-	put := func(img object) (string, error) {
-		key, err := storage.Key(userID, receiptID, imageID, img.extension)
+	put := func(img object, objectID uuid.UUID) (string, error) {
+		key, err := storage.Key(userID, receiptID, objectID, img.extension)
 		if err != nil {
 			return "", err
 		}
@@ -275,7 +321,7 @@ func (s *Service) save(ctx context.Context, userID uuid.UUID, source Source, sum
 		stored = append(stored, ref)
 		return ref, nil
 	}
-	ref, err := put(primary)
+	ref, err := put(primary, imageID)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -285,7 +331,14 @@ func (s *Service) save(ctx context.Context, userID uuid.UUID, source Source, sum
 		StorageBackend: s.backend, StorageRef: ref,
 	}
 	if original != nil {
-		originalRef, err := put(*original)
+		// The original is a distinct object with its own id, so its key
+		// stays apart from the image's when both share an extension (a
+		// JPEG scan beside its JPEG camera photo).
+		originalID, err := uuid.NewV7()
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("generate original id: %w", err)
+		}
+		originalRef, err := put(*original, originalID)
 		if err != nil {
 			return uuid.Nil, err
 		}

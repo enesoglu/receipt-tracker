@@ -61,8 +61,8 @@ func TestSniff(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := sniff(tt.head); got != tt.want {
-				t.Errorf("sniff = %q, want %q", got, tt.want)
+			if got := Sniff(tt.head); got != tt.want {
+				t.Errorf("Sniff = %q, want %q", got, tt.want)
 			}
 		})
 	}
