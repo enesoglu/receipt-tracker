@@ -23,6 +23,11 @@ export interface UseUploadQueueResult {
   ready: boolean;
   /** Adds files as pending items and starts sending them. */
   enqueue: (files: readonly File[]) => Promise<void>;
+  /**
+   * Adds one scanner capture — the warped scan, with the photo it was
+   * made from — and starts sending it.
+   */
+  enqueueScan: (photo: File, scan: File) => Promise<void>;
   /** Drops settled items from the queue; pending work always stays. */
   clearSettled: () => Promise<void>;
 }
@@ -144,6 +149,13 @@ export function useUploadQueue(
     requestUploadSync();
   }, []);
 
+  const enqueueScan = useCallback(async (photo: File, scan: File) => {
+    const queue = queueRef.current ?? (await getQueueRef.current());
+    await queue.enqueueScan(photo, scan);
+    // New work: ask the browser to keep finishing it in the background.
+    requestUploadSync();
+  }, []);
+
   const clearSettled = useCallback(async () => {
     const queue = queueRef.current;
     if (!queue) return;
@@ -152,5 +164,5 @@ export function useUploadQueue(
     await refresh(queue);
   }, [refresh]);
 
-  return { items, progress, ready, enqueue, clearSettled };
+  return { items, progress, ready, enqueue, enqueueScan, clearSettled };
 }

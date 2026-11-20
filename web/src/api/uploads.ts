@@ -6,8 +6,10 @@ export type UploadResult = components['schemas']['UploadResult'];
 
 /*
  * One file per request: each photo is sent on its own so progress and
- * failure are per file. The senders below stay typed against the same
- * contract operation (same path, same `files` field, same response
+ * failure are per file. An upload may also carry the untouched photo a
+ * file was made from, as one `original` part — the contract allows it
+ * beside exactly one file. The senders below stay typed against the
+ * same contract operation (same path, same `files` field, same response
  * schema) and live in `api/` so no component builds a request itself.
  */
 
@@ -23,6 +25,12 @@ export interface UploadFileOutcome {
 
 /** Options for the single-file upload senders. */
 export interface UploadFileOptions {
+  /**
+   * The untouched photo the file was made from, sent as the `original`
+   * part beside it. The contract allows it in a request whose only
+   * `files` part is the file being sent.
+   */
+  original?: File;
   /** Called with the bytes sent so far and the total bytes of this file. */
   onProgress?: (uploaded: number, total: number) => void;
   /** Aborts the upload; the promise rejects with an ApiError. */
@@ -80,6 +88,9 @@ export function uploadReceiptFile(
   return new Promise((resolve, reject) => {
     const form = new FormData();
     form.append('files', file);
+    if (options.original) {
+      form.append('original', options.original);
+    }
 
     const request = new XMLHttpRequest();
     request.open('POST', uploadUrl);
@@ -134,6 +145,9 @@ export async function uploadReceiptFileWithFetch(
 ): Promise<UploadFileOutcome> {
   const form = new FormData();
   form.append('files', file);
+  if (options.original) {
+    form.append('original', options.original);
+  }
   // The fetch ban exists to keep components on the generated client; this
   // api-layer sender is the deliberate exception the worker needs.
   // eslint-disable-next-line no-restricted-globals

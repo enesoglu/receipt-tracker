@@ -73,6 +73,36 @@ describe('useUploadQueue', () => {
     });
   });
 
+  it('enqueues a scanner capture as one item with both its parts', async () => {
+    const queue = new UploadQueue(new MemoryUploadStore(), reportingSender);
+    const enqueueScanSpy = vi.spyOn(queue, 'enqueueScan');
+    const { Wrapper } = createWrapper();
+    const { result } = renderHook(
+      () => useUploadQueue(() => Promise.resolve(queue)),
+      { wrapper: Wrapper },
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    const capture = photo('capture.jpg');
+    const scan = new File([new Uint8Array([9, 9, 9])], 'warped.jpg', {
+      type: 'image/jpeg',
+    });
+    await act(async () => {
+      await result.current.enqueueScan(capture, scan);
+    });
+
+    expect(enqueueScanSpy).toHaveBeenCalledWith(capture, scan);
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.items[0]).toMatchObject({
+      state: 'done',
+      receiptId: 'rec-1',
+      sizeBytes: 3,
+    });
+    expect(result.current.items[0]?.fileName).toMatch(
+      /^scan-\d{8}-\d{6}\.jpg$/,
+    );
+  });
+
   it('resumes the queue once on mount', async () => {
     const queue = new UploadQueue(new MemoryUploadStore(), reportingSender);
     const resumeSpy = vi.spyOn(queue, 'resume');

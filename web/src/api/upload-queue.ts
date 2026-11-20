@@ -7,12 +7,13 @@ import {
 import { formatApiError } from './errors';
 
 /**
- * The durable upload queue. Files chosen for upload are stored in
- * IndexedDB before anything is sent, so a closed tab, a lost connection
- * or a drained battery never loses a photo: whatever is pending resumes
- * on the next app open, or in the service worker where the browser
- * supports Background Sync. The stored blob is the original file; bytes
- * are never downscaled or recompressed here.
+ * The durable upload queue. Files chosen for upload — or captured by the
+ * document scanner, which feeds the warped scan in beside the photo it
+ * was made from — are stored in IndexedDB before anything is sent, so a
+ * closed tab, a lost connection or a drained battery never loses a
+ * photo: whatever is pending resumes on the next app open, or in the
+ * service worker where the browser supports Background Sync. Stored
+ * bytes are never downscaled or recompressed here.
  */
 
 /** Where one queued file stands. */
@@ -24,12 +25,15 @@ export interface UploadItem {
   id: string;
   fileName: string;
   sizeBytes: number;
-  /** The original photo, stored exactly as selected. */
+  /**
+   * The photo, stored exactly as selected: the file of a plain item,
+   * the untouched `original` a scanned item sends beside its scan.
+   */
   blob: File;
   /**
-   * A scanned version of the same photo, reserved for the document
-   * scanner that will feed this queue: stored and carried, sent by
-   * nobody yet.
+   * A scanned version of the same photo, from the document scanner:
+   * sent as the `files` part, with the photo above as the `original`
+   * part beside it.
    */
   scannedBlob?: File;
   createdAt: number;
@@ -180,6 +184,37 @@ export class UploadQueue {
     await this.drain();
   }
 
+  /**
+   * Stores one scanner capture and starts draining: the warped scan is
+   * the file that becomes the receipt, and the captured photo travels
+   * beside it as the untouched `original`. The scan carries its capture
+   * moment in its file name, in UTC so one moment names one file in
+   * every time zone.
+   */
+  async enqueueScan(
+    photo: File,
+    scan: File,
+    when: Date = new Date(),
+  ): Promise<void> {
+    const fileName = scanFileName(when);
+    const item: UploadItem = {
+      id: crypto.randomUUID(),
+      fileName,
+      sizeBytes: scan.size,
+      blob: photo,
+      // Re-wrapped so the sent part's file name is the item's name: the
+      // server echoes the part name back, and the user sees one name.
+      scannedBlob: new File([scan], fileName, { type: scan.type }),
+      createdAt: Date.now(),
+      state: 'pending',
+      receiptId: null,
+      outcome: null,
+      error: null,
+    };
+    await this.put(item);
+    await this.drain();
+  }
+
   private newItem(file: File, createdAt: number): UploadItem {
     return {
       id: crypto.randomUUID(),
@@ -233,7 +268,11 @@ export class UploadQueue {
         if (!item) return;
         await this.put({ ...item, state: 'uploading', error: null });
         try {
-          const outcome = await this.sender(item.blob, {
+          // A scanned item sends its warped scan as the file, with the
+          // captured photo beside it as the untouched original; a plain
+          // item sends its one photo, as before.
+          const outcome = await this.sender(item.scannedBlob ?? item.blob, {
+            original: item.scannedBlob ? item.blob : undefined,
             onProgress: (uploaded, total) =>
               this.events.progress?.(item.id, uploaded, total),
           });
@@ -322,6 +361,16 @@ function firstPending(items: UploadItem[]): UploadItem | undefined {
   return [...items]
     .filter((item) => item.state === 'pending')
     .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))[0];
+}
+
+/**
+ * The scan's file name: the capture moment in UTC, as
+ * `scan-<YYYYMMDD>-<HHMMSS>.jpg`. UTC keeps one moment naming one file
+ * in every time zone and keeps a day's scans sorted by name.
+ */
+export function scanFileName(when: Date): string {
+  const iso = when.toISOString();
+  return `scan-${iso.slice(0, 10).replaceAll('-', '')}-${iso.slice(11, 19).replaceAll(':', '')}.jpg`;
 }
 
 let queueSingleton: Promise<UploadQueue> | null = null;
