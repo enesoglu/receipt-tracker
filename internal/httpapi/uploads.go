@@ -35,7 +35,9 @@ type uploadsHandlers struct{ uploads Uploader }
 
 // uploadTimeout replaces the server's read and write timeouts for one
 // upload: twenty photos of 15 MB take minutes on a phone connection, and
-// converting twenty HEIC photos one at a time takes about a minute.
+// converting twenty HEIC photos one at a time takes about a minute. The
+// optional `original` part needs no more time: it is valid beside exactly
+// one file, so it never multiplies the work of a full request.
 const uploadTimeout = 10 * time.Minute
 
 // uploadPart is one collected part of an upload request. An original part
