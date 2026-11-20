@@ -5,7 +5,14 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'public/mockServiceWorker.js'] },
+  {
+    ignores: [
+      'dist',
+      'node_modules',
+      'public/mockServiceWorker.js',
+      'public/vendor',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.strict,
   { languageOptions: { globals: { ...globals.browser, ...globals.node } } },

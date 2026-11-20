@@ -52,6 +52,7 @@ change through a dedicated `chore(deps)` PR.
 | Frontend | React 19, TypeScript (strict), Vite, Tailwind CSS v4 | Required; Tailwind v4 keeps tokens in CSS |
 | Frontend data | `openapi-typescript` + `openapi-fetch`, TanStack Query v5, React Router v7 | Typed client generated from the contract |
 | Background uploads | Service worker from a second Vite pass (`vite.sw.config.ts`) into `/sw.js`; Background Sync | Finishes queued uploads without the page; no dependency added |
+| Document scanner | jscanify 1.4.3 vendored client source + `@techstark/opencv-js` (OpenCV.js 4.7) | MIT-licensed paper detection and warp on OpenCV WebAssembly; the ~9 MB engine is fetched only when the scanner opens |
 | Charts | Recharts v3, animations disabled | Widely used, enough for bar/line charts |
 | Frontend tests/lint | Vitest + Testing Library, ESLint, Prettier | Conventional |
 | Tasks | `Taskfile.yml` (go-task v3) | Same commands on PowerShell and Ubuntu |

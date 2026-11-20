@@ -25,6 +25,13 @@ func New(ctx context.Context) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open web assets: %w", err)
 	}
+	return handler(root), nil
+}
+
+// handler serves the files of root. Browser routes that match no file fall
+// back to the app shell; files under vendor/ carry their version in the
+// name, so they are sent with an immutable cache header.
+func handler(root fs.FS) http.Handler {
 	files := http.FileServerFS(root)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
@@ -41,6 +48,9 @@ func New(ctx context.Context) (http.Handler, error) {
 			files.ServeHTTP(w, clone)
 			return
 		}
+		if strings.HasPrefix(name, "vendor/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
 		files.ServeHTTP(w, r)
-	}), nil
+	})
 }
