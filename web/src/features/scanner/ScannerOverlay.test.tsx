@@ -6,10 +6,12 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
+import type { ScanAnalyzer } from './analyze';
 import type { Quad } from './corners';
 import type { CameraSource, PhotoCapture } from './camera';
 import { SCAN_JPEG_QUALITY } from './encode';
 import type { FrameDetection, ScanEngine } from './engine';
+import type { ScanWarnings } from './quality';
 import { ScannerOverlay } from './ScannerOverlay';
 
 // The OpenCV bytes reach the engine module as a build-time asset URL;
@@ -144,9 +146,21 @@ interface OverlayHandlers {
   onEnqueueScan: Mock<(photo: File, scan: File) => void>;
 }
 
+/** The analyzer's clean verdict: no warnings, so the confirm path
+ * runs straight to the queue. */
+const cleanAnalyzer: ScanAnalyzer = {
+  analyze: () => ({ blurry: false, dark: false }),
+};
+
+/** An analyzer that always raises the given verdict. */
+function warningAnalyzer(warnings: ScanWarnings): ScanAnalyzer {
+  return { analyze: () => warnings };
+}
+
 function renderOverlay(
   camera: CameraSource,
   engine: () => Promise<ScanEngine>,
+  analyzeScan: ScanAnalyzer = cleanAnalyzer,
 ): OverlayHandlers & { unmount: () => void } {
   const handlers: OverlayHandlers = {
     onClose: vi.fn(),
@@ -160,6 +174,7 @@ function renderOverlay(
       onEnqueueScan={handlers.onEnqueueScan}
       openCamera={() => camera}
       loadEngine={engine}
+      analyzeScan={analyzeScan}
     />,
   );
   return { ...handlers, unmount };
@@ -169,8 +184,9 @@ function renderOverlay(
 async function arriveAtLive(
   camera: CameraSource,
   engine: () => Promise<ScanEngine>,
+  analyzeScan: ScanAnalyzer = cleanAnalyzer,
 ): Promise<OverlayHandlers> {
-  const handlers = renderOverlay(camera, engine);
+  const handlers = renderOverlay(camera, engine, analyzeScan);
   await screen.findByRole('button', { name: 'Capture' });
   return handlers;
 }
@@ -179,9 +195,12 @@ async function arriveAtLive(
 async function arriveAtAdjust(
   fakeCamera: ReturnType<typeof makeFakeCamera>,
   fakeEngine: ReturnType<typeof makeFakeEngine>,
+  analyzeScan: ScanAnalyzer = cleanAnalyzer,
 ): Promise<OverlayHandlers> {
-  const handlers = await arriveAtLive(fakeCamera.camera, () =>
-    Promise.resolve(fakeEngine.engine),
+  const handlers = await arriveAtLive(
+    fakeCamera.camera,
+    () => Promise.resolve(fakeEngine.engine),
+    analyzeScan,
   );
   fireEvent.click(screen.getByRole('button', { name: 'Capture' }));
   await screen.findByRole('button', { name: 'Top left corner' });
@@ -190,6 +209,7 @@ async function arriveAtAdjust(
 
 afterEach(() => {
   vi.useRealTimers();
+  encodeState.calls.length = 0;
 });
 
 describe('ScannerOverlay opening', () => {
@@ -460,7 +480,6 @@ describe('ScannerOverlay enqueueing', () => {
     fakeCamera.nowAnswers(shot);
     const fakeEngine = makeFakeEngine(classifiedSheet());
     const handlers = await arriveAtAdjust(fakeCamera, fakeEngine);
-    encodeState.calls.length = 0;
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
@@ -510,5 +529,70 @@ describe('ScannerOverlay enqueueing', () => {
     expect(
       screen.getByRole('button', { name: 'Top left corner' }),
     ).toBeTruthy();
+  });
+});
+
+describe('ScannerOverlay quality warning', () => {
+  it('shows the warp with both warnings and queues it only on Upload anyway', async () => {
+    const fakeCamera = makeFakeCamera();
+    const shot = makeShot();
+    fakeCamera.nowAnswers(shot);
+    const fakeEngine = makeFakeEngine(classifiedSheet());
+    const handlers = await arriveAtAdjust(
+      fakeCamera,
+      fakeEngine,
+      warningAnalyzer({ blurry: true, dark: true }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await screen.findByText(/The scan may be blurry\./);
+    expect(screen.getByText(/The scan may be too dark\./)).toBeTruthy();
+    // The exact pixels the queue would receive are on screen.
+    expect(document.querySelector('canvas')).toBe(fakeEngine.warpCanvas);
+    // Nothing was encoded or queued: the user decides first.
+    expect(encodeState.calls).toHaveLength(0);
+    expect(handlers.onEnqueueScan).not.toHaveBeenCalled();
+    expect(handlers.onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Upload anyway' }));
+
+    await waitFor(() => {
+      expect(handlers.onEnqueueScan).toHaveBeenCalledTimes(1);
+    });
+    expect(encodeState.calls).toHaveLength(1);
+    expect(encodeState.calls[0]?.canvas).toBe(fakeEngine.warpCanvas);
+    expect(encodeState.calls[0]?.quality).toBe(SCAN_JPEG_QUALITY);
+    expect(encodeState.calls[0]?.fileName).toMatch(/^scan-\d{8}-\d{6}\.jpg$/);
+    expect(handlers.onEnqueueScan).toHaveBeenCalledWith(
+      shot.photo,
+      expect.objectContaining({ type: 'image/jpeg' }),
+    );
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns about darkness alone, and Retake returns to the camera', async () => {
+    const fakeCamera = makeFakeCamera();
+    const fakeEngine = makeFakeEngine(classifiedSheet());
+    const handlers = await arriveAtAdjust(
+      fakeCamera,
+      fakeEngine,
+      warningAnalyzer({ blurry: false, dark: true }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await screen.findByText(/The scan may be too dark\./);
+    expect(screen.queryByText(/blurry/)).toBeNull();
+    expect(encodeState.calls).toHaveLength(0);
+    expect(handlers.onEnqueueScan).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retake' }));
+
+    await screen.findByRole('button', { name: 'Capture' });
+    expect(document.querySelector('canvas')).toBeNull();
+    expect(handlers.onEnqueuePhoto).not.toHaveBeenCalled();
+    expect(handlers.onEnqueueScan).not.toHaveBeenCalled();
+    expect(handlers.onClose).not.toHaveBeenCalled();
   });
 });
