@@ -259,13 +259,24 @@ per receipt later without a schema change.
    upload screen it opens as an overlay (no new route); its engine —
    OpenCV.js, fetched lazily only when the scanner opens, plus the
    dependency-free jscanify client source — finds the paper, and the
-   corner handles can be dragged before capture. Capture keeps the
-   full-resolution frame as the untouched photo and encodes the warped
-   crop once as the scan: the scan is sent as the `files` part (step 1)
-   with the photo as its `original`, so the paper the user aligned is
-   what extraction sees and the camera photo is what `original_ref`
-   preserves. A scan deduplicates like any other upload; its photo never
-   takes part.
+   corner handles can be dragged on the captured frame before the crop
+   is warped. Capture keeps the full-resolution frame as the untouched
+   photo and encodes the warped crop once as the scan: the scan is sent
+   as the `files` part (step 1) with the photo as its `original`, so
+   the paper the user aligned is what extraction sees and the camera
+   photo is what `original_ref` preserves. A scan deduplicates like
+   any other upload; its photo never takes part. Before the queue the
+   scan is judged on a grayscale copy downscaled to at most 512 px —
+   variance of the Laplacian for blur, mean brightness for darkness —
+   and a blurred or dark scan is held with a static warning and
+   Retake / Upload anyway; the warning advises, it never blocks.
+   The engine runs in a dedicated worker (`/scanner-worker.js`) so the
+   app document keeps its strict `script-src 'self' 'wasm-unsafe-eval'`;
+   the worker's own response carries `script-src 'self' 'unsafe-eval'
+   'wasm-unsafe-eval'` for the pinned OpenCV UMD, which calls
+   `new Function` at init. Browsers that apply the document policy to
+   the worker instead surface "engine unavailable" and keep the
+   plain-photo flow.
 
 ### 5.2 Product matching (no LLM)
 

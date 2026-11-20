@@ -10,16 +10,23 @@ import { scanFileName } from '../../api/upload-queue';
 import { Button } from '../../components/ui/Button';
 import { ErrorState } from '../../components/ui/ErrorState';
 import { Spinner } from '../../components/ui/Spinner';
+import { browserScanAnalyzer, type ScanAnalyzer } from './analyze';
 import { defaultQuad, scanDimensions, type Quad } from './corners';
 import { deviceCamera, type CameraSource, type PhotoCapture } from './camera';
 import { encodeJpeg, SCAN_JPEG_QUALITY } from './encode';
 import { detectQuad, loadScanEngine, type ScanEngine } from './engine';
 import { LIVE_SAMPLE_INTERVAL_MS, sampleGuideQuad } from './guide';
+import type { ScanWarnings } from './quality';
 
-/** One screen's phases: opening, aiming, adjusting, and the two ways
- * opening can fail. */
+/** One screen's phases: opening, aiming, adjusting, the quality
+ * warning, and the two ways opening can fail. */
 type Phase =
-  'loading' | 'live' | 'adjust' | 'camera-denied' | 'engine-unavailable';
+  | 'loading'
+  | 'live'
+  | 'adjust'
+  | 'warn'
+  | 'camera-denied'
+  | 'engine-unavailable';
 
 /** The handle labels, in the quad's canonical corner order. */
 const CORNER_LABELS = [
@@ -43,6 +50,9 @@ export interface ScannerOverlayProps {
   /** How the engine loads: the default loads both scripts lazily;
    * tests pass a fake. */
   loadEngine?: () => Promise<ScanEngine>;
+  /** How the scan's quality is judged: the default reads the
+   * browser's pixels; tests pass a fake. */
+  analyzeScan?: ScanAnalyzer;
 }
 
 /** Draws one value onto a bounded range. */
@@ -54,7 +64,9 @@ function clamp(value: number, low: number, high: number): number {
  * The scanner's full-screen overlay: the camera's live view with a
  * silent paper guide, then the captured photo with four draggable
  * corner handles, then the warped scan on its way to the queue —
- * always alongside the untouched photo it was made from.
+ * always alongside the untouched photo it was made from. A blurred
+ * or dark scan is shown first, with Retake and Upload anyway: the
+ * warning advises, it never blocks.
  */
 export function ScannerOverlay({
   onClose,
@@ -62,9 +74,11 @@ export function ScannerOverlay({
   onEnqueueScan,
   openCamera = deviceCamera,
   loadEngine = loadScanEngine,
+  analyzeScan = browserScanAnalyzer,
 }: ScannerOverlayProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
+  const warnMountRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<CameraSource | null>(null);
   const engineRef = useRef<ScanEngine | null>(null);
@@ -77,6 +91,10 @@ export function ScannerOverlay({
   const [guide, setGuide] = useState<Quad | null>(null);
   const [photo, setPhoto] = useState<PhotoCapture | null>(null);
   const [corners, setCorners] = useState<Quad | null>(null);
+  const [warned, setWarned] = useState<{
+    canvas: HTMLCanvasElement;
+    warnings: ScanWarnings;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
@@ -160,6 +178,15 @@ export function ScannerOverlay({
     if (!mount) return;
     mount.replaceChildren(photo.canvas);
   }, [phase, photo]);
+
+  // The warped scan is mounted the same way in the warning view: the
+  // user judges the exact pixels the queue would receive.
+  useEffect(() => {
+    if (phase !== 'warn' || !warned) return;
+    const mount = warnMountRef.current;
+    if (!mount) return;
+    mount.replaceChildren(warned.canvas);
+  }, [phase, warned]);
 
   const handleCapture = useCallback(async () => {
     const camera = cameraRef.current;
@@ -245,6 +272,7 @@ export function ScannerOverlay({
   const handleRetake = useCallback(() => {
     setPhoto(null);
     setCorners(null);
+    setWarned(null);
     setError(null);
     setPhase('live');
   }, []);
@@ -271,6 +299,17 @@ export function ScannerOverlay({
         size.width,
         size.height,
       );
+      // Styled once where it is made, the same way the photo canvas
+      // is: the element is the scanner's own object.
+      scanCanvas.className = 'block h-auto w-full';
+      const warnings = analyzeScan.analyze(scanCanvas);
+      if (warnings.blurry || warnings.dark) {
+        // Advice before the queue: the scan is held, shown, and
+        // judged by the user, never discarded on its own.
+        setWarned({ canvas: scanCanvas, warnings });
+        setPhase('warn');
+        return;
+      }
       const scan = await encodeJpeg(
         scanCanvas,
         SCAN_JPEG_QUALITY,
@@ -283,7 +322,32 @@ export function ScannerOverlay({
     } finally {
       setWorking(false);
     }
-  }, [photo, corners, working, onEnqueueScan, onClose]);
+  }, [photo, corners, working, analyzeScan, onEnqueueScan, onClose]);
+
+  const handleUploadAnyway = useCallback(async () => {
+    const shot = photo;
+    const result = warned;
+    if (!shot || !result || working) return;
+    setWorking(true);
+    setError(null);
+    try {
+      const scan = await encodeJpeg(
+        result.canvas,
+        SCAN_JPEG_QUALITY,
+        scanFileName(new Date()),
+      );
+      onEnqueueScan(shot.photo, scan);
+      onClose();
+    } catch {
+      // Encoding failed after all: back to the handles, where the
+      // corners can be fixed or the shot retaken.
+      setWarned(null);
+      setPhase('adjust');
+      setError('The scan could not be created. Adjust the corners and retry.');
+    } finally {
+      setWorking(false);
+    }
+  }, [photo, warned, working, onEnqueueScan, onClose]);
 
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -417,6 +481,40 @@ export function ScannerOverlay({
                 onClick={() => void handleConfirm()}
               >
                 Confirm
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {phase === 'warn' && warned && photo ? (
+          <div className="flex flex-col gap-3">
+            <div ref={warnMountRef} className="relative w-full" />
+            <div
+              role="alert"
+              className="flex flex-col gap-1 rounded-card border border-warning/30 bg-warning-soft p-4"
+            >
+              <h3 className="text-body font-semibold text-warning">
+                Check the scan before uploading
+              </h3>
+              <p className="text-small text-ink">
+                {[
+                  warned.warnings.blurry ? 'The scan may be blurry.' : '',
+                  warned.warnings.dark ? 'The scan may be too dark.' : '',
+                ]
+                  .filter((sentence) => sentence !== '')
+                  .join(' ')}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button variant="secondary" onClick={handleRetake}>
+                Retake
+              </Button>
+              <Button
+                variant="primary"
+                loading={working}
+                onClick={() => void handleUploadAnyway()}
+              >
+                Upload anyway
               </Button>
             </div>
           </div>

@@ -14,6 +14,10 @@ are in [`THIRD_PARTY_LICENSES`](THIRD_PARTY_LICENSES).
   battery — even with the app closed where the browser supports Background
   Sync. HEIC converts to browser-ready JPEG while retaining the untouched
   original.
+- Scan a receipt with the camera instead of picking a file: the paper is
+  found and straightened automatically, the corners can be dragged, and both
+  the cropped scan and the untouched camera photo are kept. A blurry or dark
+  scan warns before it is queued; the warning never blocks the upload.
 - Extract receipt fields with Azure Document Intelligence, then review flagged
   values and edit receipts or line items. Saved raw results can be
   reprocessed. Follow each receipt through queued, extracting and matching
