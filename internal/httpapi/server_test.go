@@ -69,15 +69,21 @@ func TestHandler_SetsSecurityHeadersOnEveryResponse(t *testing.T) {
 		_, _ = io.WriteString(w, "{}")
 	})
 	server := httpapi.New(":0", slog.New(slog.NewJSONHandler(io.Discard, nil)), spa, nil, nil, nil, httpapi.Ingestion{}, nil, nil, nil, nil, mcp)
-	for _, path := range []string{"/", "/receipts", "/livez", "/healthz", "/api/v1/me", "/auth/missing", "/oauth/missing", "/.well-known/missing", "/mcp"} {
+	appCSP := "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+	workerCSP := "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+	for _, path := range []string{"/", "/receipts", "/livez", "/healthz", "/api/v1/me", "/auth/missing", "/oauth/missing", "/.well-known/missing", "/mcp", "/assets/index-test.js", "/vendor/jscanify-1.4.3.js", "/scanner-worker.js"} {
 		t.Run(path, func(t *testing.T) {
 			response := httptest.NewRecorder()
 			server.Handler().ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+			wantCSP := appCSP
+			if path == "/scanner-worker.js" {
+				wantCSP = workerCSP
+			}
 			for name, want := range map[string]string{
 				"X-Content-Type-Options":  "nosniff",
 				"X-Frame-Options":         "DENY",
 				"Referrer-Policy":         "no-referrer",
-				"Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+				"Content-Security-Policy": wantCSP,
 			} {
 				if got := response.Header().Get(name); got != want {
 					t.Errorf("%s = %q, want %q", name, got, want)

@@ -16,6 +16,11 @@ const (
 	apiPrefix = "/api/v1"
 	// uploadPath is the one operation whose body is files rather than JSON.
 	uploadPath = apiPrefix + "/receipts"
+	// scannerWorkerPath is the single fixed same-origin path from which the
+	// scanner's dedicated worker script is served. Its response carries its
+	// own, looser CSP (see securityHeaders): dedicated workers use the
+	// policy delivered with their own script response, CSP Level 3.
+	scannerWorkerPath = "/scanner-worker.js"
 
 	// maxJSONBody bounds every JSON request. The largest legitimate body, a
 	// receipt update or a split with a hundred ids, is a few kilobytes.
@@ -25,22 +30,37 @@ const (
 	maxUploadFiles     = 20
 	maxUploadFileBytes = 15 << 20
 	// maxUploadBody bounds an upload request: the files plus room for the
-	// multipart framing around them.
+	// multipart framing around them. The optional `original` part changes
+	// nothing here: it is valid beside exactly one file, so the largest
+	// request stays one photo and one original short of the bound.
 	maxUploadBody = maxUploadFiles*maxUploadFileBytes + 1<<20
 )
 
 // securityHeaders applies to successful responses and errors on every route.
 // Recharts and image previews need inline styles and blob images; scripts
 // remain limited to the bundled files, and worker-src admits the upload
-// service worker, which the browser loads as its own script. OAuth consent
-// replaces this policy with its stricter default-src 'none' policy before
-// writing its response.
+// service worker, which the browser loads as its own script. The document
+// scanner's OpenCV.js needs 'wasm-unsafe-eval' inside script-src: it
+// instantiates its WebAssembly module from same-origin bytes, and the
+// keyword admits only that, not general eval. OAuth consent replaces this
+// policy with its stricter default-src 'none' policy before writing its
+// response.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		// The scanner's engine runs in a dedicated worker whose script is
+		// served from one fixed path (scannerWorkerPath). Dedicated workers
+		// use the CSP delivered with their own script response, so that
+		// path alone admits 'unsafe-eval' for the pinned OpenCV UMD, which
+		// calls new Function at initialisation. Every other path keeps the
+		// strict app policy without 'unsafe-eval'.
+		csp := "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		if r.URL.Path == scannerWorkerPath {
+			csp = "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		}
+		w.Header().Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})
 }
