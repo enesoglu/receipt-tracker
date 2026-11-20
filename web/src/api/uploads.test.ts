@@ -107,6 +107,23 @@ describe('single-file upload senders', () => {
     expect(request.method).toBe('POST');
     expect(request.url).toBe('/api/v1/receipts');
     expect(request.sent?.get('files')).toBeInstanceOf(File);
+    expect(request.sent?.get('original')).toBeNull();
+  });
+
+  it('appends the untouched photo beside the file when given one', async () => {
+    vi.stubGlobal('XMLHttpRequest', FakeUploadXHR);
+    const scan = syntheticFile();
+    const camera = new File([new Uint8Array([4, 5, 6])], 'camera.jpg', {
+      type: 'image/jpeg',
+    });
+    const pending = uploadReceiptFile(scan, { original: camera });
+    finishUpload(200, createdResponse('rec-1', 'created'));
+
+    await expect(pending).resolves.toMatchObject({ outcome: 'created' });
+    const request = FakeUploadXHR.instances[0];
+    if (!request) throw new Error('no request was sent');
+    expect(request.sent?.get('files')).toBe(scan);
+    expect(request.sent?.get('original')).toBe(camera);
   });
 
   it('treats a duplicate response as an outcome with the existing id', async () => {
@@ -169,6 +186,36 @@ describe('single-file upload senders', () => {
     expect(init.method).toBe('POST');
     expect(init.credentials).toBe('same-origin');
     expect(init.body).toBeInstanceOf(FormData);
+  });
+
+  it('sends the untouched photo through the worker fetch sender too', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(createdResponse('rec-2', 'created')), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const scan = syntheticFile();
+    const camera = new File([new Uint8Array([4, 5, 6])], 'camera.jpg', {
+      type: 'image/jpeg',
+    });
+
+    const outcome = await uploadReceiptFileWithFetch(scan, {
+      original: camera,
+    });
+    expect(outcome).toEqual({
+      outcome: 'created',
+      receiptId: 'rec-2',
+      error: null,
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit & { credentials?: RequestCredentials },
+    ];
+    const form = init.body as FormData;
+    expect(form.get('files')).toBe(scan);
+    expect(form.get('original')).toBe(camera);
   });
 
   it('rejects a failed fetch upload with the problem document', async () => {

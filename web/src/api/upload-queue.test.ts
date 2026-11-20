@@ -4,6 +4,7 @@ import {
   MemoryUploadStore,
   UploadQueue,
   isSettled,
+  scanFileName,
   type UploadItem,
   type UploadSender,
   type UploadStore,
@@ -14,15 +15,21 @@ type ScriptStep =
   | { kind: 'rejected'; message: string }
   | { kind: 'error'; status: number };
 
-/** A sender that answers scripted steps, recording the files it saw. */
+/** One recorded sender call: the file, and the original beside it. */
+interface SentCall {
+  file: File;
+  original: File | undefined;
+}
+
+/** A sender that answers scripted steps, recording the calls it saw. */
 function scriptedSender(script: readonly ScriptStep[]): {
   sender: UploadSender;
-  sent: File[];
+  sent: SentCall[];
 } {
   let calls = 0;
-  const sent: File[] = [];
-  const sender: UploadSender = async (file) => {
-    sent.push(file);
+  const sent: SentCall[] = [];
+  const sender: UploadSender = async (file, options) => {
+    sent.push({ file, original: options.original });
     const step = script[Math.min(calls, script.length - 1)];
     calls += 1;
     if (step.kind === 'ok') {
@@ -57,6 +64,7 @@ function seededItem(item: Partial<UploadItem>): UploadItem {
     fileName: item.fileName ?? 'receipt.jpg',
     sizeBytes: item.sizeBytes ?? 3,
     blob: item.blob ?? photo(item.fileName ?? 'receipt.jpg'),
+    scannedBlob: item.scannedBlob,
     createdAt: item.createdAt ?? 0,
     state: item.state ?? 'pending',
     receiptId: item.receiptId ?? null,
@@ -105,7 +113,91 @@ describe('upload queue', () => {
 
     await queue.enqueue([photo('a.jpg'), photo('b.jpg'), photo('c.jpg')]);
 
-    expect(sent.map((file) => file.name)).toEqual(['a.jpg', 'b.jpg', 'c.jpg']);
+    expect(sent.map((call) => call.file.name)).toEqual([
+      'a.jpg',
+      'b.jpg',
+      'c.jpg',
+    ]);
+  });
+
+  it('sends a scanned item as the file with its photo as the original', async () => {
+    const { sender, sent } = scriptedSender([
+      { kind: 'ok', outcome: 'created', receiptId: 'rec-1' },
+    ]);
+    const queue = new UploadQueue(new MemoryUploadStore(), sender);
+    const capture = photo('capture.jpg');
+    const scan = new File([new Uint8Array([9, 9, 9])], 'warped.jpg', {
+      type: 'image/jpeg',
+    });
+
+    await queue.enqueueScan(
+      capture,
+      scan,
+      new Date('2026-11-20T14:30:05.000Z'),
+    );
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.file.name).toBe('scan-20261120-143005.jpg');
+    expect(sent[0]?.original).toBe(capture);
+    const items = await queue.list();
+    expect(items[0]).toMatchObject({
+      fileName: 'scan-20261120-143005.jpg',
+      sizeBytes: 3,
+      scannedBlob: expect.any(File),
+      state: 'done',
+      receiptId: 'rec-1',
+      outcome: 'created',
+      error: null,
+    });
+    expect(items[0]?.scannedBlob?.name).toBe('scan-20261120-143005.jpg');
+  });
+
+  it('sends a plain item with no original part', async () => {
+    const { sender, sent } = scriptedSender([
+      { kind: 'ok', outcome: 'created', receiptId: 'rec-1' },
+    ]);
+    const queue = new UploadQueue(new MemoryUploadStore(), sender);
+
+    await queue.enqueue([photo('a.jpg')]);
+
+    expect(sent[0]?.file.name).toBe('a.jpg');
+    expect(sent[0]?.original).toBeUndefined();
+  });
+
+  it('retries a scanned item with both its parts', async () => {
+    const store = new MemoryUploadStore();
+    await store.put(
+      seededItem({
+        id: 'scanned',
+        state: 'uploading',
+        fileName: 'scan-20261120-143005.jpg',
+        blob: photo('capture.jpg'),
+        scannedBlob: new File(
+          [new Uint8Array([9, 9, 9])],
+          'scan-20261120-143005.jpg',
+          {
+            type: 'image/jpeg',
+          },
+        ),
+      }),
+    );
+    const { sender, sent } = scriptedSender([
+      { kind: 'ok', outcome: 'created', receiptId: 'rec-1' },
+    ]);
+    const queue = new UploadQueue(store, sender);
+
+    await queue.resume();
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.file.name).toBe('scan-20261120-143005.jpg');
+    expect(sent[0]?.original).toBeInstanceOf(File);
+    expect(sent[0]?.original?.name).toBe('capture.jpg');
+  });
+
+  it('names a scan for its capture moment in UTC', () => {
+    expect(scanFileName(new Date('2026-11-20T14:30:05.000Z'))).toBe(
+      'scan-20261120-143005.jpg',
+    );
   });
 
   it('completes a duplicate response with the existing receipt id', async () => {
