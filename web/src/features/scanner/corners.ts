@@ -165,6 +165,27 @@ export function scanDimensions(
   };
 }
 
+/** How far the default handles sit inside the frame, as a share of
+ * each side: a tenth in from every edge. */
+export const DEFAULT_INSET_FRACTION = 0.1;
+
+/**
+ * The handle starting quad when detection finds no paper: an
+ * axis-aligned rectangle a tenth in from every edge of the frame, so
+ * the handles still begin where a receipt most likely is and the
+ * first drag starts close to the paper.
+ */
+export function defaultQuad(frame: { width: number; height: number }): Quad {
+  const x = DEFAULT_INSET_FRACTION * frame.width;
+  const y = DEFAULT_INSET_FRACTION * frame.height;
+  return [
+    { x, y },
+    { x: frame.width - x, y },
+    { x: frame.width - x, y: frame.height - y },
+    { x, y: frame.height - y },
+  ];
+}
+
 /** Where c lies around the directed line a→b: positive to its left,
  * negative to its right, zero on it. */
 function orientation(a: Point, b: Point, c: Point): number {

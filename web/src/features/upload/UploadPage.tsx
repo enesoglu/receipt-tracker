@@ -1,5 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -35,6 +37,14 @@ import {
 import { useUploadQueue, type UploadProgress } from './use-upload-queue';
 
 const POLL_INTERVAL_MS = 2000;
+
+// The scanner carries OpenCV.js, megabytes of engine: its chunk is
+// fetched only when the overlay opens, never with the upload screen.
+const ScannerOverlay = lazy(() =>
+  import('../scanner/ScannerOverlay').then((module) => ({
+    default: module.ScannerOverlay,
+  })),
+);
 
 /** One row of the upload list: either a queued file or a rejected selection. */
 interface UploadRow {
@@ -225,10 +235,12 @@ export function UploadPage() {
   const [batchLimitError, setBatchLimitError] = useState<string | null>(null);
   const [rejectedFiles, setRejectedFiles] = useState<RejectedFile[]>([]);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const selectingRef = useRef(false);
 
   const usageQuery = useUsage();
-  const { items, progress, enqueue, clearSettled } = useUploadQueue();
+  const { items, progress, enqueue, enqueueScan, clearSettled } =
+    useUploadQueue();
 
   const hasPendingUploads = items.some(
     (item) => item.state === 'pending' || item.state === 'uploading',
@@ -518,13 +530,22 @@ export function UploadPage() {
               disabled={isBusy}
               onChange={handleInputChange}
             />
-            <Button
-              variant="primary"
-              disabled={isBusy}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Select photos
-            </Button>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button
+                variant="primary"
+                disabled={isBusy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Select photos
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={isBusy}
+                onClick={() => setScannerOpen(true)}
+              >
+                Scan with camera
+              </Button>
+            </div>
           </div>
 
           {batchLimitError ? (
@@ -638,6 +659,31 @@ export function UploadPage() {
           </ul>
         </Card>
       )}
+
+      {scannerOpen ? (
+        <Suspense
+          fallback={
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Loading the scanner"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-canvas p-4"
+            >
+              <Spinner showLabel label="Loading the scanner" />
+            </div>
+          }
+        >
+          <ScannerOverlay
+            onClose={() => setScannerOpen(false)}
+            onEnqueuePhoto={(photo) => {
+              void enqueue([photo]);
+            }}
+            onEnqueueScan={(photo, scan) => {
+              void enqueueScan(photo, scan);
+            }}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

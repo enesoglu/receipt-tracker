@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   cornersFromContour,
+  DEFAULT_INSET_FRACTION,
+  defaultQuad,
   isSimpleQuad,
   orderCorners,
   scanDimensions,
@@ -270,5 +272,33 @@ describe('scanDimensions', () => {
       point(500, 400),
     ];
     expect(scanDimensions(quad, source)).toEqual({ width: 1, height: 1 });
+  });
+});
+
+describe('defaultQuad', () => {
+  it('keeps the decided inset share', () => {
+    expect(DEFAULT_INSET_FRACTION).toBe(0.1);
+  });
+
+  it('frames the shot a tenth in from every edge, corners ordered', () => {
+    expect(defaultQuad({ width: 1000, height: 800 })).toEqual([
+      { x: 100, y: 80 },
+      { x: 900, y: 80 },
+      { x: 900, y: 720 },
+      { x: 100, y: 720 },
+    ]);
+  });
+
+  it('answers a usable quad for any frame, however small', () => {
+    const quad = defaultQuad({ width: 1, height: 1 });
+    expect(isSimpleQuad(quad)).toBe(true);
+    expect(
+      orderCorners({
+        topLeftCorner: quad[0],
+        topRightCorner: quad[1],
+        bottomRightCorner: quad[2],
+        bottomLeftCorner: quad[3],
+      }),
+    ).toEqual(quad);
   });
 });
