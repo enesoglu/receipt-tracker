@@ -38,6 +38,7 @@ const fake = vi.hoisted(() => {
       fileName: string;
       sizeBytes: number;
       blob: File;
+      scannedBlob?: File;
       createdAt: number;
       state: string;
       receiptId: string | null;
@@ -45,6 +46,7 @@ const fake = vi.hoisted(() => {
       error: string | null;
     }> = [];
     enqueueCalls: File[][] = [];
+    enqueueScanCalls: Array<{ photo: File; scan: File }> = [];
     resumeCalls = 0;
     clearSettledCalls = 0;
     events: QueueEvents = {};
@@ -83,6 +85,24 @@ const fake = vi.hoisted(() => {
       this.events.changed?.();
     }
 
+    async enqueueScan(photo: File, scan: File) {
+      this.enqueueScanCalls.push({ photo, scan });
+      this.items.push({
+        id: `q-${this.items.length + 1}`,
+        // The scan is the upload; the photo rides along as its original.
+        fileName: scan.name,
+        sizeBytes: scan.size,
+        blob: photo,
+        scannedBlob: scan,
+        createdAt: Date.now() + this.items.length,
+        state: 'pending',
+        receiptId: null,
+        outcome: null,
+        error: null,
+      });
+      this.events.changed?.();
+    }
+
     async clearSettled() {
       this.clearSettledCalls += 1;
       this.items = this.items.filter(
@@ -105,6 +125,7 @@ const fake = vi.hoisted(() => {
     reset() {
       this.items = [];
       this.enqueueCalls = [];
+      this.enqueueScanCalls = [];
       this.resumeCalls = 0;
       this.clearSettledCalls = 0;
       this.events = {};
@@ -117,6 +138,63 @@ const fake = vi.hoisted(() => {
 vi.mock('../../api/upload-queue', () => ({
   getUploadQueue: () => Promise.resolve(fake.queue),
 }));
+
+// The scanner overlay is replaced by a fake dialog that hands files
+// over the way the real one does — and finishes, closing itself once
+// the queue has them. The scanner's own suite covers the real overlay.
+vi.mock('../scanner/ScannerOverlay', async () => {
+  const { createElement } = await import('react');
+  interface FakeOverlayProps {
+    onClose: () => void;
+    onEnqueuePhoto: (photo: File) => void;
+    onEnqueueScan: (photo: File, scan: File) => void;
+  }
+  return {
+    ScannerOverlay: (props: FakeOverlayProps) =>
+      createElement(
+        'div',
+        { role: 'dialog', 'aria-label': 'Scan a receipt with the camera' },
+        createElement(
+          'button',
+          { type: 'button', onClick: () => props.onClose() },
+          'Close scanner',
+        ),
+        createElement(
+          'button',
+          {
+            type: 'button',
+            onClick: () => {
+              props.onEnqueuePhoto(
+                new File(['photo-bytes'], 'photo-20261120-142500.jpg', {
+                  type: 'image/jpeg',
+                }),
+              );
+              props.onClose();
+            },
+          },
+          'Send whole photo',
+        ),
+        createElement(
+          'button',
+          {
+            type: 'button',
+            onClick: () => {
+              props.onEnqueueScan(
+                new File(['photo-bytes'], 'photo-20261120-142500.jpg', {
+                  type: 'image/jpeg',
+                }),
+                new File(['scan-bytes'], 'scan-20261120-142500.jpg', {
+                  type: 'image/jpeg',
+                }),
+              );
+              props.onClose();
+            },
+          },
+          'Send scan',
+        ),
+      ),
+  };
+});
 
 function makeFile(name: string, type: string, sizeBytes = 2048): File {
   const file = new File(['x'], name, { type });
@@ -577,7 +655,7 @@ describe('UploadPage', () => {
     expect(screen.queryByText('notes.pdf')).not.toBeInTheDocument();
   });
 
-  it('disables the drop zone, file input and select button while a batch is pending', async () => {
+  it('disables the drop zone, file input and both buttons while a batch is pending', async () => {
     fake.queue.seed([makeItem({ id: 'q-1', state: 'pending' })]);
 
     renderUploadPage();
@@ -589,6 +667,9 @@ describe('UploadPage', () => {
     expect(screen.getByLabelText('Choose receipt photos')).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'Select photos' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Scan with camera' }),
     ).toBeDisabled();
     expect(
       screen.getByRole('region', { name: 'Receipt photo drop area' }),
@@ -630,5 +711,86 @@ describe('UploadPage', () => {
     ).toBeInTheDocument();
     expect(fake.queue.enqueueCalls).toHaveLength(0);
     expect(screen.getByText('No files uploaded yet')).toBeInTheDocument();
+  });
+
+  it('opens the scanner from the camera button and closes it', async () => {
+    renderUploadPage();
+
+    expect(
+      screen.queryByRole('dialog', { name: 'Scan a receipt with the camera' }),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Scan with camera' }));
+
+    expect(
+      await screen.findByRole('dialog', {
+        name: 'Scan a receipt with the camera',
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close scanner' }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', {
+          name: 'Scan a receipt with the camera',
+        }),
+      ).toBeNull(),
+    );
+  });
+
+  it('enqueues the plain photo when the overlay hands one over', async () => {
+    renderUploadPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Scan with camera' }));
+    await screen.findByRole('dialog', {
+      name: 'Scan a receipt with the camera',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send whole photo' }));
+
+    await waitFor(() => expect(fake.queue.enqueueCalls).toHaveLength(1));
+    expect(fake.queue.enqueueCalls[0]?.map((file) => file.name)).toEqual([
+      'photo-20261120-142500.jpg',
+    ]);
+    expect(fake.queue.enqueueScanCalls).toHaveLength(0);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', {
+          name: 'Scan a receipt with the camera',
+        }),
+      ).toBeNull(),
+    );
+  });
+
+  it('enqueues the scan with its untouched photo when the overlay hands both over', async () => {
+    renderUploadPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Scan with camera' }));
+    await screen.findByRole('dialog', {
+      name: 'Scan a receipt with the camera',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send scan' }));
+
+    await waitFor(() => expect(fake.queue.enqueueScanCalls).toHaveLength(1));
+    const handedOver = fake.queue.enqueueScanCalls[0];
+    expect(handedOver?.photo.name).toBe('photo-20261120-142500.jpg');
+    expect(handedOver?.photo.type).toBe('image/jpeg');
+    expect(handedOver?.scan.name).toBe('scan-20261120-142500.jpg');
+    expect(fake.queue.enqueueCalls).toHaveLength(0);
+    // The queue item is the scan; the photo rides along as its original.
+    const item = fake.queue.items.find(
+      (candidate) => candidate.fileName === 'scan-20261120-142500.jpg',
+    );
+    expect(item).toBeDefined();
+    expect(item?.sizeBytes).toBe(handedOver?.scan.size);
+    expect(item?.blob).toBe(handedOver?.photo);
+    expect(item?.scannedBlob).toBe(handedOver?.scan);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', {
+          name: 'Scan a receipt with the camera',
+        }),
+      ).toBeNull(),
+    );
   });
 });
